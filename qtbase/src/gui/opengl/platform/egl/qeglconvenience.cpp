@@ -98,6 +98,17 @@ bool q_reduceConfigAttributes(QList<EGLint> *configAttributes)
         configAttributes->remove(i,2);
     }
 
+#ifdef EGL_VERSION_1_4
+    i = configAttributes->indexOf(EGL_RENDERABLE_TYPE);
+    if (i >= 0) {
+        EGLint renderableType = configAttributes->at(i+1);
+        if (renderableType == EGL_OPENGL_BIT) {
+            renderableType = EGL_OPENGL_ES2_BIT;
+            configAttributes->replace(i+1,renderableType);
+	}
+    }
+#endif
+
 #ifdef EGL_VG_ALPHA_FORMAT_PRE_BIT
     // For OpenVG, we sometimes try to create a surface using a pre-multiplied format. If we can't
     // find a config which supports pre-multiplied formats, remove the flag on the surface type:
