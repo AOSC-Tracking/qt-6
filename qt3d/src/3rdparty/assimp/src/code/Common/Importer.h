@@ -50,6 +50,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string>
 #include <assimp/matrix4x4.h>
 
+#include <exception>
+#include <stdexcept>
+
 struct aiScene;
 
 namespace Assimp    {
