@@ -19,11 +19,11 @@ export default commandLineArgs => ({
     sourcemap: Boolean(commandLineArgs.configSourcemaps),
   }],
   plugins: [
-    terser({
-      compress: {
-        pure_funcs: commandLineArgs.configDCHECK ? ['Platform.DCHECK'] : [],
-      },
-    }),
+    // terser({
+    //   compress: {
+    //     pure_funcs: commandLineArgs.configDCHECK ? ['Platform.DCHECK'] : [],
+    //   },
+    // }),
     {
       name: 'devtools-plugin',
       resolveId(source, importer) {
