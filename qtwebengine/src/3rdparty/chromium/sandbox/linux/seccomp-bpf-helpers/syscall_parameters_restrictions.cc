@@ -37,7 +37,7 @@
 
 #if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)) && \
     !defined(__arm__) && !defined(__aarch64__) &&             \
-    !defined(PTRACE_GET_THREAD_AREA)
+    !defined(PTRACE_GET_THREAD_AREA) && !defined(__loongarch__)
 // Also include asm/ptrace-abi.h since ptrace.h in older libc (for instance
 // the one in Ubuntu 16.04 LTS) is missing PTRACE_GET_THREAD_AREA.
 // asm/ptrace-abi.h doesn't exist on arm32 and PTRACE_GET_THREAD_AREA isn't
@@ -347,7 +347,7 @@ ResultExpr RestrictFutex() {
       .Cases({FUTEX_WAIT, FUTEX_WAKE, FUTEX_REQUEUE, FUTEX_CMP_REQUEUE,
 #if BUILDFLAG(ENABLE_MUTEX_PRIORITY_INHERITANCE)
               // Enable priority-inheritance operations.
-              FUTEX_LOCK_PI, FUTEX_UNLOCK_PI, FUTEX_TRYLOCK_PI,
+              FUTEX_LOCK_PI, FUTEX_LOCK_PI2, FUTEX_UNLOCK_PI, FUTEX_TRYLOCK_PI,
               FUTEX_WAIT_REQUEUE_PI, FUTEX_CMP_REQUEUE_PI,
 #endif  // BUILDFLAG(ENABLE_MUTEX_PRIORITY_INHERITANCE)
               FUTEX_WAKE_OP, FUTEX_WAIT_BITSET, FUTEX_WAKE_BITSET},
@@ -460,8 +460,11 @@ ResultExpr RestrictPtrace() {
   return Switch(request)
       .Cases({
 #if !defined(__aarch64__)
-                 PTRACE_GETREGS, PTRACE_GETFPREGS, PTRACE_GET_THREAD_AREA,
+                 PTRACE_GETREGS, PTRACE_GETFPREGS,
                  PTRACE_GETREGSET,
+#if !defined(__loongarch__)
+                 PTRACE_GET_THREAD_AREA,
+#endif
 #endif
 #if defined(__arm__)
                  PTRACE_GETVFPREGS,

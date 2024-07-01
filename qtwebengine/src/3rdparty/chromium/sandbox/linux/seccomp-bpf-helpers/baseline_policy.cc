@@ -193,7 +193,7 @@ ResultExpr EvaluateSyscallImpl(int fs_denied_errno,
     return RestrictFcntlCommands();
 #endif
 
-#if !defined(__aarch64__)
+#if !defined(__aarch64__) && !defined(__loongarch__)
   // fork() is never used as a system call (clone() is used instead), but we
   // have seen it in fallback code on Android.
   if (sysno == __NR_fork) {
@@ -255,7 +255,7 @@ ResultExpr EvaluateSyscallImpl(int fs_denied_errno,
   }
 
 #if defined(__i386__) || defined(__x86_64__) || defined(__mips__) || \
-    defined(__aarch64__)
+    defined(__aarch64__) || defined(__loongarch__)
   if (sysno == __NR_mmap)
     return RestrictMmapFlags();
 #endif
@@ -276,7 +276,7 @@ ResultExpr EvaluateSyscallImpl(int fs_denied_errno,
     return RestrictPrctl();
 
 #if defined(__x86_64__) || defined(__arm__) || defined(__mips__) || \
-    defined(__aarch64__)
+    defined(__aarch64__) || defined(__loongarch__)
   if (sysno == __NR_socketpair) {
     // Only allow AF_UNIX, PF_UNIX. Crash if anything else is seen.
     static_assert(AF_UNIX == PF_UNIX,
@@ -302,6 +302,7 @@ ResultExpr EvaluateSyscallImpl(int fs_denied_errno,
     return Allow();
   }
 
+#if !defined(__loongarch__)
   // The fstatat syscalls are file system syscalls, which will be denied below
   // with fs_denied_errno. However some allowed fstat syscalls are rewritten by
   // libc implementations to fstatat syscalls, and we need to rewrite them back.
@@ -319,6 +320,7 @@ ResultExpr EvaluateSyscallImpl(int fs_denied_errno,
     return If(mask == STATX_BASIC_STATS, Error(ENOSYS))
         .Else(Error(fs_denied_errno));
   }
+#endif
 
   if (SyscallSets::IsFileSystem(sysno) ||
       SyscallSets::IsCurrentDirectory(sysno)) {
@@ -366,7 +368,7 @@ ResultExpr EvaluateSyscallImpl(int fs_denied_errno,
   // Allow creating pipes, but don't allow weird flags to pipe2().
   // O_NOTIFICATION_PIPE (== O_EXCL) can be used to create
   // "notification pipes", which are rarely used.
-#if !defined(__aarch64__)
+#if !defined(__aarch64__) && !defined(__loongarch__)
   if (sysno == __NR_pipe) {
     return Allow();
   }

@@ -371,6 +371,22 @@ struct CPUContextRISCV64 {
   uint32_t fcsr;
 };
 
+//! \brief A context structure carrying LOONG64 CPU state.
+struct CPUContextLOONG64 {
+  uint64_t regs[32];
+  uint64_t csr_era;
+
+  union {
+    double dregs[32];
+    struct {
+      float _fp_fregs;
+      uint32_t _fp_pad;
+    } fregs[32];
+  } fpregs;
+  uint64_t fcc;
+  uint32_t fcsr;
+};
+
 //! \brief A context structure capable of carrying the context of any supported
 //!     CPU architecture.
 struct CPUContext {
@@ -412,6 +428,7 @@ struct CPUContext {
     CPUContextMIPS* mipsel;
     CPUContextMIPS64* mips64;
     CPUContextRISCV64* riscv64;
+    CPUContextLOONG64* loong64;
   };
 };
 

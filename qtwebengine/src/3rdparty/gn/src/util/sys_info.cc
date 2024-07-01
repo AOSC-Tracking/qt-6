@@ -34,6 +34,8 @@ std::string OperatingSystemArchitecture() {
     arch = "x86_64";
   } else if (arch == "amd64") {
     arch = "x86_64";
+  } else if (arch == "loongarch64") {
+    arch = "loongarch64";
   } else if (os == "AIX" || os == "OS400") {
     arch = "ppc64";
   } else if (std::string(info.sysname) == "OS/390") {

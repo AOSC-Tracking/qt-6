@@ -255,7 +255,7 @@ ResultExpr NetworkProcessPolicy::EvaluateSyscall(int sysno) const {
     case __NR_fdatasync:
     case __NR_fsync:
     case __NR_mremap:
-#if !defined(__aarch64__)
+#if !defined(__aarch64__) && !defined(__loongarch__)
     case __NR_getdents:
 #endif
     case __NR_getdents64:
