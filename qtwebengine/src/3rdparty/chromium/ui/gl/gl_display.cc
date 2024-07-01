@@ -28,6 +28,10 @@
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
 
+#if defined(USE_GLX)
+#include "ui/gfx/x/connection.h"
+#endif
+
 #if BUILDFLAG(IS_OZONE)
 #include "ui/ozone/buildflags.h"
 #endif  // BUILDFLAG(IS_OZONE)
