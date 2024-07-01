@@ -109,6 +109,13 @@ MinidumpContextWriter::CreateFromSnapshot(const CPUContext* context_snapshot) {
       break;
     }
 
+    case kCPUArchitectureLOONG64: {
+      context = std::make_unique<MinidumpContextLOONG64Writer>();
+      reinterpret_cast<MinidumpContextLOONG64Writer*>(context.get())
+          ->InitializeFromSnapshot(context_snapshot->loong64);
+      break;
+    }
+
     default: {
       LOG(ERROR) << "unknown context architecture "
                  << context_snapshot->architecture;
@@ -597,6 +604,45 @@ bool MinidumpContextRISCV64Writer::WriteObject(
 }
 
 size_t MinidumpContextRISCV64Writer::ContextSize() const {
+  DCHECK_GE(state(), kStateFrozen);
+  return sizeof(context_);
+}
+
+MinidumpContextLOONG64Writer::MinidumpContextLOONG64Writer()
+    : MinidumpContextWriter(), context_() {
+  context_.context_flags = kMinidumpContextLOONG64;
+}
+
+MinidumpContextLOONG64Writer::~MinidumpContextLOONG64Writer() = default;
+
+void MinidumpContextLOONG64Writer::InitializeFromSnapshot(
+    const CPUContextLOONG64* context_snapshot) {
+  DCHECK_EQ(state(), kStateMutable);
+  DCHECK_EQ(context_.context_flags, kMinidumpContextLOONG64);
+
+  context_.context_flags = kMinidumpContextLOONG64All;
+
+  static_assert(sizeof(context_.regs) == sizeof(context_snapshot->regs),
+                "GPRs size mismatch");
+  memcpy(context_.regs, context_snapshot->regs, sizeof(context_.regs));
+  context_.csr_era = context_snapshot->csr_era;
+
+  static_assert(sizeof(context_.fpregs) == sizeof(context_snapshot->fpregs),
+                "FPRs size mismatch");
+  memcpy(context_.fpregs.dregs,
+         context_snapshot->fpregs.dregs,
+         sizeof(context_.fpregs.dregs));
+  context_.fcsr = context_snapshot->fcsr;
+  context_.fcc = context_snapshot->fcc;
+}
+
+bool MinidumpContextLOONG64Writer::WriteObject(
+    FileWriterInterface* file_writer) {
+  DCHECK_EQ(state(), kStateWritable);
+  return file_writer->Write(&context_, sizeof(context_));
+}
+
+size_t MinidumpContextLOONG64Writer::ContextSize() const {
   DCHECK_GE(state(), kStateFrozen);
   return sizeof(context_);
 }

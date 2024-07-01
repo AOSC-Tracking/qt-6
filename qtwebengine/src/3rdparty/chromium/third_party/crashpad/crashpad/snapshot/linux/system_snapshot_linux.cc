@@ -207,6 +207,8 @@ CPUArchitecture SystemSnapshotLinux::GetCPUArchitecture() const {
                                     : kCPUArchitectureMIPSEL;
 #elif defined(ARCH_CPU_RISCV64)
   return kCPUArchitectureRISCV64;
+#elif defined(ARCH_CPU_LOONGARCH64)
+  return kCPUArchitectureLOONG64;
 #else
 #error port to your architecture
 #endif
@@ -223,6 +225,9 @@ uint32_t SystemSnapshotLinux::CPURevision() const {
   // Not implementable on MIPS
   return 0;
 #elif defined(ARCH_CPU_RISCV64)
+  // Not implemented
+  return 0;
+#elif defined(ARCH_CPU_LOONGARCH_FAMILY)
   // Not implemented
   return 0;
 #else
@@ -246,6 +251,9 @@ std::string SystemSnapshotLinux::CPUVendor() const {
   // Not implementable on MIPS
   return std::string();
 #elif defined(ARCH_CPU_RISCV64)
+  // Not implemented
+  return std::string();
+#elif defined(ARCH_CPU_LOONGARCH_FAMILY)
   // Not implemented
   return std::string();
 #else
@@ -382,6 +390,9 @@ bool SystemSnapshotLinux::NXEnabled() const {
   // Not implementable on MIPS
   return false;
 #elif defined(ARCH_CPU_RISCV64)
+  // Not implemented
+  return false;
+#elif defined(ARCH_CPU_LOONGARCH_FAMILY)
   // Not implemented
   return false;
 #else

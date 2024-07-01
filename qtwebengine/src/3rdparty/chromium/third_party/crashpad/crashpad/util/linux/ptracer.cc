@@ -429,6 +429,37 @@ bool GetThreadArea64(pid_t tid,
   return true;
 }
 
+#elif defined(ARCH_CPU_LOONGARCH64)
+
+bool GetFloatingPointRegisters64(pid_t tid,
+                                 FloatContext* context,
+                                 bool can_log) {
+  iovec iov;
+  iov.iov_base = context;
+  iov.iov_len = sizeof(*context);
+  if (ptrace(
+          PTRACE_GETREGSET, tid, reinterpret_cast<void*>(NT_PRFPREG), &iov) !=
+      0) {
+    PLOG_IF(ERROR, can_log) << "ptrace";
+    return false;
+  }
+  if (iov.iov_len != sizeof(context->f64)) {
+    LOG_IF(ERROR, can_log) << "Unexpected registers size " << iov.iov_len
+                           << " != " << sizeof(context->f64);
+    return false;
+  }
+  return true;
+}
+
+bool GetThreadArea64(pid_t tid,
+                     const ThreadContext& context,
+                     LinuxVMAddress* address,
+                     bool can_log) {
+  // Thread pointer register
+  *address = context.t64.regs[2];
+  return true;
+}
+
 #else
 #error Port.
 #endif  // ARCH_CPU_X86_FAMILY
@@ -533,7 +564,7 @@ bool Ptracer::GetThreadInfo(pid_t tid, ThreadInfo* info) {
                            can_log_);
   }
 
-#if !defined(ARCH_CPU_RISCV64)
+#if !defined(ARCH_CPU_RISCV64) && !defined(ARCH_CPU_LOONGARCH64)
   return GetGeneralPurposeRegisters32(tid, &info->thread_context, can_log_) &&
          GetFloatingPointRegisters32(tid, &info->float_context, can_log_) &&
          GetThreadArea32(tid,
