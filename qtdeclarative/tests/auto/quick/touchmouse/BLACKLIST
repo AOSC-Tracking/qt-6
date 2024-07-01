@@ -1,0 +1,14 @@
+[buttonOnDelayedPressFlickable]
+windows gcc developer-build
+
+# QTBUG-74517
+[buttonOnFlickable]
+windows gcc developer-build
+
+# QTBUG-74517
+[touchButtonOnFlickable]
+windows gcc developer-build
+
+# QTBUG-118059
+[tapOnDismissiveTopMouseAreaClicksBottomOne]
+opensuse-leap

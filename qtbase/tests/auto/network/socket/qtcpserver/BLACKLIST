@@ -1,0 +1,13 @@
+[listenWhileListening:WithSocks5Proxy]
+linux
+windows
+[ipv6Server:WithoutProxy]
+windows
+osx
+[serverAddress]
+# QTBUG-103056
+qnx
+windows-10
+
+[linkLocal]
+macos arm
