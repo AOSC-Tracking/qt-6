@@ -196,6 +196,7 @@ jumbo_source_set("browser") {
     "//components/services/storage/dom_storage:local_storage_proto",
     "//components/services/storage/public/cpp",
     "//components/services/storage/public/mojom",
+    "//components/spellcheck:buildflags",
     "//components/sqlite_proto",
     "//components/system_media_controls",
     "//components/tracing:startup_tracing",

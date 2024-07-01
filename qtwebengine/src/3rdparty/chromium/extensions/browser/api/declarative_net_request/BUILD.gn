@@ -20,6 +20,7 @@ source_set("declarative_net_request") {
   deps = [
     "//base",
     "//content/public/browser",
+    "//components/web_cache/public/mojom",
     "//extensions/common",
     "//extensions/common/api",
     "//services/preferences/public/cpp",
