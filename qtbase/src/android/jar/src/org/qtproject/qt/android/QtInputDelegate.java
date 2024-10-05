@@ -150,11 +150,11 @@ public class QtInputDelegate implements QtInputConnection.QtInputConnectionListe
             return;
         m_keyboardIsVisible = visibility;
         keyboardVisibilityUpdated(m_keyboardIsVisible);
-
-        // Hiding the keyboard clears the immersive mode, so we need to set it again.
-        if (!visibility)
+        if (!visibility) {
+            // Hiding the keyboard clears the immersive mode, so we need to set it again.
             m_keyboardVisibilityListener.onKeyboardVisibilityChange();
-
+            m_currentEditText.clearFocus();
+        }
     }
 
     @UsedFromNativeCode
@@ -185,6 +185,7 @@ public class QtInputDelegate implements QtInputConnection.QtInputConnectionListe
                 return;
 
             m_currentEditText.setEditTextOptions(enterKeyType, inputHints);
+            m_currentEditText.requestFocus();
 
             m_currentEditText.postDelayed(() -> {
                 m_imm.showSoftInput(m_currentEditText, 0, new ResultReceiver(new Handler()) {

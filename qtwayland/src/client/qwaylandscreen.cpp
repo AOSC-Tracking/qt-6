@@ -105,12 +105,19 @@ QString QWaylandScreen::model() const
 QRect QWaylandScreen::geometry() const
 {
     if (zxdg_output_v1::isInitialized()) {
-        return mXdgGeometry;
-    } else {
-        // Scale geometry for QScreen. This makes window and screen
-        // geometry be in the same coordinate system.
-        return QRect(mGeometry.topLeft(), mGeometry.size() / mScale);
+
+        // Workaround for Gnome bug
+        // https://gitlab.gnome.org/GNOME/mutter/-/issues/2631
+        // which sends an incorrect xdg geometry
+        const bool xdgGeometryIsBogus = mScale > 1 && mXdgGeometry.size() == mGeometry.size();
+
+        if (!xdgGeometryIsBogus) {
+            return mXdgGeometry;
+        }
     }
+    // Scale geometry for QScreen. This makes window and screen
+    // geometry be in the same coordinate system.
+    return QRect(mGeometry.topLeft(), mGeometry.size() / mScale);
 }
 
 int QWaylandScreen::depth() const
@@ -161,16 +168,6 @@ QList<QPlatformScreen *> QWaylandScreen::virtualSiblings() const
         list << placeholder;
 
     return list;
-}
-
-QWindow *QWaylandScreen::topLevelAt(const QPoint & pos) const
-{
-    if (QWaylandWindow::fixedToplevelPositions) {
-        Q_UNUSED(pos);
-        return nullptr;
-    }
-
-    return QPlatformScreen::topLevelAt(pos);
 }
 
 Qt::ScreenOrientation QWaylandScreen::orientation() const
@@ -349,7 +346,7 @@ void QWaylandScreen::zxdg_output_v1_logical_size(int32_t width, int32_t height)
 void QWaylandScreen::zxdg_output_v1_done()
 {
     if (Q_UNLIKELY(mWaylandDisplay->xdgOutputManager()->version() >= 3))
-        qWarning(lcQpaWayland) << "zxdg_output_v1.done received on version 3 or newer, this is most likely a bug in the compositor";
+        qCWarning(lcQpaWayland) << "zxdg_output_v1.done received on version 3 or newer, this is most likely a bug in the compositor";
 
     mProcessedEvents |= XdgOutputDoneEvent;
     if (mInitialized)
@@ -361,7 +358,7 @@ void QWaylandScreen::zxdg_output_v1_done()
 void QWaylandScreen::zxdg_output_v1_name(const QString &name)
 {
     if (Q_UNLIKELY(mInitialized))
-        qWarning(lcQpaWayland) << "zxdg_output_v1.name received after output has been initialized, this is most likely a bug in the compositor";
+        qCWarning(lcQpaWayland) << "zxdg_output_v1.name received after output has been initialized, this is most likely a bug in the compositor";
 
     mOutputName = name;
     mProcessedEvents |= XdgOutputNameEvent;

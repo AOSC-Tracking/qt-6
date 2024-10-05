@@ -14,6 +14,37 @@
 
 #include <array>
 #include <cmath>
+#include <QtCore/qxptype_traits.h>
+
+template <typename T>
+using AdlSwappableTest = decltype(swap(std::declval<T&>(), std::declval<T&>()));
+
+template <typename T>
+constexpr bool q_is_adl_swappable_v = qxp::is_detected_v<AdlSwappableTest, T>;
+
+QT_BEGIN_NAMESPACE
+
+//
+// Check Q_DECLARE_SHARED
+//
+#define MAKE_CLASS(C) \
+    struct C \
+    { \
+        std::string s; \
+        explicit C(std::string s = {}) : s{std::move(s)} {} \
+        void swap(C &other) noexcept { std::swap(s, other.s); } \
+    } \
+    /* end */
+
+MAKE_CLASS(NotQDeclareShared);
+static_assert(!q_is_adl_swappable_v<NotQDeclareShared>);
+
+MAKE_CLASS(Terry); // R.I.P.
+Q_DECLARE_SHARED(Terry)
+
+#undef MAKE_CLASS
+
+QT_END_NAMESPACE
 
 class tst_QGlobal: public QObject
 {
@@ -30,6 +61,8 @@ private slots:
     void qConstructorFunction();
     void qCoreAppStartupFunction();
     void qCoreAppStartupFunctionRestart();
+    void qDeclareSharedMarksTheTypeRelocatable();
+    void qDeclareSharedMakesTheTypeAdlSwappable();
     void integerForSize();
     void int128Literals();
     void buildAbiEndianness();
@@ -48,7 +81,7 @@ extern "C" {        // functions in qglobal.c
 void tst_GlobalTypes();
 int tst_QtVersion();
 const char *tst_qVersion();
-#if QT_SUPPORTS_INT128
+#ifdef QT_SUPPORTS_INT128
 qint128 tst_qint128_min();
 qint128 tst_qint128_max();
 quint128 tst_quint128_max();
@@ -260,7 +293,7 @@ void tst_QGlobal::qtry()
 
 void tst_QGlobal::checkptr()
 {
-    int i;
+    int i = 0;
     QCOMPARE(q_check_ptr(&i), &i);
 
     const char *c = "hello";
@@ -394,6 +427,32 @@ void tst_QGlobal::qCoreAppStartupFunctionRestart()
     qCoreAppStartupFunction();
 }
 
+void tst_QGlobal::qDeclareSharedMarksTheTypeRelocatable()
+{
+    static_assert(!QTypeInfo<QT_PREPEND_NAMESPACE(NotQDeclareShared)>::isRelocatable);
+    static_assert( QTypeInfo<QT_PREPEND_NAMESPACE(Terry)>::isRelocatable);
+}
+
+void tst_QGlobal::qDeclareSharedMakesTheTypeAdlSwappable()
+{
+    static_assert(!q_is_adl_swappable_v<QT_PREPEND_NAMESPACE(NotQDeclareShared)>);
+    static_assert( q_is_adl_swappable_v<QT_PREPEND_NAMESPACE(Terry)>);
+
+    #define CHECK(Class) do { \
+        using C = QT_PREPEND_NAMESPACE(Class); \
+        C lhs("lhs"); \
+        C rhs("rhs"); \
+        QCOMPARE_EQ(lhs.s, "lhs"); \
+        QCOMPARE_EQ(rhs.s, "rhs"); \
+        /* no using std::swap - we're checking whether the ADL swap works */ \
+        swap(lhs, rhs); \
+        QCOMPARE_EQ(lhs.s, "rhs"); \
+        QCOMPARE_EQ(rhs.s, "lhs"); \
+    } while (false)
+    CHECK(Terry);
+    #undef CHECK
+}
+
 struct isEnum_A {
     int n_;
 };
@@ -448,13 +507,25 @@ void tst_QGlobal::integerForSize()
 void tst_QGlobal::int128Literals()
 {
 #ifdef QT_SUPPORTS_INT128
+# if defined(__GLIBCXX__) && defined(__STRICT_ANSI__) && \
+    (_GLIBCXX_RELEASE < 10 || \
+    _GLIBCXX_RELEASE == 10 && __GLIBCXX__ < 20201112L /*gcc commit 8eb9a45e87bdb81cb44948c651edee846c622a0f*/)
+    // -ansi/-std=c++NN instead of gnu++NN
+    // breaks <type_traits> on libstdc++ <= 10.2; fixed in 10.3+
+#   define QTBUG_119901_MAYBE_FAIL QEXPECT_FAIL("", "QTBUG-119901", Continue)
+# else
+#   define QTBUG_119901_MAYBE_FAIL do {} while (false)
+# endif
 #define COMPARE_EQ(lhs, rhs, Expected128) do { \
         constexpr auto lhs_ = lhs; \
         static_assert(std::is_same_v<std::remove_cv_t<decltype(lhs_)>, Expected128>); \
         QCOMPARE_EQ(lhs_, rhs); \
     } while (0)
+    QTBUG_119901_MAYBE_FAIL;
     COMPARE_EQ(Q_INT128_MIN, std::numeric_limits<qint128>::min(), qint128);
+    QTBUG_119901_MAYBE_FAIL;
     COMPARE_EQ(Q_INT128_MAX, std::numeric_limits<qint128>::max(), qint128);
+    QTBUG_119901_MAYBE_FAIL;
     COMPARE_EQ(Q_UINT128_MAX, std::numeric_limits<quint128>::max(), quint128);
     QCOMPARE_EQ(tst_qint128_min(), Q_INT128_MIN);
     QCOMPARE_EQ(tst_qint128_max(), Q_INT128_MAX);
@@ -507,6 +578,7 @@ void tst_QGlobal::int128Literals()
             // the literal, but called on the result of the literal.
             constexpr auto i = Q_INT128_C(-170141183460469231731687303715884105727); // 128-bit MIN + 1
             static_assert(std::is_same_v<decltype(i), const qint128>);
+            QTBUG_119901_MAYBE_FAIL;
             QCOMPARE_EQ(i, std::numeric_limits<qint128>::min() + 1);
         }
         {
@@ -514,7 +586,9 @@ void tst_QGlobal::int128Literals()
             constexpr auto u = Q_UINT128_C(340282366920938463463374607431768211455); // UMAX
             static_assert(std::is_same_v<decltype(i), const qint128>);
             static_assert(std::is_same_v<decltype(u), const quint128>);
+            QTBUG_119901_MAYBE_FAIL;
             QCOMPARE_EQ(i, std::numeric_limits<qint128>::max());
+            QTBUG_119901_MAYBE_FAIL;
             QCOMPARE_EQ(u, std::numeric_limits<quint128>::max());
             QCOMPARE_EQ(u, Q_UINT128_C(-1));
         }
@@ -534,7 +608,9 @@ void tst_QGlobal::int128Literals()
             constexpr auto u = Q_UINT128_C(0b1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111);
             static_assert(std::is_same_v<decltype(i), const qint128>);
             static_assert(std::is_same_v<decltype(u), const quint128>);
+            QTBUG_119901_MAYBE_FAIL;
             QCOMPARE_EQ(i, std::numeric_limits<qint128>::max());
+            QTBUG_119901_MAYBE_FAIL;
             QCOMPARE_EQ(u, std::numeric_limits<quint128>::max());
             QCOMPARE_EQ(u, Q_UINT128_C(-0b1));
         }
@@ -558,7 +634,9 @@ void tst_QGlobal::int128Literals()
             constexpr auto u = Q_UINT128_C(0377'7777'7777'7777'7777'7777'7777'7777'7777'7777'7777);
             static_assert(std::is_same_v<decltype(i), const qint128>);
             static_assert(std::is_same_v<decltype(u), const quint128>);
+            QTBUG_119901_MAYBE_FAIL;
             QCOMPARE_EQ(i, std::numeric_limits<qint128>::max());
+            QTBUG_119901_MAYBE_FAIL;
             QCOMPARE_EQ(u, std::numeric_limits<quint128>::max());
             QCOMPARE_EQ(u, Q_UINT128_C(-01));
         }
@@ -582,12 +660,15 @@ void tst_QGlobal::int128Literals()
             constexpr auto u = Q_UINT128_C(0xFFFF'FFFF'FFFF'FFFF'FFFF'FFFF'FFFF'FFFF);
             static_assert(std::is_same_v<decltype(i), const qint128>);
             static_assert(std::is_same_v<decltype(u), const quint128>);
+            QTBUG_119901_MAYBE_FAIL;
             QCOMPARE_EQ(i, std::numeric_limits<qint128>::max());
+            QTBUG_119901_MAYBE_FAIL;
             QCOMPARE_EQ(u, std::numeric_limits<quint128>::max());
             QCOMPARE_EQ(Q_UINT128_C(-1), u);
         }
     #undef CHECK
     }
+#undef QTBUG_119901_MAYBE_FAIL
 #undef COMPARE_EQ
 #else
     QSKIP("This test requires 128-bit integer support enabled in the compiler.");

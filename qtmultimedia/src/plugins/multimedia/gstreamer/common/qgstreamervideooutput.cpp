@@ -4,7 +4,6 @@
 #include <QtMultimedia/qvideosink.h>
 
 #include <QtCore/qloggingcategory.h>
-#include <QtCore/qthread.h>
 
 #include <common/qgstreamervideooutput_p.h>
 #include <common/qgstreamervideosink_p.h>
@@ -48,7 +47,9 @@ QMaybe<QGstreamerVideoOutput *> QGstreamerVideoOutput::create(QObject *parent)
 
 QGstreamerVideoOutput::QGstreamerVideoOutput(QObject *parent)
     : QObject(parent),
-      m_outputBin(QGstBin::create("videoOutput")),
+      m_outputBin{
+          QGstBin::create("videoOutput"),
+      },
       m_videoQueue{
           QGstElement::createFromFactory("queue", "videoQueue"),
       },
@@ -65,47 +66,59 @@ QGstreamerVideoOutput::QGstreamerVideoOutput(QObject *parent)
     m_outputBin.add(m_videoQueue, m_videoConvertScale, m_videoSink);
     qLinkGstElements(m_videoQueue, m_videoConvertScale, m_videoSink);
 
+    m_subtitleSink = QGstSubtitleSink::createSink(this);
+
     m_outputBin.addGhostPad(m_videoQueue, "sink");
 }
 
 QGstreamerVideoOutput::~QGstreamerVideoOutput()
 {
+    QObject::disconnect(m_subtitleConnection);
     m_outputBin.setStateSync(GST_STATE_NULL);
 }
 
 void QGstreamerVideoOutput::setVideoSink(QVideoSink *sink)
 {
-    auto *gstVideoSink = sink ? static_cast<QGstreamerVideoSink *>(sink->platformVideoSink()) : nullptr;
+    using namespace std::chrono_literals;
+
+    auto *gstVideoSink =
+            sink ? static_cast<QGstreamerVideoSink *>(sink->platformVideoSink()) : nullptr;
     if (gstVideoSink == m_platformVideoSink)
         return;
 
-    if (m_platformVideoSink)
-        m_platformVideoSink->setPipeline({});
-
     m_platformVideoSink = gstVideoSink;
     if (m_platformVideoSink) {
-        m_platformVideoSink->setPipeline(m_pipeline);
+        m_platformVideoSink->setActive(m_isActive);
         if (m_nativeSize.isValid())
             m_platformVideoSink->setNativeSize(m_nativeSize);
     }
-    QGstElement gstSink;
+    QGstElement videoSink;
     if (m_platformVideoSink) {
-        gstSink = m_platformVideoSink->gstSink();
+        videoSink = m_platformVideoSink->gstSink();
     } else {
-        gstSink = QGstElement::createFromFactory("fakesink", "fakevideosink");
-        Q_ASSERT(gstSink);
-        gstSink.set("sync", true);
-        gstSink.set("async", false); // no asynchronous state changes
+        videoSink = QGstElement::createFromFactory("fakesink", "fakevideosink");
+        Q_ASSERT(videoSink);
+        videoSink.set("sync", true);
+        videoSink.set("async", false); // no asynchronous state changes
     }
 
-    if (m_videoSink == gstSink)
+    QObject::disconnect(m_subtitleConnection);
+    if (sink) {
+        m_subtitleConnection = QObject::connect(this, &QGstreamerVideoOutput::subtitleChanged, sink,
+                                                [sink](const QString &subtitle) {
+            sink->setSubtitleText(subtitle);
+        });
+        sink->setSubtitleText(m_lastSubtitleString);
+    }
+
+    if (m_videoSink == videoSink)
         return;
 
-    m_pipeline.modifyPipelineWhileNotRunning([&] {
-        if (!m_videoSink.isNull())
+    m_videoConvertScale.src().modifyPipelineInIdleProbe([&] {
+        if (m_videoSink)
             m_outputBin.stopAndRemoveElements(m_videoSink);
 
-        m_videoSink = gstSink;
+        m_videoSink = std::move(videoSink);
         m_outputBin.add(m_videoSink);
 
         qLinkGstElements(m_videoConvertScale, m_videoSink);
@@ -113,64 +126,20 @@ void QGstreamerVideoOutput::setVideoSink(QVideoSink *sink)
         GstEvent *event = gst_event_new_reconfigure();
         gst_element_send_event(m_videoSink.element(), event);
         m_videoSink.syncStateWithParent();
-
-        doLinkSubtitleStream();
     });
 
-    qCDebug(qLcMediaVideoOutput) << "sinkChanged" << gstSink.name();
-
-    m_pipeline.dumpGraph(m_videoSink.name().constData());
+    qCDebug(qLcMediaVideoOutput) << "sinkChanged" << m_videoSink.name();
+    m_videoConvertScale.dumpPipelineGraph(m_videoSink.name().constData());
 }
 
-void QGstreamerVideoOutput::setPipeline(const QGstPipeline &pipeline)
+void QGstreamerVideoOutput::setActive(bool isActive)
 {
-    m_pipeline = pipeline;
+    if (m_isActive == isActive)
+        return;
+
+    m_isActive = isActive;
     if (m_platformVideoSink)
-        m_platformVideoSink->setPipeline(m_pipeline);
-}
-
-void QGstreamerVideoOutput::linkSubtitleStream(QGstElement src)
-{
-    qCDebug(qLcMediaVideoOutput) << "link subtitle stream" << src.isNull();
-    if (src == m_subtitleSrc)
-        return;
-
-    m_pipeline.modifyPipelineWhileNotRunning([&] {
-        m_subtitleSrc = src;
-        doLinkSubtitleStream();
-    });
-}
-
-void QGstreamerVideoOutput::unlinkSubtitleStream()
-{
-    if (m_subtitleSrc.isNull())
-        return;
-    qCDebug(qLcMediaVideoOutput) << "unlink subtitle stream";
-    m_subtitleSrc = {};
-    if (!m_subtitleSink.isNull()) {
-        m_pipeline.modifyPipelineWhileNotRunning([&] {
-            m_pipeline.stopAndRemoveElements(m_subtitleSink);
-            return;
-        });
-        m_subtitleSink = {};
-    }
-    if (m_platformVideoSink)
-        m_platformVideoSink->setSubtitleText({});
-}
-
-void QGstreamerVideoOutput::doLinkSubtitleStream()
-{
-    if (!m_subtitleSink.isNull()) {
-        m_pipeline.stopAndRemoveElements(m_subtitleSink);
-        m_subtitleSink = {};
-    }
-    if (!m_platformVideoSink || m_subtitleSrc.isNull())
-        return;
-    if (m_subtitleSink.isNull()) {
-        m_subtitleSink = m_platformVideoSink->subtitleSink();
-        m_pipeline.add(m_subtitleSink);
-    }
-    qLinkGstElements(m_subtitleSrc, m_subtitleSink);
+        m_platformVideoSink->setActive(isActive);
 }
 
 void QGstreamerVideoOutput::updateNativeSize()
@@ -213,6 +182,16 @@ void QGstreamerVideoOutput::setRotation(QtVideo::Rotation rot)
 {
     m_rotation = rot;
     updateNativeSize();
+}
+
+void QGstreamerVideoOutput::updateSubtitle(QString string)
+{
+    // GStreamer thread
+
+    QMetaObject::invokeMethod(this, [this, string = std::move(string)]() mutable {
+        m_lastSubtitleString = string;
+        Q_EMIT subtitleChanged(std::move(string));
+    });
 }
 
 QT_END_NAMESPACE

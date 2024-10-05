@@ -2469,7 +2469,7 @@ QRhiColorAttachment::QRhiColorAttachment(QRhiRenderBuffer *renderBuffer)
     renderbuffer as depth/stencil to enable depth testing:
 
     \code
-        QRhiTexture *texture = rhi->newTexture(QRhiTexture::RGBA8, QSize(512, 512), 1. QRhiTexture::RenderTarget);
+        QRhiTexture *texture = rhi->newTexture(QRhiTexture::RGBA8, QSize(512, 512), 1, QRhiTexture::RenderTarget);
         texture->create();
         QRhiRenderBuffer *depthStencil = rhi->newRenderBuffer(QRhiRenderBuffer::DepthStencil, QSize(512, 512));
         depthStencil->create();
@@ -3817,7 +3817,7 @@ QRhiResource::Type QRhiBuffer::resourceType() const
  */
 QRhiBuffer::NativeBuffer QRhiBuffer::nativeBuffer()
 {
-    return {};
+    return { {}, 0 };
 }
 
 /*!
@@ -4883,7 +4883,8 @@ QRhiResource::Type QRhiSwapChainRenderTarget::resourceType() const
 
     For multisample rendering the common approach is to use a renderbuffer as
     the color attachment and set the non-multisample destination texture as the
-    \c{resolve texture}.
+    \c{resolve texture}. For more information, read the detailed description of
+    the \l QRhiColorAttachment class.
 
     \note Textures used in combination with QRhiTextureRenderTarget must be
     created with the QRhiTexture::RenderTarget flag.
@@ -8247,7 +8248,8 @@ void QRhiImplementation::prepareForCreate(QRhi *rhi, QRhi::Implementation impl, 
 
 /*!
     \return a new QRhi instance with a backend for the graphics API specified
-    by \a impl with the specified \a flags.
+    by \a impl with the specified \a flags. \return \c nullptr if the
+    function fails.
 
     \a params must point to an instance of one of the backend-specific
     subclasses of QRhiInitParams, such as, QRhiVulkanInitParams,

@@ -89,21 +89,6 @@ abstract class QtActivityDelegateBase
         return m_contextMenuVisible;
     }
 
-    public boolean updateActivityAfterRestart(Activity activity) {
-        try {
-            // set new activity
-            m_activity = activity;
-            QtNative.setActivity(m_activity);
-
-            // force c++ native activity object to update
-            return QtNative.updateNativeActivity();
-        } catch (Exception e) {
-            Log.w(QtNative.QtTAG, "Failed to update the activity.");
-            e.printStackTrace();
-            return false;
-        }
-    }
-
     public void startNativeApplication(String appParams, String mainLib)
     {
         if (m_membersInitialized)
@@ -133,26 +118,6 @@ abstract class QtActivityDelegateBase
         }
 
         setUpLayout();
-    }
-
-    protected void registerGlobalFocusChangeListener(final View view) {
-        view.getViewTreeObserver().addOnGlobalFocusChangeListener(this::onGlobalFocusChanged);
-    }
-
-    private void onGlobalFocusChanged(View oldFocus, View newFocus) {
-        if (newFocus instanceof QtEditText) {
-            final QtWindow newWindow = (QtWindow) newFocus.getParent();
-            QtWindow.windowFocusChanged(true, newWindow.getId());
-            m_inputDelegate.setFocusedView((QtEditText) newFocus);
-        } else {
-            int id = -1;
-            if (oldFocus instanceof QtEditText) {
-                final QtWindow oldWindow = (QtWindow) oldFocus.getParent();
-                id = oldWindow.getId();
-            }
-            QtWindow.windowFocusChanged(false, id);
-            m_inputDelegate.setFocusedView(null);
-        }
     }
 
     public void hideSplashScreen()

@@ -415,7 +415,7 @@ void tst_QDir::mkdirOnSymlink()
 
     // create our structure:
     dir.mkpath("two/three");
-    ::symlink("two/three", "symlink");
+    QCOMPARE(::symlink("two/three", "symlink"), 0);
 
     // try it:
     QString path = "symlink/../four/five";
@@ -2260,6 +2260,8 @@ void tst_QDir::equalityOperator_data()
     QString pathinroot("/system/..");
 #elif defined(Q_OS_HAIKU)
     QString pathinroot("/boot/..");
+#elif defined(Q_OS_VXWORKS)
+    QString pathinroot("/tmp/..");
 #else
     QString pathinroot("/usr/..");
 #endif

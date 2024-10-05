@@ -715,7 +715,11 @@ void tst_QByteArray::qvsnprintf()
 
 #ifndef Q_OS_WIN
     memset(buf, 42, sizeof(buf));
+    QT_WARNING_PUSH
+    QT_WARNING_DISABLE_GCC("-Wformat-zero-length")
+    QT_WARNING_DISABLE_CLANG("-Wformat-zero-length")
     QCOMPARE(::qsnprintf(buf, 10, ""), 0);
+    QT_WARNING_POP
 #endif
 }
 
@@ -1016,6 +1020,11 @@ void tst_QByteArray::assign()
         QByteArrayView test;
 
         QList<char> l = {'\0', 'T', 'E', 'S', 'T'};
+
+        ba.assign(l.begin(), l.begin());
+        QVERIFY(ba.isEmpty());
+        QCOMPARE(*ba.constData(), '\0');
+
         ba.assign(l.begin(), l.end());
         test = "\0TEST"_ba;
         QCOMPARE(ba, test);
@@ -1032,6 +1041,10 @@ void tst_QByteArray::assign()
         test = "T\0ST"_ba;
         QCOMPARE(ba, test);
         QCOMPARE(ba.size(), test.size());
+
+        ba.assign(l.begin(), l.begin());
+        QVERIFY(ba.isEmpty());
+        QCOMPARE(*ba.constData(), '\0');
     }
     // Test chaining
     {
@@ -1521,7 +1534,8 @@ void tst_QByteArray::number_double()
     QFETCH(char, format);
     QFETCH(int, precision);
 
-    if constexpr (std::numeric_limits<double>::has_denorm != std::denorm_present) {
+    QT_IGNORE_DEPRECATIONS(constexpr bool has_denorm = std::numeric_limits<double>::has_denorm != std::denorm_present;)
+    if constexpr (has_denorm) {
         if (::qstrcmp(QTest::currentDataTag(), "Very small number, very high precision, format 'f', precision 350") == 0) {
             QSKIP("Skipping 'denorm' as this type lacks denormals on this system");
         }

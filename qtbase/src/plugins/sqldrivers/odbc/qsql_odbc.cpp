@@ -429,16 +429,15 @@ static QVariant getStringDataImpl(SQLHANDLE hStmt, SQLUSMALLINT column, qsizetyp
             // if SQL_SUCCESS_WITH_INFO is returned, indicating that
             // more data can be fetched, the length indicator does NOT
             // contain the number of bytes returned - it contains the
-            // total number of bytes that CAN be fetched
+            // total number of bytes that were transferred to our buffer
             const qsizetype rSize = (r == SQL_SUCCESS_WITH_INFO)
                     ? buf.size()
                     : qsizetype(lengthIndicator / sizeof(CT));
             fieldVal += fromSQLTCHAR<QVarLengthArray<CT>, sizeof(CT)>(buf, rSize);
-            // lengthIndicator does not contain the termination character
-            if (lengthIndicator < SQLLEN((buf.size() - 1) * sizeof(CT))) {
-                // workaround for Drivermanagers that don't return SQL_NO_DATA
+            // when we got SQL_SUCCESS_WITH_INFO then there is more data to fetch,
+            // otherwise we are done
+            if (r == SQL_SUCCESS)
                 break;
-            }
         } else if (r == SQL_NO_DATA) {
             break;
         } else {
@@ -960,22 +959,22 @@ bool QODBCResult::reset (const QString& query)
 
     d->updateStmtHandleState();
 
-    if (isForwardOnly()) {
-        r = SQLSetStmtAttr(d->hStmt,
-                            SQL_ATTR_CURSOR_TYPE,
-                            (SQLPOINTER)SQL_CURSOR_FORWARD_ONLY,
-                            SQL_IS_UINTEGER);
-    } else {
-        r = SQLSetStmtAttr(d->hStmt,
-                            SQL_ATTR_CURSOR_TYPE,
-                            (SQLPOINTER)SQL_CURSOR_STATIC,
-                            SQL_IS_UINTEGER);
-    }
-    if (r != SQL_SUCCESS && r != SQL_SUCCESS_WITH_INFO) {
-        setLastError(qMakeError(QCoreApplication::translate("QODBCResult",
-            "QODBCResult::reset: Unable to set 'SQL_CURSOR_STATIC' as statement attribute. "
-            "Please check your ODBC driver configuration"), QSqlError::StatementError, d));
-        return false;
+    // ODBCv3 version of setting a forward-only query
+    uint64_t sqlStmtVal = isForwardOnly() ? SQL_NONSCROLLABLE : SQL_SCROLLABLE;
+    r = SQLSetStmtAttr(d->hStmt, SQL_ATTR_CURSOR_SCROLLABLE, SQLPOINTER(sqlStmtVal), SQL_IS_UINTEGER);
+    if (!SQL_SUCCEEDED(r)) {
+        // ODBCv2 version of setting a forward-only query
+        sqlStmtVal = isForwardOnly() ? SQL_CURSOR_FORWARD_ONLY : SQL_CURSOR_STATIC;
+        r = SQLSetStmtAttr(d->hStmt, SQL_ATTR_CURSOR_TYPE, SQLPOINTER(sqlStmtVal), SQL_IS_UINTEGER);
+        if (!SQL_SUCCEEDED(r)) {
+            setLastError(qMakeError(
+                    QCoreApplication::translate("QODBCResult",
+                                                "QODBCResult::reset: Unable to set 'SQL_ATTR_CURSOR_TYPE' "
+                                                "as statement attribute. "
+                                                "Please check your ODBC driver configuration"),
+                    QSqlError::StatementError, d));
+            return false;
+        }
     }
 
     {

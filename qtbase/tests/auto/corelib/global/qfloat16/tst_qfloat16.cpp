@@ -214,7 +214,7 @@ void tst_qfloat16::ordering()
         CHECK_INT(qint16);
         CHECK_INT(qint32);
         CHECK_INT(qint64);
-#if QT_SUPPORTS_INT128
+#ifdef QT_SUPPORTS_INT128
         CHECK_INT(qint128);
 #endif
         if (right >= 0) {
@@ -224,7 +224,7 @@ void tst_qfloat16::ordering()
             CHECK_INT(quint16);
             CHECK_INT(quint32);
             CHECK_INT(quint64);
-    #if QT_SUPPORTS_INT128
+    #ifdef QT_SUPPORTS_INT128
             CHECK_INT(quint128);
     #endif
         }
@@ -723,12 +723,16 @@ void tst_qfloat16::properties()
 #if QT_CONFIG(signaling_nan)
     QVERIFY(Bounds::has_signaling_NaN);
 #endif
+    QT_WARNING_PUSH
+    QT_WARNING_DISABLE_DEPRECATED // has_denorm is deprecated in C++23
 #if !defined(Q_CC_GHS)
     QCOMPARE(Bounds::has_denorm, std::denorm_present);
 #else
     // For GHS compiler the "denorm_indeterminite" is the expected return value.
     QCOMPARE(Bounds::has_denorm, std::denorm_indeterminate);
 #endif // Q_CC_GHS
+    QT_WARNING_POP
+
     QCOMPARE(Bounds::round_style, std::round_to_nearest);
     QCOMPARE(Bounds::radix, 2);
     // Untested: has_denorm_loss

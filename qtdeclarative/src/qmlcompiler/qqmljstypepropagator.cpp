@@ -526,7 +526,7 @@ bool QQmlJSTypePropagator::isCallingProperty(QQmlJSScope::ConstPtr scope, const 
         }
     } else if (m_typeResolver->equals(property.type(), m_typeResolver->varType())) {
         errorType =
-                u"a variant property. It may or may not be a method. Use a regular function instead."_s;
+                u"a var property. It may or may not be a method. Use a regular function instead."_s;
     } else if (m_typeResolver->equals(property.type(), m_typeResolver->jsValueType())) {
         errorType =
                 u"a QJSValue property. It may or may not be a method. Use a regular Q_INVOKABLE instead."_s;
@@ -566,8 +566,7 @@ void QQmlJSTypePropagator::generate_LoadQmlContextPropertyLookup(int index)
         return;
     }
 
-    const QQmlJSScope::ConstPtr outStored
-            = m_typeResolver->genericType(m_state.accumulatorOut().storedType());
+    const QQmlJSScope::ConstPtr outStored = m_state.accumulatorOut().storedType();
 
     if (outStored.isNull()) {
         // It should really be valid.
@@ -577,7 +576,7 @@ void QQmlJSTypePropagator::generate_LoadQmlContextPropertyLookup(int index)
     }
 
     if (m_state.accumulatorOut().variant() == QQmlJSRegisterContent::ObjectById
-            && !outStored->isReferenceType()) {
+            && !m_typeResolver->genericType(outStored)->isReferenceType()) {
         setError(u"Cannot retrieve a non-object type by ID: "_s + name);
         return;
     }
@@ -1557,10 +1556,6 @@ bool QQmlJSTypePropagator::propagateArrayMethod(
     const auto valueContained = baseContained->valueType();
     const auto valueType = m_typeResolver->globalType(valueContained);
 
-    const bool canHaveSideEffects = (baseType.isProperty() && baseType.isWritable())
-            || baseContained->isListProperty()
-            || baseType.isConversion();
-
     const auto setReturnType = [&](const QQmlJSScope::ConstPtr type) {
         setAccumulator(m_typeResolver->returnType(
                 type, QQmlJSRegisterContent::MethodReturnValue, baseContained));
@@ -1575,7 +1570,7 @@ bool QQmlJSTypePropagator::propagateArrayMethod(
         for (int i = 0; i < argc; ++i)
             addReadRegister(argv + i, intType);
 
-        m_state.setHasSideEffects(canHaveSideEffects);
+        m_state.setHasSideEffects(true);
         setReturnType(baseContained);
         return true;
     }
@@ -1594,7 +1589,7 @@ bool QQmlJSTypePropagator::propagateArrayMethod(
         for (int i = 1; i < argc; ++i)
             addReadRegister(argv + i, intType);
 
-        m_state.setHasSideEffects(canHaveSideEffects);
+        m_state.setHasSideEffects(true);
         setReturnType(baseContained);
         return true;
     }
@@ -1626,7 +1621,7 @@ bool QQmlJSTypePropagator::propagateArrayMethod(
     }
 
     if ((name == u"pop" || name == u"shift") && argc == 0) {
-        m_state.setHasSideEffects(canHaveSideEffects);
+        m_state.setHasSideEffects(true);
         setReturnType(valueContained);
         return true;
     }
@@ -1640,13 +1635,13 @@ bool QQmlJSTypePropagator::propagateArrayMethod(
         for (int i = 0; i < argc; ++i)
             addReadRegister(argv + i, valueType);
 
-        m_state.setHasSideEffects(canHaveSideEffects);
+        m_state.setHasSideEffects(true);
         setReturnType(m_typeResolver->int32Type());
         return true;
     }
 
     if (name == u"reverse" && argc == 0) {
-        m_state.setHasSideEffects(canHaveSideEffects);
+        m_state.setHasSideEffects(true);
         setReturnType(baseContained);
         return true;
     }
@@ -1683,7 +1678,7 @@ bool QQmlJSTypePropagator::propagateArrayMethod(
         for (int i = 2; i < argc; ++i)
             addReadRegister(argv + i, valueType);
 
-        m_state.setHasSideEffects(canHaveSideEffects);
+        m_state.setHasSideEffects(true);
         setReturnType(baseContained);
         return true;
     }

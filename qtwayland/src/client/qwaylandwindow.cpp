@@ -1157,8 +1157,10 @@ QWaylandWindow *QWaylandWindow::guessTransientParent() const
             return mTopPopup;
     }
 
-    if (window()->type() == Qt::ToolTip || window()->type() == Qt::Popup)
-        return display()->lastInputWindow();
+    if (window()->type() == Qt::ToolTip || window()->type() == Qt::Popup) {
+        if (auto lastInputWindow = display()->lastInputWindow())
+            return closestShellSurfaceWindow(lastInputWindow->window());
+    }
 
     return nullptr;
 }
@@ -1405,7 +1407,7 @@ void QWaylandWindow::handleScreensChanged()
 {
     QPlatformScreen *newScreen = calculateScreenFromSurfaceEvents();
 
-    if (newScreen->screen() == window()->screen())
+    if (!newScreen || newScreen->screen() == window()->screen())
         return;
 
     QWindowSystemInterface::handleWindowScreenChanged(window(), newScreen->QPlatformScreen::screen());

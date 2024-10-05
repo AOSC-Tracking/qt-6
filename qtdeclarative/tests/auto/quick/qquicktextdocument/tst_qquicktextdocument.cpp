@@ -16,6 +16,7 @@
 #include <QtQml/QQmlComponent>
 #include <QtQml/QQmlEngine>
 #include <QtQml/QQmlFile>
+#include <QtQuickTest/QtQuickTest>
 #include <QtQuickTestUtils/private/qmlutils_p.h>
 #include <QtQuickTestUtils/private/viewtestutils_p.h>
 #ifdef Q_OS_UNIX
@@ -39,12 +40,15 @@ private:
 private slots:
     void textDocumentWriter();
     void customDocument();
+    void replaceDocument();
     void sourceAndSave_data();
     void sourceAndSave();
     void loadErrorNoSuchFile();
     void loadErrorPermissionDenied();
     void overrideTextFormat_data();
     void overrideTextFormat();
+    void changeCharFormatInRange_data();
+    void changeCharFormatInRange();
     void independentDocumentsSameSource_data();
     void independentDocumentsSameSource();
 };
@@ -195,6 +199,45 @@ void tst_qquicktextdocument::customDocument()
     }
     QVERIFY(foundImage);
     QCOMPARE(fragmentCount, 2);
+}
+
+/*! \internal
+    Verify that it's OK to replace the default QTextDocument that TextEdit creates
+    with a user-created QTextDocument that has different text in it, and that
+    interactive editing continues to function afterwards, independently of
+    the previous document.
+*/
+void tst_qquicktextdocument::replaceDocument() // QTBUG-126267
+{
+    QQuickView window;
+    QVERIFY(QQuickTest::showView(window, testFileUrl("initialText.qml")));
+    QQuickTextEdit *textEdit = qobject_cast<QQuickTextEdit *>(window.rootObject());
+    QVERIFY(textEdit);
+    auto *textEditPriv = QQuickTextEditPrivate::get(textEdit);
+    QVERIFY(textEditPriv->ownsDocument);
+    QQuickTextDocument *quickDocument = textEdit->property("textDocument").value<QQuickTextDocument*>();
+    QVERIFY(quickDocument);
+    QPointer<QTextDocument> defaultDocument(quickDocument->textDocument());
+
+    QTextDocument replacementDoc;
+    const QString replacementText("Hello World");
+    {
+        QTextCursor cursor(&replacementDoc);
+        cursor.insertText(replacementText);
+    }
+    QCOMPARE(textEdit->text(), "Hello Qt");
+    QSignalSpy renderSpy(&window, &QQuickWindow::afterRendering);
+    quickDocument->setTextDocument(&replacementDoc);
+    QVERIFY(defaultDocument.isNull()); // deleted because of being replaced (don't leak)
+    QCOMPARE(textEditPriv->ownsDocument, false);
+    QCOMPARE(textEdit->text(), replacementText);
+    QCOMPARE(replacementDoc.toPlainText(), replacementText);
+    QTRY_COMPARE_GT(renderSpy.size(), 0);
+
+    QCOMPARE(window.activeFocusItem(), textEdit);
+    QTest::keyEvent(QTest::KeyAction::Click, &window, Qt::Key_End);
+    QTest::keyEvent(QTest::KeyAction::Click, &window, '!');
+    QCOMPARE(textEdit->text(), replacementText + '!');
 }
 
 void tst_qquicktextdocument::sourceAndSave_data()
@@ -532,6 +575,52 @@ void tst_qquicktextdocument::overrideTextFormat() // QTBUG-120772
     qCDebug(lcTests) << "expect text()" << textPropValue.first(qMin(20, textPropValue.size() - 1))
                      << "to start with" << expectedFinalPrefix;
     QVERIFY(textPropValue.startsWith(expectedFinalPrefix));
+}
+
+void tst_qquicktextdocument::changeCharFormatInRange_data()
+{
+    QTest::addColumn<bool>("editBlock");
+
+    QTest::newRow("begin/end") << true;
+    QTest::newRow("no edit block") << false; // QTBUG-126886 : don't crash
+}
+
+void tst_qquicktextdocument::changeCharFormatInRange()
+{
+    QFETCH(bool, editBlock);
+    QQuickView window;
+    QVERIFY(QQuickTest::showView(window, testFileUrl("initialText.qml")));
+    QQuickTextEdit *textEdit = qobject_cast<QQuickTextEdit *>(window.rootObject());
+    QVERIFY(textEdit);
+    QVERIFY(textEdit->textDocument());
+    auto *doc = textEdit->textDocument()->textDocument();
+    QVERIFY(doc);
+
+    QSignalSpy contentSpy(doc, &QTextDocument::contentsChanged);
+    const auto data = QStringLiteral("Format String");
+    doc->setPlainText(data);
+    auto block = doc->findBlockByNumber(0);
+
+    auto formatText = [block, data] {
+         QTextLayout::FormatRange formatText;
+         formatText.start = 0;
+         formatText.length = data.size();
+         formatText.format.setForeground(Qt::green);
+         block.layout()->setFormats({formatText});
+    };
+
+    // change the char format of this block, and verify visual effect
+    if (editBlock) {
+        QTextCursor cursor(doc);
+        cursor.beginEditBlock();
+        formatText();
+        cursor.endEditBlock();
+    } else {
+        formatText();
+    }
+
+    QVERIFY(QQuickTest::qWaitForPolish(textEdit));
+    QCOMPARE(contentSpy.size(), editBlock ? 2 : 1);
 }
 
 void tst_qquicktextdocument::independentDocumentsSameSource_data()

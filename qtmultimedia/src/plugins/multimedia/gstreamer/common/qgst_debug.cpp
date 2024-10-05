@@ -290,6 +290,37 @@ QDebug operator<<(QDebug dbg, const GstMessage *msg)
         break;
     }
 
+    case GST_MESSAGE_BUFFERING: {
+        int progress = 0;
+        gst_message_parse_buffering(const_cast<GstMessage *>(msg), &progress);
+
+        dbg << ", Buffering: " << progress << "%";
+        break;
+    }
+
+    case GST_MESSAGE_SEGMENT_START: {
+        gint64 pos;
+        GstFormat fmt{};
+        gst_message_parse_segment_start(const_cast<GstMessage *>(msg), &fmt, &pos);
+
+        switch (fmt) {
+        case GST_FORMAT_TIME: {
+            dbg << ", Position: " << std::chrono::nanoseconds{ pos };
+            break;
+        }
+        case GST_FORMAT_BYTES: {
+            dbg << ", Position: " << pos << "Bytes";
+            break;
+        }
+        default: {
+            dbg << ", Position: " << pos;
+            break;
+        }
+        }
+
+        break;
+    }
+
     default:
         break;
     }
@@ -298,7 +329,11 @@ QDebug operator<<(QDebug dbg, const GstMessage *msg)
 
 QDebug operator<<(QDebug dbg, const GstTagList *tagList)
 {
-    dbg << QGString{ gst_tag_list_to_string(tagList) };
+    if (tagList)
+        dbg << QGString{ gst_tag_list_to_string(tagList) };
+    else
+        dbg << "NULL";
+
     return dbg;
 }
 
@@ -326,15 +361,15 @@ QDebug operator<<(QDebug dbg, const GstPadTemplate *padTemplate)
 
 QDebug operator<<(QDebug dbg, const GstStreamCollection *streamCollection)
 {
-    GstStreamCollection *collection = const_cast<GstStreamCollection *>(streamCollection);
-    guint size = gst_stream_collection_get_size(collection);
+    QDebugStateSaver saver(dbg);
+    dbg.nospace();
 
+    GstStreamCollection *collection = const_cast<GstStreamCollection *>(streamCollection);
     dbg << "Stream Collection: {";
-    for (guint index = 0; index != size; ++index) {
-        dbg << gst_stream_collection_get_stream(collection, index);
-        if (index + 1 != size)
-            dbg << ", ";
-    }
+
+    qForeachStreamInCollection(collection, [&](GstStream *stream) {
+        dbg << stream << ", ";
+    });
 
     dbg << "}";
     return dbg;
@@ -344,26 +379,10 @@ QDebug operator<<(QDebug dbg, const GstStream *cstream)
 {
     GstStream *stream = const_cast<GstStream *>(cstream);
 
-    dbg << "GstStream { ";
-    dbg << "Type: " << gst_stream_type_get_name(gst_stream_get_stream_type(stream));
+    QDebugStateSaver saver(dbg);
+    dbg.nospace();
 
-    QGstTagListHandle tagList{
-        gst_stream_get_tags(stream),
-        QGstTagListHandle::HasRef,
-    };
-
-    if (tagList)
-        dbg << ", Tags: " << tagList;
-
-    QGstCaps caps{
-        gst_stream_get_caps(stream),
-        QGstCaps::HasRef,
-    };
-
-    if (caps)
-        dbg << ", Caps: " << caps;
-
-    dbg << "}";
+    dbg << gst_stream_get_stream_id(stream) << " (" << gst_stream_get_stream_type(stream) << ")";
 
     return dbg;
 }
@@ -421,6 +440,12 @@ QDebug operator<<(QDebug dbg, GstStreamStatusType type)
 }
 
 #undef ADD_ENUM_SWITCH
+
+QDebug operator<<(QDebug dbg, GstStreamType streamType)
+{
+    dbg << gst_stream_type_get_name(streamType);
+    return dbg;
+}
 
 QDebug operator<<(QDebug dbg, const GValue *value)
 {

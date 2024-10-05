@@ -504,11 +504,13 @@ public:
             return *this;
         } else if constexpr (QtPrivate::IsCompatibleChar8Type<V>::value) {
             assign_helper_char8(first, last);
-            d.data()[d.size] = u'\0';
+            if (d.constAllocatedCapacity())
+                d.data()[d.size] = u'\0';
             return *this;
         } else {
             d.assign(first, last, [](QChar ch) -> char16_t { return ch.unicode(); });
-            d.data()[d.size] = u'\0';
+            if (d.constAllocatedCapacity())
+                d.data()[d.size] = u'\0';
             return *this;
         }
     }
@@ -1154,7 +1156,7 @@ QString QAnyStringView::toString() const
 // QString inline members
 //
 QString::QString(QLatin1StringView latin1)
-{ *this = QString::fromLatin1(latin1.data(), latin1.size()); }
+    : QString{QString::fromLatin1(latin1.data(), latin1.size())} {}
 const QChar QString::at(qsizetype i) const
 { verify(i, 1); return QChar(d.data()[i]); }
 const QChar QString::operator[](qsizetype i) const

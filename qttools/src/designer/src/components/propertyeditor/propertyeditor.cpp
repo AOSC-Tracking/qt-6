@@ -44,6 +44,7 @@
 
 #include <QtCore/qdebug.h>
 #include <QtCore/qtextstream.h>
+#include <QtCore/qtimezone.h>
 
 enum SettingsView { TreeView, ButtonView };
 
@@ -844,6 +845,9 @@ static const char *typeName(int type)
         return "invalid";
     if (type == QMetaType::User)
         return "user type";
+    const auto metaType = QMetaType(type);
+    if (metaType.isValid())
+        return metaType.name();
     return nullptr;
 }
 
@@ -853,7 +857,7 @@ static QString msgUnsupportedType(const QString &propertyName, int type)
     QTextStream str(&rc);
     const char *typeS = typeName(type);
     str << "The property \"" << propertyName << "\" of type ("
-        << (typeS ? typeS : "unknown") << ") is not supported yet!";
+        << (typeS ? typeS : "unknown") << ") is not supported yet.";
     return rc;
 }
 
@@ -1078,7 +1082,10 @@ void PropertyEditor::setObject(QObject *object)
                     }
                 }
             } else {
-                qWarning("%s", qPrintable(msgUnsupportedType(propertyName, type)));
+                // QTBUG-80417, suppress warning for QDateEdit::timeZone
+                const int typeId = value.typeId();
+                if (typeId != qMetaTypeId<QTimeZone>())
+                    qWarning("%s", qPrintable(msgUnsupportedType(propertyName, type)));
             }
         }
     }

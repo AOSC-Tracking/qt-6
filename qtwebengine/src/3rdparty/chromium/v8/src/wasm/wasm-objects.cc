@@ -1664,7 +1664,7 @@ void WasmInstanceObject::ImportWasmJSFunctionIntoTable(
                                                  expected_arity, suspend);
       std::unique_ptr<wasm::WasmCode> compiled_code = native_module->AddCode(
           result.func_index, result.code_desc, result.frame_slot_count,
-          result.tagged_parameter_slots,
+          result.ool_spill_count, result.tagged_parameter_slots,
           result.protected_instructions_data.as_vector(),
           result.source_positions.as_vector(), GetCodeKind(result),
           wasm::ExecutionTier::kNone, wasm::kNotForDebugging);
@@ -1822,7 +1822,8 @@ void WasmArray::SetTaggedElement(uint32_t index, Handle<Object> value,
 Handle<WasmTagObject> WasmTagObject::New(Isolate* isolate,
                                          const wasm::FunctionSig* sig,
                                          uint32_t canonical_type_index,
-                                         Handle<HeapObject> tag) {
+                                         Handle<HeapObject> tag,
+                                         Handle<HeapObject> instance) {
   Handle<JSFunction> tag_cons(isolate->native_context()->wasm_tag_constructor(),
                               isolate);
 
@@ -1843,6 +1844,7 @@ Handle<WasmTagObject> WasmTagObject::New(Isolate* isolate,
   tag_wrapper->set_serialized_signature(*serialized_sig);
   tag_wrapper->set_canonical_type_index(canonical_type_index);
   tag_wrapper->set_tag(*tag);
+  tag_wrapper->set_instance(*instance);
 
   return tag_wrapper;
 }

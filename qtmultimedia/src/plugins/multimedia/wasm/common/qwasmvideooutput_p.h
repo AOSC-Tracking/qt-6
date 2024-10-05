@@ -83,12 +83,14 @@ public:
     bool isCameraReady() { return m_cameraIsReady; }
     bool m_hasVideoFrame = false;
 
-    static void videoFrameCallback(emscripten::val now, emscripten::val metadata);
+    void videoFrameCallback(void *context);
     void videoFrameTimerCallback();
     // mediacapturesession has the videosink
     QVideoSink *m_wasmSink = nullptr;
 
     emscripten::val currentVideoElement() { return m_video; }
+
+    std::string m_videoSurfaceId;
 
 Q_SIGNALS:
     void readyChanged(bool);
@@ -100,6 +102,7 @@ Q_SIGNALS:
     void statusChanged(QMediaPlayer::MediaStatus status);
     void sizeChange(qint32 width, qint32 height);
     void metaDataLoaded();
+    void seekableChanged(bool seekable);
 
 private:
     void checkNetworkState();
@@ -121,6 +124,7 @@ private:
     bool m_hasAudio = false;
     bool m_cameraIsReady = false;
     bool m_shouldBeStarted = false;
+    bool m_isSeekable = false;
 
     emscripten::val m_offscreenContext = emscripten::val::undefined();
     QSize m_pendingVideoSize;
@@ -147,6 +151,7 @@ private:
     QScopedPointer<qstdweb::EventCallback> m_playingChangeEvent;
     QScopedPointer<qstdweb::EventCallback> m_progressChangeEvent;
     QScopedPointer<qstdweb::EventCallback> m_pauseChangeEvent;
+    QScopedPointer<qstdweb::EventCallback> m_beforeUnloadEvent;
 };
 
 QT_END_NAMESPACE

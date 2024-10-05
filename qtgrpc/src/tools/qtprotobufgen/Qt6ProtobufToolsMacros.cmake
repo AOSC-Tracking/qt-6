@@ -51,6 +51,11 @@ macro(_qt_internal_get_protoc_options out_var prefix option single multi)
     endforeach()
 endmacro()
 
+# Returns the generator target name according to the pre-defined pattern
+function(_qt_internal_get_generator_dep_target_name out_var target generator dep_index)
+    set(${out_var} "${target}_${generator}_deps_${dep_index}" PARENT_SCOPE)
+endfunction()
+
 # The base function that generates rules to call the protoc executable with the custom generator
 # plugin.
 # Multi-value Arguments:
@@ -96,7 +101,7 @@ function(_qt_internal_protoc_generate target generator output_directory)
     if(NOT num_deps)
         set(num_deps 0)
     endif()
-    set(deps_target ${target}_${generator}_deps_${num_deps})
+    _qt_internal_get_generator_dep_target_name(deps_target ${target} ${generator} ${num_deps})
     math(EXPR num_deps "${num_deps} + 1")
 
     set(generator_file $<TARGET_FILE:${QT_CMAKE_EXPORT_NAMESPACE}::${generator}>)
@@ -172,6 +177,7 @@ function(_qt_internal_protoc_generate target generator output_directory)
         DEPENDS
             ${QT_CMAKE_EXPORT_NAMESPACE}::${generator}
             ${proto_files}
+            $<TARGET_FILE:WrapProtoc::WrapProtoc>
         COMMENT "Generating QtProtobuf ${target} sources for ${generator}..."
         COMMAND_EXPAND_LISTS
         VERBATIM
@@ -543,6 +549,7 @@ function(qt6_add_protobuf target)
         set(export_macro_file "${output_directory}/${export_macro_filename}")
     endif()
 
+    set_source_files_properties(${type_registrations} PROPERTIES SKIP_AUTOGEN ON)
     if(is_static OR (WIN32 AND NOT is_executable))
         if(TARGET ${target}_protobuf_registration)
             target_sources(${target}_protobuf_registration PRIVATE ${type_registrations})
@@ -555,6 +562,17 @@ function(qt6_add_protobuf target)
             target_link_libraries(${target}
                 INTERFACE "$<TARGET_OBJECTS:$<TARGET_NAME:${target}_protobuf_registration>>")
             add_dependencies(${target} ${target}_protobuf_registration)
+
+            get_target_property(num_deps ${target} _qt_qtprotobufgen_deps_num)
+            if(num_deps)
+                # foreach includes the last element in the RANGE
+                math(EXPR num_deps "${num_deps} - 1")
+                foreach(i RANGE 0 ${num_deps})
+                    _qt_internal_get_generator_dep_target_name(deps_target ${target}
+                        qtprotobufgen ${i})
+                    add_dependencies(${target}_protobuf_registration ${deps_target})
+                endforeach()
+            endif()
 
             target_include_directories(${target}_protobuf_registration
                 PRIVATE "$<GENEX_EVAL:$<TARGET_PROPERTY:${target},INCLUDE_DIRECTORIES>>")
@@ -585,22 +603,37 @@ function(qt6_add_protobuf target)
         string(REPLACE "." "/" qml_module_output_path "${qml_uri}")
         set(qml_module_output_full_path "${CMAKE_CURRENT_BINARY_DIR}/${qml_module_output_path}")
 
+        if(NOT is_executable)
+            set(plugin_options PLUGIN_TARGET "${target}plugin")
+        endif()
+
         qt_policy(SET QTP0001 NEW)
         qt6_add_qml_module(${target}
             URI ${qml_uri}
-            PLUGIN_TARGET "${target}plugin"
+            ${plugin_options}
             VERSION 1.0
             OUTPUT_DIRECTORY "${qml_module_output_full_path}"
-        )
-        set_target_properties(${target}plugin
-            PROPERTIES
-                AUTOMOC ON
-        )
-        target_link_libraries(${target}plugin PRIVATE
-            ${QT_CMAKE_EXPORT_NAMESPACE}::Protobuf
+            OUTPUT_TARGETS qml_output_targets
         )
 
-        list(APPEND ${arg_OUTPUT_TARGETS} ${target}plugin)
+        if(TARGET ${target}plugin)
+            set_target_properties(${target}plugin
+                PROPERTIES
+                    AUTOMOC ON
+            )
+            target_link_libraries(${target}plugin PRIVATE
+                ${QT_CMAKE_EXPORT_NAMESPACE}::Protobuf
+            )
+        endif()
+
+        if(DEFINED arg_OUTPUT_TARGETS)
+            if(qml_output_targets)
+                list(APPEND ${arg_OUTPUT_TARGETS} ${qml_output_targets})
+            endif()
+            if(TARGET ${target}plugin)
+                list(APPEND ${arg_OUTPUT_TARGETS} "${target}plugin")
+            endif()
+        endif()
     endif()
 
     if(DEFINED arg_OUTPUT_HEADERS)
@@ -608,6 +641,7 @@ function(qt6_add_protobuf target)
     endif()
 
     if(DEFINED arg_OUTPUT_TARGETS)
+        list(REMOVE_DUPLICATES ${arg_OUTPUT_TARGETS})
         set(${arg_OUTPUT_TARGETS} "${${arg_OUTPUT_TARGETS}}" PARENT_SCOPE)
     endif()
 endfunction()

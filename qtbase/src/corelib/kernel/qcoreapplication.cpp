@@ -569,9 +569,19 @@ QString qAppName()
     return QCoreApplication::instance()->d_func()->appName();
 }
 
+#ifdef Q_OS_WINDOWS
+static bool hasValidStdOutHandle()
+{
+    const HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    return h != NULL && h != INVALID_HANDLE_VALUE;
+}
+#endif
+
 void QCoreApplicationPrivate::initConsole()
 {
 #ifdef Q_OS_WINDOWS
+    if (hasValidStdOutHandle())
+        return;
     const QString env = qEnvironmentVariable("QT_WIN_DEBUG_CONSOLE");
     if (env.isEmpty())
         return;
@@ -1739,18 +1749,17 @@ bool QCoreApplication::compressEvent(QEvent *event, QObject *receiver, QPostEven
     int receiverPostedEvents = receiver->d_func()->postedEvents.loadRelaxed();
     // compress posted timers to this object.
     if (event->type() == QEvent::Timer && receiverPostedEvents > 0) {
-        int timerId = static_cast<QTimerEvent *>(event)->timerId();
-        auto sameReceiver = [receiver](const QPostEvent &e) { return e.receiver == receiver; };
-        auto it = std::find_if(postedEvents->cbegin(), postedEvents->cend(), sameReceiver);
-        while (receiverPostedEvents > 0 && it != postedEvents->cend()) {
-            if (it->event && it->event->type() == QEvent::Timer
-                && static_cast<QTimerEvent *>(it->event)->timerId() == timerId) {
-                delete event;
-                return true;
+        const int timerId = static_cast<QTimerEvent *>(event)->timerId();
+        auto it = postedEvents->cbegin();
+        const auto end = postedEvents->cend();
+        while (it != end) {
+            if (it->event && it->event->type() == QEvent::Timer && it->receiver == receiver) {
+                if (static_cast<QTimerEvent *>(it->event)->timerId() == timerId) {
+                    delete event;
+                    return true;
+                }
             }
-
-            if (--receiverPostedEvents)
-                it = std::find_if(it + 1, postedEvents->cend(), sameReceiver);
+            ++it;
         }
         return false;
     }
@@ -1835,6 +1844,8 @@ void QCoreApplicationPrivate::sendPostedEvents(QObject *receiver, int event_type
 
     // Exception-safe cleaning up without the need for a try/catch block
     struct CleanUp {
+        Q_DISABLE_COPY_MOVE(CleanUp)
+
         QObject *receiver;
         int event_type;
         QThreadData *data;
@@ -2908,7 +2919,7 @@ void QCoreApplication::requestPermission(const QPermission &requestedPermission,
     Q_ASSERT(slotObj);
 
     if (QThread::currentThread() != QCoreApplicationPrivate::mainThread()) {
-        qWarning(lcPermissions, "Permissions can only be requested from the GUI (main) thread");
+        qCWarning(lcPermissions, "Permissions can only be requested from the GUI (main) thread");
         return;
     }
 

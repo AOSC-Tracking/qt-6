@@ -6,11 +6,13 @@
 #include <QtTest/QtTest>
 #include <QtMultimedia/qmediaformat.h>
 
-#include <QtQGstreamerMediaPlugin/private/qgst_handle_types_p.h>
-#include <QtQGstreamerMediaPlugin/private/qgst_p.h>
-#include <QtQGstreamerMediaPlugin/private/qgst_debug_p.h>
-#include <QtQGstreamerMediaPlugin/private/qgstpipeline_p.h>
-#include <QtQGstreamerMediaPlugin/private/qgstreamermetadata_p.h>
+#include <QtQGstreamerMediaPluginImpl/private/qgst_handle_types_p.h>
+#include <QtQGstreamerMediaPluginImpl/private/qgst_p.h>
+#include <QtQGstreamerMediaPluginImpl/private/qgst_debug_p.h>
+#include <QtQGstreamerMediaPluginImpl/private/qgstpipeline_p.h>
+#include <QtQGstreamerMediaPluginImpl/private/qgstreamermetadata_p.h>
+
+#include <set>
 
 QT_USE_NAMESPACE
 
@@ -35,6 +37,13 @@ QMediaMetaData makeQMediaMetaData(Pairs &&...pairs)
     return metadata;
 }
 
+QGString makeQGString(std::string_view str)
+{
+    char *s = (char *)g_malloc(str.size() + 1);
+    snprintf(s, str.size() + 1, "%s", str.data());
+    return QGString{ s };
+};
+
 } // namespace
 
 QGstTagListHandle tst_GStreamer::parseTagList(const char *str)
@@ -49,6 +58,25 @@ QGstTagListHandle tst_GStreamer::parseTagList(const char *str)
 QGstTagListHandle tst_GStreamer::parseTagList(const QByteArray &ba)
 {
     return parseTagList(ba.constData());
+}
+
+void tst_GStreamer::QGString_conversions()
+{
+    QGString str = makeQGString("yada");
+
+    QCOMPARE(str.toQString(), u"yada"_s);
+    QCOMPARE(str.asStringView(), "yada"_L1);
+    QCOMPARE(str.asByteArrayView(), "yada"_ba);
+}
+
+void tst_GStreamer::QGString_transparentCompare()
+{
+    QGString str = makeQGString("yada");
+
+    std::set<QByteArray, std::less<>> set;
+    set.emplace(str);
+
+    QVERIFY(set.find(str) != set.end());
 }
 
 void tst_GStreamer::qGstCasts_withElement()
@@ -127,8 +155,38 @@ void tst_GStreamer::metadata_taglistToMetaData_extractsDuration()
             R"__(taglist, video-codec=(string)"On2\ VP9",  container-specific-track-id=(string)1, extended-comment=(string){ "ALPHA_MODE\=1", "HANDLER_NAME\=Apple\ Video\ Media\ Handler", "VENDOR_ID\=appl", "TIMECODE\=00:00:00:00", "DURATION\=00:00:00.400000000" }, encoder=(string)"Lavc59.37.100\ libvpx-vp9")__");
 
     QMediaMetaData parsed = taglistToMetaData(tagList);
-
     QCOMPARE(parsed[QMediaMetaData::Duration].value<int>(), 400);
+}
+
+void tst_GStreamer::metadata_taglistToMetaData_extractsLanguage()
+{
+    QFETCH(QByteArray, tagListString);
+    QFETCH(QLocale::Language, language);
+
+    QGstTagListHandle tagList = parseTagList(tagListString);
+    QVERIFY(tagList);
+
+    QMediaMetaData parsed = taglistToMetaData(tagList);
+    QCOMPARE(parsed[QMediaMetaData::Language].value<QLocale::Language>(), language);
+}
+
+void tst_GStreamer::metadata_taglistToMetaData_extractsLanguage_data()
+{
+    QTest::addColumn<QByteArray>("tagListString");
+    QTest::addColumn<QLocale::Language>("language");
+
+    QTest::newRow("english, en")
+            << R"__(taglist, container-format=(string)Matroska, audio-codec=(string)"MPEG-4\ AAC", language-code=(string)en, container-specific-track-id=(string)5, encoder=(string)Lavf60.16.100, extended-comment=(string)"DURATION\=00:00:05.055000000")__"_ba
+            << QLocale::Language::English;
+    QTest::newRow("spanish, es")
+            << R"__(taglist, container-format=(string)Matroska, audio-codec=(string)"MPEG-4\ AAC", language-code=(string)es, container-specific-track-id=(string)5, encoder=(string)Lavf60.16.100, extended-comment=(string)"DURATION\=00:00:05.055000000")__"_ba
+            << QLocale::Language::Spanish;
+    QTest::newRow("english, eng")
+            << R"__(taglist, container-format=(string)Matroska, audio-codec=(string)"MPEG-4\ AAC", language-code=(string)eng, container-specific-track-id=(string)5, encoder=(string)Lavf60.16.100, extended-comment=(string)"DURATION\=00:00:05.055000000")__"_ba
+            << QLocale::Language::English;
+    QTest::newRow("spanish, spa")
+            << R"__(taglist, container-format=(string)Matroska, audio-codec=(string)"MPEG-4\ AAC", language-code=(string)spa, container-specific-track-id=(string)5, encoder=(string)Lavf60.16.100, extended-comment=(string)"DURATION\=00:00:05.055000000")__"_ba
+            << QLocale::Language::Spanish;
 }
 
 void tst_GStreamer::metadata_capsToMetaData()
@@ -174,6 +232,26 @@ void tst_GStreamer::metadata_capsToMetaData_data()
     QTest::newRow("audio")
             << R"(audio/mpeg, mpegversion=(int)4, framed=(boolean)true, stream-format=(string)raw, level=(string)4, base-profile=(string)lc, profile=(string)lc, codec_data=(buffer)11b0, rate=(int)48000, channels=(int)6)"_ba
             << makeQMediaMetaData(makeKVPair(Key::AudioCodec, QMediaFormat::AudioCodec::AAC));
+}
+
+void tst_GStreamer::parseRotationTag_returnsCorrectResults()
+{
+    QCOMPARE_EQ(parseRotationTag("rotate-0"), (RotationResult{ QtVideo::Rotation::None, false }));
+    QCOMPARE_EQ(parseRotationTag("rotate-90"),
+                (RotationResult{ QtVideo::Rotation::Clockwise90, false }));
+    QCOMPARE_EQ(parseRotationTag("rotate-180"),
+                (RotationResult{ QtVideo::Rotation::Clockwise180, false }));
+    QCOMPARE_EQ(parseRotationTag("rotate-270"),
+                (RotationResult{ QtVideo::Rotation::Clockwise270, false }));
+
+    QCOMPARE_EQ(parseRotationTag("flip-rotate-0"),
+                (RotationResult{ QtVideo::Rotation::Clockwise180, true }));
+    QCOMPARE_EQ(parseRotationTag("flip-rotate-90"),
+                (RotationResult{ QtVideo::Rotation::Clockwise270, true }));
+    QCOMPARE_EQ(parseRotationTag("flip-rotate-180"),
+                (RotationResult{ QtVideo::Rotation::None, true }));
+    QCOMPARE_EQ(parseRotationTag("flip-rotate-270"),
+                (RotationResult{ QtVideo::Rotation::Clockwise90, true }));
 }
 
 void tst_GStreamer::QGstBin_createFromPipelineDescription()

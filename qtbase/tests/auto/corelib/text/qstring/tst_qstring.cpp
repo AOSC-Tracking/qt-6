@@ -3664,6 +3664,25 @@ void tst_QString::assign()
     }
     // QString &assign(InputIterator, InputIterator)
     {
+        // This needs to be on its own to ensure we call them on empty str
+        QString str;
+
+        const char16_t c16[] = u"٩(⁎❛ᴗ❛⁎)۶ 🤷";
+        std::u16string c16str(c16);
+        str.assign(c16str.begin(), c16str.begin());
+        QCOMPARE(str.size(), 0);
+    }
+    {
+#ifndef QT_NO_CAST_FROM_ASCII
+        // This needs to be on its own to ensure we call them on empty str
+        QString str;
+        const char c8[] = "a©☻🂤"; // [1, 2, 3, 4] bytes in utf-8 code points
+        std::string c8str(c8);
+        str.assign(c8str.begin(), c8str.begin());
+        QCOMPARE(str.size(), 0);
+#endif
+    }
+    {
         // Forward iterator versions
         QString str;
         const QString tstr = QString::fromUtf8(u8"(ノಠ益ಠ)\0ノ彡┻━┻");
@@ -6643,17 +6662,40 @@ void tst_QString::arg()
     QCOMPARE( s4.arg(0), QLatin1String("[0]") );
     QCOMPARE( s4.arg(-1), QLatin1String("[-1]") );
     QCOMPARE( s4.arg(0U), QLatin1String("[0]"));
+    QCOMPARE( s4.arg(qint8(-128)), QLatin1String("[-128]")); // signed char
+    QCOMPARE( s4.arg(quint8(255)), QLatin1String("[255]"));  // unsigned char
     QCOMPARE( s4.arg(short(-4200)), QLatin1String("[-4200]"));
     QCOMPARE( s4.arg(ushort(42000)), QLatin1String("[42000]"));
     QCOMPARE( s4.arg(4294967295UL), QLatin1String("[4294967295]") ); // ULONG_MAX 32
     QCOMPARE( s4.arg(Q_INT64_C(9223372036854775807)), // LLONG_MAX
              QLatin1String("[9223372036854775807]") );
+    QCOMPARE( s4.arg(Q_UINT64_C(9223372036854775808)), // LLONG_MAX + 1
+             QLatin1String("[9223372036854775808]") );
+
+    // FP overloads
+    QCOMPARE(s4.arg(2.25), QLatin1String("[2.25]"));
+    QCOMPARE(s4.arg(3.75f), QLatin1String("[3.75]"));
+#if !QFLOAT16_IS_NATIVE // QTBUG-126055
+    QCOMPARE(s4.arg(qfloat16{4.125f}), QLatin1String("[4.125]"));
+#endif
 
     // char-ish overloads
     QCOMPARE(s4.arg('\xE4'), QStringView(u"[ä]"));
     QEXPECT_FAIL("", "QTBUG-125588", Continue);
     QCOMPARE(s4.arg(u'ø'), QStringView(u"[ø]"));
-    //QCOMPARE(s4.arg(u8'a'), QLatin1String("[a]"));
+#ifdef Q_OS_WIN
+    QCOMPARE(QLatin1String("[%1]").arg(L'ø'), QStringView(u"[ø]"));
+#endif
+    QEXPECT_FAIL("", "QTBUG-126054", Continue);
+    QCOMPARE(s4.arg(L'ø'), QStringView(u"[ø]"));
+#ifndef __cpp_char8_t
+#ifndef QT_NO_CAST_FROM_ASCII
+    QCOMPARE(QLatin1String("[%1]").arg(u8'a'), QLatin1String("[a]"));
+#endif
+#else
+    QEXPECT_FAIL("", "QTBUG-126053", Continue);
+#endif
+    QCOMPARE(s4.arg(u8'a'), QLatin1String("[a]"));
 
     QTest::ignoreMessage(QtWarningMsg, "QString::arg: Argument missing: , foo");
     QCOMPARE(QString().arg(foo), QString());
@@ -6806,7 +6848,8 @@ void tst_QString::number_double()
     QFETCH(double, value);
     QFETCH(char, format);
     QFETCH(int, precision);
-    if constexpr (std::numeric_limits<double>::has_denorm != std::denorm_present) {
+    QT_IGNORE_DEPRECATIONS(constexpr bool has_denorm = std::numeric_limits<double>::has_denorm != std::denorm_present;)
+    if constexpr (has_denorm) {
         if (::qstrcmp(QTest::currentDataTag(), "Very small number, very high precision, format 'f', precision 350") == 0) {
             QSKIP("Skipping 'denorm' as this type lacks denormals on this system");
         }

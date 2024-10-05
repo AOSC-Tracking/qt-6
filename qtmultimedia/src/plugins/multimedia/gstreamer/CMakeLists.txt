@@ -3,7 +3,7 @@
 
 qt_find_package(EGL)
 
-qt_internal_add_module(QGstreamerMediaPluginPrivate
+qt_internal_add_module(QGstreamerMediaPluginImplPrivate
     STATIC
     INTERNAL_MODULE
     SOURCES
@@ -11,6 +11,7 @@ qt_internal_add_module(QGstreamerMediaPluginPrivate
         audio/qgstreameraudiodecoder.cpp audio/qgstreameraudiodecoder_p.h
         common/qglist_helper_p.h
         common/qgst.cpp common/qgst_p.h
+        common/qgst_bus.cpp common/qgst_bus_p.h
         common/qgst_debug.cpp common/qgst_debug_p.h
         common/qgst_handle_types_p.h
         common/qgstappsource.cpp common/qgstappsource_p.h
@@ -49,16 +50,26 @@ qt_internal_add_module(QGstreamerMediaPluginPrivate
         GStreamer::App
 )
 
-qt_internal_extend_target(QGstreamerMediaPluginPrivate CONDITION QT_FEATURE_gstreamer_photography
+qt_internal_extend_target(QGstreamerMediaPluginImplPrivate CONDITION QT_FEATURE_gstreamer_photography
     PUBLIC_LIBRARIES
         GStreamer::Photography
 )
-
-qt_internal_extend_target(QGstreamerMediaPluginPrivate CONDITION QT_FEATURE_gstreamer_gl
+qt_internal_extend_target(QGstreamerMediaPluginImplPrivate CONDITION QT_FEATURE_gstreamer_gl
     PUBLIC_LIBRARIES
         GStreamer::Gl
+)
+qt_internal_extend_target(QGstreamerMediaPluginImplPrivate CONDITION QT_FEATURE_gstreamer_gl_egl
     LIBRARIES
+        GStreamer::GlEgl
         EGL::EGL
+)
+qt_internal_extend_target(QGstreamerMediaPluginImplPrivate CONDITION QT_FEATURE_gstreamer_gl_wayland
+    LIBRARIES
+        GStreamer::GlWayland
+)
+qt_internal_extend_target(QGstreamerMediaPluginImplPrivate CONDITION QT_FEATURE_gstreamer_gl_x11
+    LIBRARIES
+        GStreamer::GlX11
 )
 
 qt_internal_add_plugin(QGstreamerMediaPlugin
@@ -68,6 +79,6 @@ qt_internal_add_plugin(QGstreamerMediaPlugin
         qgstreamerplugin.cpp
         gstreamer.json
     LIBRARIES
-        Qt::QGstreamerMediaPluginPrivate
+        Qt::QGstreamerMediaPluginImplPrivate
         Qt::MultimediaPrivate
 )

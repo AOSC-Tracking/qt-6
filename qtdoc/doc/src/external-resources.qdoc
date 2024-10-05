@@ -759,6 +759,11 @@
 */
 
 /*!
+    \externalpage https://cmake.org/cmake/help/latest/command/cmake_minimum_required.html#policy-settings
+    \title CMake Policy Settings
+*/
+
+/*!
     \externalpage https://doc.qt.io/QtAndroidAutomotive/
     \title Qt for Android Automotive
 */
@@ -856,6 +861,11 @@
 /*!
     \externalpage https://www.gsmarena.com/motorola_moto_g5_plus-8453.php
     \title Motorola Moto G5 Plus
+*/
+
+/*!
+    \externalpage https://www.gsmarena.com/samsung_galaxy_tab_a9+-12617.php
+    \title Samsung Galaxy Tab A9+
 */
 
 /*!

@@ -62,6 +62,9 @@ constexpr O reversed(O o) noexcept
 
 namespace Qt {
 
+class weak_ordering;
+class strong_ordering;
+
 class partial_ordering
 {
 public:
@@ -76,7 +79,7 @@ public:
 
     friend constexpr bool operator!=(partial_ordering lhs,
                                      QtPrivate::CompareAgainstLiteralZero) noexcept
-    { return lhs.isOrdered() && lhs.m_order != 0; }
+    { return !lhs.isOrdered() || lhs.m_order != 0; }
 
     friend constexpr bool operator< (partial_ordering lhs,
                                      QtPrivate::CompareAgainstLiteralZero) noexcept
@@ -101,7 +104,7 @@ public:
 
     friend constexpr bool operator!=(QtPrivate::CompareAgainstLiteralZero,
                                      partial_ordering rhs) noexcept
-    { return rhs.isOrdered() && 0 != rhs.m_order; }
+    { return !rhs.isOrdered() || 0 != rhs.m_order; }
 
     friend constexpr bool operator< (QtPrivate::CompareAgainstLiteralZero,
                                      partial_ordering rhs) noexcept
@@ -179,6 +182,30 @@ public:
     { return lhs == static_cast<std::partial_ordering>(rhs); }
 
     friend constexpr bool operator!=(std::partial_ordering lhs, partial_ordering rhs) noexcept
+    { return lhs != static_cast<std::partial_ordering>(rhs); }
+
+    friend constexpr bool operator==(partial_ordering lhs, std::strong_ordering rhs) noexcept
+    { return static_cast<std::partial_ordering>(lhs) == rhs; }
+
+    friend constexpr bool operator!=(partial_ordering lhs, std::strong_ordering rhs) noexcept
+    { return static_cast<std::partial_ordering>(lhs) != rhs; }
+
+    friend constexpr bool operator==(std::strong_ordering lhs, partial_ordering rhs) noexcept
+    { return lhs == static_cast<std::partial_ordering>(rhs); }
+
+    friend constexpr bool operator!=(std::strong_ordering lhs, partial_ordering rhs) noexcept
+    { return lhs != static_cast<std::partial_ordering>(rhs); }
+
+    friend constexpr bool operator==(partial_ordering lhs, std::weak_ordering rhs) noexcept
+    { return static_cast<std::partial_ordering>(lhs) == rhs; }
+
+    friend constexpr bool operator!=(partial_ordering lhs, std::weak_ordering rhs) noexcept
+    { return static_cast<std::partial_ordering>(lhs) != rhs; }
+
+    friend constexpr bool operator==(std::weak_ordering lhs, partial_ordering rhs) noexcept
+    { return lhs == static_cast<std::partial_ordering>(rhs); }
+
+    friend constexpr bool operator!=(std::weak_ordering lhs, partial_ordering rhs) noexcept
     { return lhs != static_cast<std::partial_ordering>(rhs); }
 #endif // __cpp_lib_three_way_comparison
 
@@ -694,7 +721,7 @@ public:
 
     friend constexpr bool operator!=(QPartialOrdering lhs,
                                      QtPrivate::CompareAgainstLiteralZero) noexcept
-    { return lhs.isOrdered() && lhs.m_order != 0; }
+    { return !lhs.isOrdered() || lhs.m_order != 0; }
 
     friend constexpr bool operator< (QPartialOrdering lhs,
                                      QtPrivate::CompareAgainstLiteralZero) noexcept
@@ -719,7 +746,7 @@ public:
 
     friend constexpr bool operator!=(QtPrivate::CompareAgainstLiteralZero,
                                      QPartialOrdering rhs) noexcept
-    { return rhs.isOrdered() && 0 != rhs.m_order; }
+    { return !rhs.isOrdered() || 0 != rhs.m_order; }
 
     friend constexpr bool operator< (QtPrivate::CompareAgainstLiteralZero,
                                      QPartialOrdering rhs) noexcept

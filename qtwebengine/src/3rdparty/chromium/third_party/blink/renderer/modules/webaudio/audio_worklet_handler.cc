@@ -114,7 +114,9 @@ void AudioWorkletHandler::Process(uint32_t frames_to_process) {
   // state. If so, silence the connected outputs and return.
   if (!processor_ || processor_->hasErrorOccurred()) {
     for (unsigned i = 0; i < NumberOfOutputs(); ++i) {
-      Output(i).Bus()->Zero();
+      if (Output(i).IsConnectedDuringRendering()) {
+        Output(i).Bus()->Zero();
+      }
     }
     return;
   }
@@ -125,7 +127,7 @@ void AudioWorkletHandler::Process(uint32_t frames_to_process) {
     inputs_[i] = Input(i).IsConnected() ? Input(i).Bus() : nullptr;
   }
   for (unsigned i = 0; i < NumberOfOutputs(); ++i) {
-    outputs_[i] = Output(i).RenderingFanOutCount() > 0
+    outputs_[i] = Output(i).IsConnectedDuringRendering()
         ? WrapRefCounted(Output(i).Bus()) : nullptr;
   }
 

@@ -17,6 +17,39 @@
 
 QT_BEGIN_NAMESPACE
 
+RotationResult parseRotationTag(std::string_view tag)
+{
+    using namespace std::string_view_literals;
+    Q_ASSERT(!tag.empty());
+
+    if (tag[0] == 'r') {
+        if (tag == "rotate-90"sv)
+            return { QtVideo::Rotation::Clockwise90, false };
+        if (tag == "rotate-180"sv)
+            return { QtVideo::Rotation::Clockwise180, false };
+        if (tag == "rotate-270"sv)
+            return { QtVideo::Rotation::Clockwise270, false };
+        if (tag == "rotate-0"sv)
+            return { QtVideo::Rotation::None, false };
+    }
+    if (tag[0] == 'f') {
+        // To flip by horizontal axis is the same as to mirror by vertical axis
+        // and rotate by 180 degrees.
+
+        if (tag == "flip-rotate-90"sv)
+            return { QtVideo::Rotation::Clockwise270, true };
+        if (tag == "flip-rotate-180"sv)
+            return { QtVideo::Rotation::None, true };
+        if (tag == "flip-rotate-270"sv)
+            return { QtVideo::Rotation::Clockwise90, true };
+        if (tag == "flip-rotate-0"sv)
+            return { QtVideo::Rotation::Clockwise180, true };
+    }
+
+    qCritical() << "cannot parse orientation: {}" << tag;
+    return { QtVideo::Rotation::None, false };
+}
+
 namespace {
 
 namespace MetadataLookupImpl {
@@ -143,23 +176,6 @@ const char *keyToTag(QMediaMetaData::Key key)
 }
 
 #undef constexpr_lookup
-
-QtVideo::Rotation parseRotationTag(const char *string)
-{
-    using namespace std::string_view_literals;
-
-    if (string == "rotate-90"sv)
-        return QtVideo::Rotation::Clockwise90;
-    if (string == "rotate-180"sv)
-        return QtVideo::Rotation::Clockwise180;
-    if (string == "rotate-270"sv)
-        return QtVideo::Rotation::Clockwise270;
-    if (string == "rotate-0"sv)
-        return QtVideo::Rotation::None;
-
-    qCritical() << "cannot parse orientation: {}" << string;
-    return QtVideo::Rotation::None;
-}
 
 QDateTime parseDate(const GValue &val)
 {
@@ -304,11 +320,12 @@ void addTagToMetaData(const GstTagList *list, const gchar *tag, void *userdata)
         case QMediaMetaData::Language: {
             metadata.insert(key,
                             QVariant::fromValue(QLocale::codeToLanguage(
-                                    QString::fromUtf8(str_value), QLocale::ISO639Part2)));
+                                    QString::fromUtf8(str_value), QLocale::AnyLanguageCode)));
             break;
         }
         case QMediaMetaData::Orientation: {
-            metadata.insert(key, QVariant::fromValue(parseRotationTag(str_value)));
+            RotationResult result = parseRotationTag(str_value);
+            metadata.insert(key, QVariant::fromValue(result.rotation));
             break;
         }
         default:
@@ -390,8 +407,12 @@ static void applyMetaDataToTagSetter(const QMediaMetaData &metadata, GstTagSette
         case QMetaType::Double:
             setTag(tagValue.toDouble());
             break;
-        case QMetaType::QDate:
+
         case QMetaType::QDateTime: {
+            // tagName does not properly disambiguate between GST_TAG_DATE_TIME and
+            // GST_TAG_DATE, as both map to QMediaMetaData::Key::Date. so we set it accordingly to
+            // the QVariant.
+
             QDateTime date = tagValue.toDateTime();
 
             QGstGstDateTimeHandle dateTime{
@@ -401,7 +422,19 @@ static void applyMetaDataToTagSetter(const QMediaMetaData &metadata, GstTagSette
                 QGstGstDateTimeHandle::HasRef,
             };
 
-            setTag(dateTime.get());
+            gst_tag_setter_add_tags(element, GST_TAG_MERGE_REPLACE, GST_TAG_DATE_TIME,
+                                    dateTime.get(), nullptr);
+            break;
+        }
+        case QMetaType::QDate: {
+            QDate date = tagValue.toDate();
+
+            QUniqueGDateHandle dateHandle{
+                g_date_new_dmy(date.day(), GDateMonth(date.month()), date.year()),
+            };
+
+            gst_tag_setter_add_tags(element, GST_TAG_MERGE_REPLACE, GST_TAG_DATE, dateHandle.get(),
+                                    nullptr);
             break;
         }
         default: {

@@ -9,6 +9,7 @@
 #include <common/qgstreameraudioinput_p.h>
 #include <common/qgstreameraudiooutput_p.h>
 #include <common/qgstreamervideooutput_p.h>
+#include <common/qgst_debug_p.h>
 
 #include <QtCore/qloggingcategory.h>
 #include <QtCore/private/quniquehandle_p.h>
@@ -42,7 +43,8 @@ QGstreamerMediaCapture::QGstreamerMediaCapture(QGstreamerVideoOutput *videoOutpu
 {
     gstVideoOutput->setParent(this);
     gstVideoOutput->setIsPreview();
-    gstVideoOutput->setPipeline(capturePipeline);
+
+    capturePipeline.installMessageFilter(static_cast<QGstreamerBusMessageFilter *>(this));
 
     // Use system clock to drive all elements in the pipeline. Otherwise,
     // the clock is sourced from the elements (e.g. from an audio source).
@@ -57,7 +59,7 @@ QGstreamerMediaCapture::QGstreamerMediaCapture(QGstreamerVideoOutput *videoOutpu
     // This is the recording pipeline with only live sources, thus the pipeline
     // will be always in the playing state.
     capturePipeline.setState(GST_STATE_PLAYING);
-    capturePipeline.setInStoppedState(false);
+    gstVideoOutput->setActive(true);
 
     capturePipeline.dumpGraph("initial");
 }
@@ -67,6 +69,7 @@ QGstreamerMediaCapture::~QGstreamerMediaCapture()
     setMediaRecorder(nullptr);
     setImageCapture(nullptr);
     setCamera(nullptr);
+    capturePipeline.removeMessageFilter(static_cast<QGstreamerBusMessageFilter *>(this));
     capturePipeline.setStateSync(GST_STATE_NULL);
 }
 
@@ -148,7 +151,8 @@ void QGstreamerMediaCapture::setImageCapture(QPlatformImageCapture *imageCapture
 
     capturePipeline.modifyPipelineWhileNotRunning([&] {
         if (m_imageCapture) {
-            qUnlinkGstElements(gstVideoTee, m_imageCapture->gstElement());
+            if (gstVideoTee)
+                qUnlinkGstElements(gstVideoTee, m_imageCapture->gstElement());
             capturePipeline.stopAndRemoveElements(m_imageCapture->gstElement());
             imageCaptureSink = {};
             m_imageCapture->setCaptureSession(nullptr);
@@ -229,13 +233,15 @@ void QGstreamerMediaCapture::unlinkEncoder()
 {
     capturePipeline.modifyPipelineWhileNotRunning([&] {
         if (encoderVideoCapsFilter) {
-            qUnlinkGstElements(gstVideoTee, encoderVideoCapsFilter);
+            if (gstVideoTee)
+                qUnlinkGstElements(gstVideoTee, encoderVideoCapsFilter);
             capturePipeline.stopAndRemoveElements(encoderVideoCapsFilter);
             encoderVideoCapsFilter = {};
         }
 
         if (encoderAudioCapsFilter) {
-            qUnlinkGstElements(gstAudioTee, encoderAudioCapsFilter);
+            if (gstAudioTee)
+                qUnlinkGstElements(gstAudioTee, encoderAudioCapsFilter);
             capturePipeline.stopAndRemoveElements(encoderAudioCapsFilter);
             encoderAudioCapsFilter = {};
         }
@@ -319,6 +325,40 @@ void QGstreamerMediaCapture::setAudioOutput(QPlatformAudioOutput *output)
 QGstreamerVideoSink *QGstreamerMediaCapture::gstreamerVideoSink() const
 {
     return gstVideoOutput ? gstVideoOutput->gstreamerVideoSink() : nullptr;
+}
+
+bool QGstreamerMediaCapture::processBusMessage(const QGstreamerMessage &msg)
+{
+    switch (msg.type()) {
+    case GST_MESSAGE_ERROR:
+        return processBusMessageError(msg);
+
+    case GST_MESSAGE_LATENCY:
+        return processBusMessageLatency(msg);
+
+    default:
+        break;
+    }
+
+    return false;
+}
+
+bool QGstreamerMediaCapture::processBusMessageError(const QGstreamerMessage &msg)
+{
+    QUniqueGErrorHandle error;
+    QUniqueGStringHandle message;
+    gst_message_parse_error(msg.message(), &error, &message);
+
+    qWarning() << "QGstreamerMediaCapture: received error from gstreamer" << error << message;
+    capturePipeline.dumpGraph("captureError");
+
+    return false;
+}
+
+bool QGstreamerMediaCapture::processBusMessageLatency(const QGstreamerMessage &)
+{
+    capturePipeline.recalculateLatency();
+    return false;
 }
 
 QT_END_NAMESPACE

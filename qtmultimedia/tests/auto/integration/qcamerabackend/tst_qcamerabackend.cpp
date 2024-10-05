@@ -115,9 +115,6 @@ public Q_SLOTS:
 
 void tst_QCameraBackend::initTestCase()
 {
-#ifdef Q_OS_ANDROID
-    QSKIP("SKIP initTestCase on CI, because of QTBUG-118571");
-#endif
     QCamera camera;
     noCamera = !camera.isAvailable();
 }
@@ -568,9 +565,10 @@ void tst_QCameraBackend::testVideoRecording_data()
     QTest::addColumn<QCameraDevice>("device");
 
     const auto devices = QMediaDevices::videoInputs();
+    int i = 0;
 
     for (const auto &device : devices)
-        QTest::newRow(device.description().toUtf8()) << device;
+        QTest::addRow("%d - %s", i++, device.description().toUtf8().constData()) << device;
 
     if (devices.isEmpty())
         QTest::newRow("Null device") << QCameraDevice();

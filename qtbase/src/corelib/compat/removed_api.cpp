@@ -586,6 +586,8 @@ void QThreadPool::startOnReservedThread(std::function<void()> functionToRun)
 
 #endif // QT_CONFIG(thread)
 
+#if QT_CONFIG(xmlstream)
+
 #include "qxmlstream.h"
 
 QStringView QXmlStreamAttributes::value(const QString &namespaceUri, const QString &name) const
@@ -612,6 +614,8 @@ QStringView QXmlStreamAttributes::value(QLatin1StringView qualifiedName) const
 {
     return value(QAnyStringView(qualifiedName));
 }
+
+#endif // xmlstream
 
 // inlined API
 #if QT_CONFIG(thread)
@@ -696,7 +700,7 @@ QCborError QCborStreamReader::lastError()
     return std::as_const(*this).lastError();
 }
 
-#include "qdatetime.h"
+#include "qdatetime.h" // also inlined API
 
 QDateTime::QDateTime(QDate date, QTime time, const QTimeZone &timeZone)
     : QDateTime(date, time, timeZone, TransitionResolution::LegacyBehavior) {}
@@ -779,6 +783,8 @@ QString QLocale::bcp47Name() const
     return bcp47Name(TagSeparator::Dash);
 }
 
+#if QT_CONFIG(datestring)
+
 QDate QLocale::toDate(const QString &string, FormatType format) const
 {
     return toDate(string, dateFormat(format), DefaultTwoDigitBaseYear);
@@ -818,6 +824,8 @@ QDateTime QLocale::toDateTime(const QString &string, const QString &format, QCal
 {
     return toDateTime(string, format, cal, DefaultTwoDigitBaseYear);
 }
+
+#endif // datestring
 
 #include "qobject.h"
 

@@ -12,6 +12,7 @@
 #include <private/qqmlengine_p.h>
 #include <private/qqmlirbuilder_p.h>
 #include <private/qqmllist_p.h>
+#include <private/qqmllistwrapper_p.h>
 #include <private/qqmlproperty_p.h>
 #include <private/qqmlsignalnames_p.h>
 #include <private/qqmlstringconverters_p.h>
@@ -843,17 +844,21 @@ static void removeOldBinding(QObject *object, QQmlPropertyIndex index, QQmlPrope
     oldBinding = data->bindings;
 
     while (oldBinding && (oldBinding->targetPropertyIndex().coreIndex() != coreIndex ||
-                          oldBinding->targetPropertyIndex().hasValueTypeIndex()))
+                          oldBinding->targetPropertyIndex().hasValueTypeIndex())) {
         oldBinding = oldBinding->nextBinding();
+    }
 
-    if (!oldBinding)
-        return;
-
-    if (valueTypeIndex != -1 && oldBinding->kind() == QQmlAbstractBinding::ValueTypeProxy)
+    if (valueTypeIndex != -1
+            && oldBinding
+            && oldBinding->kind() == QQmlAbstractBinding::ValueTypeProxy) {
         oldBinding = static_cast<QQmlValueTypeProxyBinding *>(oldBinding.data())->binding(index);
+    }
 
-    if (!oldBinding)
+    if (!oldBinding) {
+        // Clear the binding bit so that the binding doesn't appear later for any reason
+        data->clearBindingBit(coreIndex);
         return;
+    }
 
     if (!(flags & QQmlPropertyPrivate::DontEnable))
         oldBinding->setEnabled(false, {});
@@ -1373,18 +1378,6 @@ static ConvertAndAssignResult tryConvertAndAssign(
         return {false, false};
     }
 
-    if (variantMetaType == QMetaType::fromType<QJSValue>()) {
-        // Handle Qt.binding bindings here to avoid mistaken conversion below
-        const QJSValue &jsValue = get<QJSValue>(value);
-        const QV4::FunctionObject *f
-                = QJSValuePrivate::asManagedType<QV4::FunctionObject>(&jsValue);
-        if (f && f->isBinding()) {
-            QV4::QObjectWrapper::setProperty(
-                    f->engine(), object, &property, f->asReturnedValue());
-            return {true, true};
-        }
-    }
-
     // common cases:
     switch (propertyMetaType.id()) {
     case QMetaType::Bool:
@@ -1470,6 +1463,21 @@ bool iterateQObjectContainer(QMetaType metaType, const void *data, Op op)
     return true;
 }
 
+static bool tryAssignBinding(
+        QObject *object, const QQmlPropertyData &property, const QVariant &value,
+        QMetaType variantMetaType) {
+    if (variantMetaType != QMetaType::fromType<QJSValue>())
+        return false;
+
+    const QJSValue &jsValue = get<QJSValue>(value);
+    const QV4::FunctionObject *f = QJSValuePrivate::asManagedType<QV4::FunctionObject>(&jsValue);
+    if (!f || !f->isBinding())
+        return false;
+
+    QV4::QObjectWrapper::setProperty(f->engine(), object, &property, f->asReturnedValue());
+    return true;
+}
+
 bool QQmlPropertyPrivate::write(
         QObject *object, const QQmlPropertyData &property, const QVariant &value,
         const QQmlRefPointer<QQmlContextData> &context, QQmlPropertyData::WriteFlags flags)
@@ -1494,6 +1502,10 @@ bool QQmlPropertyPrivate::write(
 
     QQmlEnginePrivate *enginePriv = QQmlEnginePrivate::get(context);
     const bool isUrl = propertyMetaType == QMetaType::fromType<QUrl>(); // handled separately
+
+    // Handle Qt.binding bindings here to avoid mistaken conversion below
+    if (tryAssignBinding(object, property, value, variantMetaType))
+        return true;
 
     // The cases below are in approximate order of likelyhood:
     if (propertyMetaType == variantMetaType && !isUrl
@@ -1578,8 +1590,11 @@ bool QQmlPropertyPrivate::write(
             propClear(&prop);
 
             const auto doAppend = [&](QObject *o) {
-                if (o && !QQmlMetaObject::canConvert(o, valueMetaObject))
+                if (Q_UNLIKELY(o && !QQmlMetaObject::canConvert(o, valueMetaObject))) {
+                    qCWarning(lcIncompatibleElement)
+                            << "Cannot append" << o << "to a QML list of" << listValueType.name();
                     o = nullptr;
+                }
                 propAppend(&prop, o);
             };
 

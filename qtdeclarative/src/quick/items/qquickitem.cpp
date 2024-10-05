@@ -1491,7 +1491,7 @@ QQuickLayoutMirroringAttached::QQuickLayoutMirroringAttached(QObject *parent) : 
     if (itemPrivate)
         itemPrivate->extra.value().layoutDirectionAttached = this;
     else
-        qmlWarning(parent) << tr("LayoutDirection attached property only works with Items and Windows");
+        qmlWarning(parent) << tr("LayoutMirroring attached property only works with Items and Windows");
 }
 
 QQuickLayoutMirroringAttached * QQuickLayoutMirroringAttached::qmlAttachedProperties(QObject *object)
@@ -1744,12 +1744,13 @@ Qt::FocusReason QQuickItemPrivate::lastFocusChangeReason() const
     return static_cast<Qt::FocusReason>(focusReason);
 }
 
-void QQuickItemPrivate::setLastFocusChangeReason(Qt::FocusReason reason)
+bool QQuickItemPrivate::setLastFocusChangeReason(Qt::FocusReason reason)
 {
     if (focusReason == reason)
-        return;
+        return false;
 
     focusReason = reason;
+    return true;
 }
 
 /*!

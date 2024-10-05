@@ -23,7 +23,7 @@
 #include <QtMultimedia/qaudiodevice.h>
 #include <QtMultimedia/private/qaudiodevice_p.h>
 
-#include <QtQGstreamerMediaPlugin/private/qgst_handle_types_p.h>
+#include <QtQGstreamerMediaPluginImpl/private/qgst_handle_types_p.h>
 
 #include <gst/gst.h>
 
@@ -42,6 +42,9 @@ class QGStreamerCustomAudioDeviceInfo : public QAudioDevicePrivate
 public:
     QGStreamerCustomAudioDeviceInfo(const QByteArray &gstreamerPipeline, QAudioDevice::Mode mode);
 };
+
+bool isCustomAudioDevice(const QAudioDevicePrivate *device);
+bool isCustomAudioDevice(const QAudioDevice &device);
 
 QAudioDevice qMakeCustomGStreamerAudioInput(const QByteArray &gstreamerPipeline);
 QAudioDevice qMakeCustomGStreamerAudioOutput(const QByteArray &gstreamerPipeline);

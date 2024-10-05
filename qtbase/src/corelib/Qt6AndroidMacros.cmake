@@ -10,7 +10,8 @@ function(_qt_internal_android_get_sdk_build_tools_revision out_var)
             LIST_DIRECTORIES true
             RELATIVE "${ANDROID_SDK_ROOT}/build-tools"
             "${ANDROID_SDK_ROOT}/build-tools/*")
-        if (NOT android_build_tools)
+        list(FILTER android_build_tools INCLUDE REGEX "[0-9]+\.[0-9]+(\.[0-9]+)?")
+        if(NOT android_build_tools)
             message(FATAL_ERROR "Could not locate Android SDK build tools under \"${ANDROID_SDK_ROOT}/build-tools\"")
         endif()
         list(SORT android_build_tools)
@@ -390,7 +391,8 @@ function(qt6_android_add_apk_target target)
     # No need to use genex for the BINARY_DIR since it's read-only.
     get_target_property(target_binary_dir ${target} BINARY_DIR)
 
-    if($CACHE{QT_USE_TARGET_ANDROID_BUILD_DIR})
+    if("$CACHE{QT_USE_TARGET_ANDROID_BUILD_DIR}" AND
+       "$CACHE{QT_USE_TARGET_ANDROID_BUILD_DIR}" STREQUAL "${QT_USE_TARGET_ANDROID_BUILD_DIR}")
         set(apk_final_dir "${target_binary_dir}/android-build-${target}")
     else()
         if(QT_USE_TARGET_ANDROID_BUILD_DIR)
@@ -1265,7 +1267,11 @@ function(_qt_internal_add_android_abi_step project abi step)
         endif()
     endif()
 
-    list(PREPEND known_steps ${project}_${step})
+    if(known_steps)
+        list(PREPEND known_steps ${project}_${step})
+    else()
+        set(known_steps ${project}_${step})
+    endif()
     set_target_properties(${project} PROPERTIES _qt_android_abi_steps "${known_steps}")
 endfunction()
 
@@ -1368,6 +1374,11 @@ function(_qt_internal_configure_android_multiabi_target target)
             "-DCMAKE_CXX_COMPILER_LAUNCHER=${compiler_launcher}")
     endif()
 
+    if(DEFINED QT_USE_TARGET_ANDROID_BUILD_DIR)
+        list(APPEND extra_cmake_args
+            "-DQT_USE_TARGET_ANDROID_BUILD_DIR=${QT_USE_TARGET_ANDROID_BUILD_DIR}")
+    endif()
+
     unset(user_cmake_args)
     foreach(var IN LISTS QT_ANDROID_MULTI_ABI_FORWARD_VARS)
         string(REPLACE ";" "$<SEMICOLON>" var_value "${${var}}")
@@ -1410,6 +1421,10 @@ function(_qt_internal_configure_android_multiabi_target target)
             )
             set_property(GLOBAL APPEND PROPERTY
                 _qt_internal_abi_external_projects "qt_internal_android_${abi}")
+            if(NOT CMAKE_GENERATOR MATCHES "^Ninja")
+                add_dependencies(qt_internal_android_${abi}_configure
+                    ${previous_copy_apk_dependencies_target})
+            endif()
         endif()
 
         get_target_property(android_abi_build_dir qt_internal_android_${abi}

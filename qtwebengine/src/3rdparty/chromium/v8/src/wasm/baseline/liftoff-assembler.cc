@@ -685,6 +685,10 @@ int LiftoffAssembler::GetTotalFrameSlotCountForGC() const {
          kSystemPointerSize;
 }
 
+int LiftoffAssembler::OolSpillCount() const {
+  return ool_spill_space_size_ / kSystemPointerSize;
+}
+
 namespace {
 
 AssemblerOptions DefaultLiftoffOptions() { return AssemblerOptions{}; }
@@ -766,39 +770,21 @@ void LiftoffAssembler::DropExceptionValueAtOffset(int offset) {
        slot != end; ++slot) {
     *slot = *(slot + 1);
     stack_offset = NextSpillOffset(slot->kind(), stack_offset);
-    // Padding could allow us to exit early.
-    if (slot->offset() == stack_offset) break;
-    if (slot->is_stack()) {
-      MoveStackValue(stack_offset, slot->offset(), slot->kind());
+    // Padding could cause some spill offsets to remain the same.
+    if (slot->offset() != stack_offset) {
+      if (slot->is_stack()) {
+        MoveStackValue(stack_offset, slot->offset(), slot->kind());
+      }
+      slot->set_offset(stack_offset);
     }
-    slot->set_offset(stack_offset);
   }
   cache_state_.stack_state.pop_back();
 }
 
-void LiftoffAssembler::PrepareLoopArgs(int num) {
-  for (int i = 0; i < num; ++i) {
-    VarState& slot = cache_state_.stack_state.end()[-1 - i];
-    if (slot.is_stack()) continue;
-    RegClass rc = reg_class_for(slot.kind());
-    if (slot.is_reg()) {
-      if (cache_state_.get_use_count(slot.reg()) > 1) {
-        // If the register is used more than once, we cannot use it for the
-        // merge. Move it to an unused register instead.
-        LiftoffRegList pinned;
-        pinned.set(slot.reg());
-        LiftoffRegister dst_reg = GetUnusedRegister(rc, pinned);
-        Move(dst_reg, slot.reg(), slot.kind());
-        cache_state_.dec_used(slot.reg());
-        cache_state_.inc_used(dst_reg);
-        slot.MakeRegister(dst_reg);
-      }
-      continue;
-    }
-    LiftoffRegister reg = GetUnusedRegister(rc, {});
-    LoadConstant(reg, slot.constant());
-    slot.MakeRegister(reg);
-    cache_state_.inc_used(reg);
+void LiftoffAssembler::SpillLoopArgs(int num) {
+  for (VarState& slot :
+       base::VectorOf(cache_state_.stack_state.end() - num, num)) {
+    Spill(&slot);
   }
 }
 
@@ -1019,14 +1005,14 @@ void LiftoffAssembler::Spill(VarState* slot) {
 }
 
 void LiftoffAssembler::SpillLocals() {
-  for (uint32_t i = 0; i < num_locals_; ++i) {
-    Spill(&cache_state_.stack_state[i]);
+  for (VarState& local_slot :
+       base::VectorOf(cache_state_.stack_state.data(), num_locals_)) {
+    Spill(&local_slot);
   }
 }
 
 void LiftoffAssembler::SpillAllRegisters() {
-  for (uint32_t i = 0, e = cache_state_.stack_height(); i < e; ++i) {
-    auto& slot = cache_state_.stack_state[i];
+  for (VarState& slot : cache_state_.stack_state) {
     if (!slot.is_reg()) continue;
     Spill(slot.offset(), slot.reg(), slot.kind());
     slot.MakeStack();

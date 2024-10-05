@@ -122,7 +122,7 @@ void QSvgNode::drawWithMask(QPainter *p, QSvgExtraStates &states, const QImage &
 QImage QSvgNode::drawIntoBuffer(QPainter *p, QSvgExtraStates &states, const QRect &boundsRect)
 {
     QImage proxy;
-    if (!QImageIOHandler::allocateImage(boundsRect.size(), QImage::Format_RGBA8888, &proxy)) {
+    if (!QImageIOHandler::allocateImage(boundsRect.size(), QImage::Format_ARGB32_Premultiplied, &proxy)) {
         qCWarning(lcSvgDraw) << "The requested buffer size is too big, ignoring";
         return proxy;
     }
@@ -255,6 +255,13 @@ void QSvgNode::revertStyle(QPainter *p, QSvgExtraStates &states) const
     m_style.revert(p, states);
 }
 
+void QSvgNode::revertStyleRecursive(QPainter *p, QSvgExtraStates &states) const
+{
+    revertStyle(p, states);
+    if (parent())
+        parent()->revertStyleRecursive(p, states);
+}
+
 QSvgStyleProperty * QSvgNode::styleProperty(QSvgStyleProperty::Type type) const
 {
     const QSvgNode *node = this;
@@ -347,25 +354,16 @@ QRectF QSvgNode::transformedBounds() const
 
     QImage dummy(1, 1, QImage::Format_RGB32);
     QPainter p(&dummy);
+    initPainter(&p);
     QSvgExtraStates states;
 
-    QPen pen(Qt::NoBrush, 1, Qt::SolidLine, Qt::FlatCap, Qt::SvgMiterJoin);
-    pen.setMiterLimit(4);
-    p.setPen(pen);
-
-    QStack<QSvgNode*> parentApplyStack;
-    QSvgNode *parent = m_parent;
-    while (parent) {
-        parentApplyStack.push(parent);
-        parent = parent->parent();
-    }
-
-    for (int i = parentApplyStack.size() - 1; i >= 0; --i)
-        parentApplyStack[i]->applyStyle(&p, states);
-    
+    if (parent())
+        parent()->applyStyleRecursive(&p, states);
+    // ###TODO: If we reset the world transform we should not call this function transformedBounds
     p.setWorldTransform(QTransform());
-
     m_cachedBounds = transformedBounds(&p, states);
+    if (parent()) // always revert the style to not store old transformations
+        parent()->revertStyleRecursive(&p, states);
     return m_cachedBounds;
 }
 
@@ -618,9 +616,10 @@ void QSvgNode::initPainter(QPainter *p)
     p->setRenderHint(QPainter::Antialiasing);
     p->setRenderHint(QPainter::SmoothPixmapTransform);
     QFont font(p->font());
-    if (font.pointSize() < 0)
+    if (font.pointSize() < 0 && font.pixelSize() > 0) {
         font.setPointSizeF(font.pixelSize() * 72.0 / p->device()->logicalDpiY());
-    p->setFont(font);
+        p->setFont(font);
+    }
 }
 
 bool QSvgNode::shouldDrawNode(QPainter *p, QSvgExtraStates &states) const

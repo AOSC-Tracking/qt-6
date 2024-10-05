@@ -57,8 +57,10 @@ private slots:
     void weakQObjectFromSharedPointer();
     void objectCast();
     void objectCastStdSharedPtr();
+    void objectCastFailureNoLeak();
     void differentPointers();
     void virtualBaseDifferentPointers();
+    void virtualBaseWeakPointerConversions();
 #ifndef QTEST_NO_RTTI
     void dynamicCast();
     void dynamicCastDifferentPointers();
@@ -1108,6 +1110,21 @@ void tst_QSharedPointer::objectCast()
     safetyCheck();
 }
 
+void tst_QSharedPointer::objectCastFailureNoLeak()
+{
+    // verify that a failing object cast doesn't keep the original object alive
+    auto ptr = QSharedPointer<QObject>::create();
+    auto qptr = QPointer(ptr.data());
+    auto ptr2 = ptr.objectCast<tst_QSharedPointer>();
+
+    QVERIFY(ptr);
+    QVERIFY(qptr);
+    QVERIFY(!ptr2);
+
+    ptr.reset();
+    QVERIFY(!ptr);
+    QVERIFY(!qptr);
+}
 
 void tst_QSharedPointer::objectCastStdSharedPtr()
 {
@@ -1290,6 +1307,67 @@ void tst_QSharedPointer::virtualBaseDifferentPointers()
 
         QWeakPointer<Data> wptr3 = std::move(wptr);
         QVERIFY(wptr3.toStrongRef().isNull());
+    }
+    safetyCheck();
+}
+
+void tst_QSharedPointer::virtualBaseWeakPointerConversions()
+{
+    struct Base { virtual ~Base() = default; };
+    struct Derived : virtual Base {};
+
+    {
+        QSharedPointer<Derived> d(new Derived);
+        QSharedPointer<const Base> cb = d;
+        QCOMPARE(cb, d);
+        QCOMPARE(cb.get(), d.get());
+    }
+    safetyCheck();
+
+    {
+        QSharedPointer<Derived> d(new Derived);
+        QWeakPointer<const Base> wcb = d;
+        QCOMPARE(wcb, d);
+        QCOMPARE(wcb.lock().get(), d.get());
+    }
+    safetyCheck();
+
+    {
+        QSharedPointer<Derived> d(new Derived);
+        QWeakPointer<Derived> wd = d;
+        QCOMPARE(wd, d);
+        QCOMPARE(wd.lock().get(), d.get());
+        QWeakPointer<const Base> wcb = wd;
+        QCOMPARE(wcb, wd);
+        QCOMPARE(wcb.lock().get(), d.get());
+    }
+    safetyCheck();
+
+    {
+        auto raw = new Derived;
+        QSharedPointer<Derived> d(raw);
+        QSharedPointer<const Base> cb = std::move(d);
+        QCOMPARE(d, nullptr);
+        QCOMPARE(cb.get(), raw);
+    }
+    safetyCheck();
+
+    {
+        QSharedPointer<Derived> d(new Derived);
+        QWeakPointer<const Base> wcb = std::move(d);
+        QCOMPARE(wcb, d);
+        QCOMPARE(wcb.lock().get(), d.get());
+    }
+    safetyCheck();
+
+    {
+        QSharedPointer<Derived> d(new Derived);
+        QWeakPointer<Derived> wd = std::move(d);
+        QCOMPARE(wd, d);
+        QCOMPARE(wd.lock().get(), d.get());
+        QWeakPointer<const Base> wcb = std::move(wd);
+        QCOMPARE(wd, nullptr);
+        QCOMPARE(wcb.lock().get(), d.get());
     }
     safetyCheck();
 }

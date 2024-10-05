@@ -1102,8 +1102,6 @@ void QAbstractItemView::setCurrentIndex(const QModelIndex &index)
         QItemSelectionModel::SelectionFlags command = selectionCommand(index, nullptr);
         d->selectionModel->setCurrentIndex(index, command);
         d->currentIndexSet = true;
-        if ((command & QItemSelectionModel::Current) == 0)
-            d->currentSelectionStartIndex = index;
     }
 }
 
@@ -3287,7 +3285,8 @@ bool QAbstractItemView::isPersistentEditorOpen(const QModelIndex &index) const
     to true, otherwise the widget's background will be transparent, showing
     both the model data and the item at the given \a index.
 
-    If index widget A is replaced with index widget B, index widget A will be
+    \note The view takes ownership of the \a widget.
+    This means if index widget A is replaced with index widget B, index widget A will be
     deleted. For example, in the code snippet below, the QLineEdit object will
     be deleted.
 
@@ -3818,6 +3817,10 @@ void QAbstractItemView::currentChanged(const QModelIndex &current, const QModelI
             update(previous);
         }
     }
+
+    QItemSelectionModel::SelectionFlags command = selectionCommand(current, nullptr);
+    if ((command & QItemSelectionModel::Current) == 0)
+        d->currentSelectionStartIndex = current;
 
     if (current.isValid() && !d->autoScrollTimer.isActive()) {
         if (isVisible()) {

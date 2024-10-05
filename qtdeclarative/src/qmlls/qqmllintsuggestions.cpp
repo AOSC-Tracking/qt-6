@@ -168,13 +168,11 @@ static Diagnostic messageToDiagnostic_helper(AdvanceFunc advancePositionPastLoca
     }
 
     if (message.fixSuggestion && !message.fixSuggestion->fixDescription().isEmpty()) {
-        diagnostic.message = QString(message.message)
-                                     .append(u": "_s)
-                                     .append(message.fixSuggestion->fixDescription())
+        diagnostic.message = u"%1: %2 [%3]"_s.arg(message.message, message.fixSuggestion->fixDescription(), message.id.toString())
                                      .simplified()
                                      .toUtf8();
     } else {
-        diagnostic.message = message.message.toUtf8();
+        diagnostic.message = u"%1 [%2]"_s.arg(message.message, message.id.toString()).toUtf8();
     }
 
     diagnostic.source = QByteArray("qmllint");
@@ -319,9 +317,19 @@ void QmlLintSuggestions::diagnoseHelper(const QByteArray &url,
     const QStringList qmltypesFiles;
     const QStringList resourceFiles = resourceFilesFromBuildFolders(imports);
 
-    QList<QQmlJS::LoggerCategory> categories;
+    QList<QQmlJS::LoggerCategory> categories = QQmlJSLogger::defaultCategories();
 
     QQmlJSLinter linter(imports);
+
+    for (const QQmlJSLinter::Plugin &plugin : linter.plugins()) {
+        for (const QQmlJS::LoggerCategory &category : plugin.categories())
+            categories.append(category);
+    }
+
+    QQmlToolingSettings settings(QLatin1String("qmllint"));
+    if (settings.search(filename)) {
+        QQmlJS::LoggingUtils::updateLogLevels(categories, settings, nullptr);
+    }
 
     linter.lintFile(filename, &fileContents, silent, nullptr, imports, qmltypesFiles,
                     resourceFiles, categories);

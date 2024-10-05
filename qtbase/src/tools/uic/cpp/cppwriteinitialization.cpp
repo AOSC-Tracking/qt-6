@@ -127,16 +127,94 @@ namespace {
         return iconHasStatePixmaps(i) || !i->attributeTheme().isEmpty();
     }
 
+    // An approximation of "Unicode Standard Annex #31" for checking property
+    // and enumeration identifiers to prevent code injection attacks.
+    // FIXME 6.9: Simplify according to QTBUG-126860
+    static bool isIdStart(QChar c)
+    {
+        bool result = false;
+        switch (c.category()) {
+        case QChar::Letter_Uppercase:
+        case QChar::Letter_Lowercase:
+        case QChar::Letter_Titlecase:
+        case QChar::Letter_Modifier:
+        case QChar::Letter_Other:
+        case QChar::Number_Letter:
+            result = true;
+            break;
+        default:
+            result = c == u'_';
+            break;
+        }
+        return result;
+    }
+
+    static bool isIdContinuation(QChar c)
+    {
+        bool result = false;
+        switch (c.category()) {
+        case QChar::Letter_Uppercase:
+        case QChar::Letter_Lowercase:
+        case QChar::Letter_Titlecase:
+        case QChar::Letter_Modifier:
+        case QChar::Letter_Other:
+        case QChar::Number_Letter:
+        case QChar::Mark_NonSpacing:
+        case QChar::Mark_SpacingCombining:
+        case QChar::Number_DecimalDigit:
+        case QChar::Punctuation_Connector: // '_'
+            result = true;
+            break;
+        default:
+            break;
+        }
+        return result;
+    }
+
+    static bool isEnumIdContinuation(QChar c)
+    {
+        return c == u':' || c == u'|' || c == u' ' || isIdContinuation(c);
+    }
+
+    bool checkPropertyName(QStringView name)
+    {
+        return !name.isEmpty() && isIdStart(name.at(0))
+               && std::all_of(name.cbegin() + 1, name.cend(), isIdContinuation);
+    }
+
+    bool checkEnumValue(QStringView name)
+    {
+        return !name.isEmpty() && isIdStart(name.at(0))
+               && std::all_of(name.cbegin() + 1, name.cend(), isEnumIdContinuation);
+    }
+
+    QString msgInvalidValue(const QString &name, const QString &value)
+    {
+        return "uic: Invalid property value: \""_L1 + name + "\": \""_L1 + value + u'"';
+    }
+
     // Check on properties. Filter out empty legacy pixmap/icon properties
     // as Designer pre 4.4 used to remove missing resource references.
     // This can no longer be handled by the code as we have 'setIcon(QIcon())' as well as 'QIcon icon'
     static bool checkProperty(const CustomWidgetsInfo *customWidgetsInfo,
                               const QString &fileName, const QString &className,
                               const DomProperty *p) {
+
+        const QString &name = p->attributeName();
+        const bool isDynamicProperty = p->hasAttributeStdset() && p->attributeStdset() == 0;
+        if (!isDynamicProperty && !checkPropertyName(name)) {
+            qWarning("uic: Invalid property name: \"%s\".", qPrintable(name));
+            return false;
+        }
+
         switch (p->kind()) {
         // ### fixme Qt 7 remove this: Exclude deprecated properties of Qt 5.
         case DomProperty::Set:
-            if (p->attributeName() == u"features"
+            if (!checkEnumValue(p->elementSet())) {
+                qWarning("%s", qPrintable(msgInvalidValue(name, p->elementSet())));
+                return false;
+            }
+            if (name == u"features"
                 && customWidgetsInfo->extends(className, "QDockWidget")
                 && p->elementSet() == u"QDockWidget::AllDockWidgetFeatures") {
                 const QString msg = fileName + ": Warning: Deprecated enum value QDockWidget::AllDockWidgetFeatures was encountered."_L1;
@@ -145,7 +223,11 @@ namespace {
             }
             break;
         case DomProperty::Enum:
-            if (p->attributeName() == u"sizeAdjustPolicy"
+            if (!checkEnumValue(p->elementEnum())) {
+                qWarning("%s", qPrintable(msgInvalidValue(name, p->elementEnum())));
+                return false;
+            }
+            if (name == u"sizeAdjustPolicy"
                 && customWidgetsInfo->extends(className, "QComboBox")
                 && p->elementEnum() == u"QComboBox::AdjustToMinimumContentsLength") {
                 const QString msg = fileName + ": Warning: Deprecated enum value QComboBox::AdjustToMinimumContentsLength was encountered."_L1;
@@ -158,7 +240,7 @@ namespace {
                 if (!isIconFormat44(dri)) {
                     if (dri->text().isEmpty())  {
                         const QString msg = QString::fromLatin1("%1: Warning: An invalid icon property '%2' was encountered.")
-                                            .arg(fileName, p->attributeName());
+                                            .arg(fileName, name);
                         qWarning("%s", qPrintable(msg));
                         return false;
                     }
@@ -169,7 +251,7 @@ namespace {
             if (const DomResourcePixmap *drp = p->elementPixmap())
                 if (drp->text().isEmpty()) {
                     const QString msg = QString::fromUtf8("%1: Warning: An invalid pixmap property '%2' was encountered.")
-                                        .arg(fileName, p->attributeName());
+                                        .arg(fileName, name);
                     qWarning("%s", qPrintable(msg));
                     return false;
                 }
@@ -1351,8 +1433,8 @@ void WriteInitialization::writeProperties(const QString &varName,
                 str << language::derefPointer <<"set" << propertyName.at(0).toUpper()
                     << QStringView{propertyName}.mid(1) << '(';
             } else {
-                str << language::derefPointer << "setProperty(\""_L1
-                    << propertyName << "\", ";
+                str << language::derefPointer << "setProperty("_L1
+                    << language::charliteral(propertyName) << ", ";
                 if (language::language() == Language::Cpp) {
                     str << "QVariant";
                     if (p->kind() == DomProperty::Enum)

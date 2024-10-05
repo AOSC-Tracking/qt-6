@@ -881,6 +881,7 @@ public:
     void releaseMesh(QSSGRenderMesh *mesh);
 
     QRhiShaderResourceBindings *srb(const QSSGRhiShaderResourceBindingList &bindings);
+    void releaseCachedSrb(QSSGRhiShaderResourceBindingList &bindings);
 
     QRhiGraphicsPipeline *pipeline(const QSSGRhiGraphicsPipelineState &ps,
                                    QRhiRenderPassDescriptor *rpDesc,
@@ -901,6 +902,7 @@ public:
     void cleanupDrawCallData(const QSSGRenderModel *model);
 
     QSSGRhiInstanceBufferData &instanceBufferData(QSSGRenderInstanceTable *instanceTable);
+    void releaseInstanceBuffer(QSSGRenderInstanceTable *instanceTable);
 
     QSSGRhiInstanceBufferData &instanceBufferData(const QSSGRenderModel *model);
 

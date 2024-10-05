@@ -2837,6 +2837,8 @@ static QSvgNode *createImageNode(QSvgNode *parent,
     const QStringView width  = attributes.value(QLatin1String("width"));
     const QStringView height = attributes.value(QLatin1String("height"));
     QString filename = attributes.value(QLatin1String("xlink:href")).toString();
+    if (filename.isEmpty() && !handler->options().testFlag(QtSvg::Tiny12FeaturesOnly))
+        filename = attributes.value(QLatin1String("href")).toString();
     qreal nx = toDouble(x);
     qreal ny = toDouble(y);
     QSvgHandler::LengthType type;
@@ -3432,8 +3434,13 @@ static QSvgNode *createFeFloodNode(QSvgNode *parent,
     const QStringView opacityStr  = attributes.value(QLatin1String("flood-opacity"));
 
     QColor color;
-    if (!constructColor(colorStr, opacityStr, color, handler))
+    if (!constructColor(colorStr, opacityStr, color, handler)) {
         color = QColor(Qt::black);
+        bool ok;
+        qreal op = qMin(qreal(1.0), qMax(qreal(0.0), toDouble(opacityStr, &ok)));
+        if (ok)
+            color.setAlphaF(op);
+    }
 
     QString inputString;
     QString outputString;

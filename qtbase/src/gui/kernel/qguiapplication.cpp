@@ -105,6 +105,7 @@
 #include <limits>
 
 QT_BEGIN_NAMESPACE
+Q_LOGGING_CATEGORY(lcVirtualKeyboard, "qt.gui.virtualkeyboard");
 
 using namespace Qt::StringLiterals;
 using namespace QtMiscUtils;
@@ -1355,6 +1356,11 @@ static void init_platform(const QString &pluginNamesWithArguments, const QString
     fontSmoothingGamma = platformIntegration->styleHint(QPlatformIntegration::FontSmoothingGamma).toReal();
     QCoreApplication::setAttribute(Qt::AA_DontShowShortcutsInContextMenus,
         !QGuiApplication::styleHints()->showShortcutsInContextMenus());
+
+    if (const auto *platformTheme = QGuiApplicationPrivate::platformTheme()) {
+        QCoreApplication::setAttribute(Qt::AA_DontShowIconsInMenus,
+            !platformTheme->themeHint(QPlatformTheme::ShowIconsInMenus).toBool());
+    }
 }
 
 static void init_plugins(const QList<QByteArray> &pluginList)
@@ -2061,6 +2067,59 @@ bool QGuiApplicationPrivate::processNativeEvent(QWindow *window, const QByteArra
     return window->nativeEvent(eventType, message, result);
 }
 
+bool QGuiApplicationPrivate::isUsingVirtualKeyboard()
+{
+    static const bool usingVirtualKeyboard = getenv("QT_IM_MODULE") == QByteArray("qtvirtualkeyboard");
+    return usingVirtualKeyboard;
+}
+
+// If a virtual keyboard exists, forward mouse event
+bool QGuiApplicationPrivate::maybeForwardEventToVirtualKeyboard(QEvent *e)
+{
+    if (!isUsingVirtualKeyboard()) {
+        qCDebug(lcVirtualKeyboard) << "Virtual keyboard not supported.";
+        return false;
+    }
+
+    static QPointer<QWindow> virtualKeyboard;
+    const QEvent::Type type = e->type();
+    Q_ASSERT(type == QEvent::MouseButtonPress || type == QEvent::MouseButtonRelease);
+    const auto me = static_cast<QMouseEvent *>(e);
+    const QPointF posF = me->globalPosition();
+    const QPoint pos = posF.toPoint();
+
+    // Is there a visible virtual keyboard at event position?
+    if (!virtualKeyboard) {
+        if (QWindow *win = QGuiApplication::topLevelAt(pos);
+            win->inherits("QtVirtualKeyboard::InputView")) {
+            virtualKeyboard = win;
+        } else {
+            qCDebug(lcVirtualKeyboard) << "Virtual keyboard supported, but inactive.";
+            return false;
+        }
+    }
+
+    Q_ASSERT(virtualKeyboard);
+    const bool virtualKeyboardUnderMouse = virtualKeyboard->isVisible()
+                                           && virtualKeyboard->geometry().contains(pos);
+
+    if (!virtualKeyboardUnderMouse) {
+        qCDebug(lcVirtualKeyboard) << type << "at" << pos << "is outside geometry"
+                                   << virtualKeyboard->geometry() << "of" << virtualKeyboard.data();
+        return false;
+    }
+
+    QMouseEvent vkbEvent(type, virtualKeyboard->mapFromGlobal(pos), pos,
+                         me->button(), me->buttons(), me->modifiers(),
+                         me->pointingDevice());
+
+    QGuiApplication::sendEvent(virtualKeyboard, &vkbEvent);
+    qCDebug(lcVirtualKeyboard) << "Forwarded" << type << "to" << virtualKeyboard.data()
+                               << "at" << pos;
+
+    return true;
+}
+
 void Q_TRACE_INSTRUMENT(qtgui) QGuiApplicationPrivate::processWindowSystemEvent(QWindowSystemInterfacePrivate::WindowSystemEvent *e)
 {
     Q_TRACE_PARAM_REPLACE(QWindowSystemInterfacePrivate::WindowSystemEvent *, int);
@@ -2228,7 +2287,7 @@ void QGuiApplicationPrivate::processMouseEvent(QWindowSystemInterfacePrivate::Mo
         QWindowSystemInterfacePrivate::MouseEvent moveEvent(window, e->timestamp,
             e->localPos, e->globalPos, e->buttons ^ button, e->modifiers, Qt::NoButton,
             e->nonClientArea ? QEvent::NonClientAreaMouseMove : QEvent::MouseMove,
-            e->source, e->nonClientArea);
+            e->source, e->nonClientArea, device, e->eventPointId);
         if (e->synthetic())
             moveEvent.flags |= QWindowSystemInterfacePrivate::WindowSystemEvent::Synthetic;
         processMouseEvent(&moveEvent); // mouse move excluding state change
@@ -2247,6 +2306,9 @@ void QGuiApplicationPrivate::processMouseEvent(QWindowSystemInterfacePrivate::Mo
     QPointF localPoint = e->localPos;
     bool doubleClick = false;
     auto persistentEPD = devPriv->pointById(0);
+
+    if (e->synthetic(); auto *originalDeviceEPD = devPriv->queryPointById(e->eventPointId))
+        QMutableEventPoint::update(originalDeviceEPD->eventPoint, persistentEPD->eventPoint);
 
     if (mouseMove) {
         QGuiApplicationPrivate::lastCursorPosition = globalPoint;
@@ -3015,7 +3077,7 @@ void QGuiApplicationPrivate::processTouchEvent(QWindowSystemInterfacePrivate::To
         }
         // If we somehow still don't have a window, we can't deliver this touchpoint.  (should never happen)
         if (Q_UNLIKELY(!window)) {
-            qCWarning(lcPtrDispatch) << "skipping" << &tempPt << ": no target window";
+            qCDebug(lcPtrDispatch) << "skipping" << &tempPt << ": no target window";
             continue;
         }
         QMutableEventPoint::update(tempPt, ep);
@@ -3121,7 +3183,8 @@ void QGuiApplicationPrivate::processTouchEvent(QWindowSystemInterfacePrivate::To
                         }
                         // All touch events that are not accepted by the application will be translated to
                         // left mouse button events instead (see AA_SynthesizeMouseForUnhandledTouchEvents docs).
-                        // TODO why go through QPA?  Why not just send a QMouseEvent right from here?
+                        // Sending a QPA event (rather than simply sending a QMouseEvent) takes care of
+                        // side-effects such as double-click synthesis.
                         QWindowSystemInterfacePrivate::MouseEvent fake(window, e->timestamp,
                                                                        window->mapFromGlobal(touchPoint->globalPosition().toPoint()),
                                                                        touchPoint->globalPosition(),
@@ -3131,7 +3194,8 @@ void QGuiApplicationPrivate::processTouchEvent(QWindowSystemInterfacePrivate::To
                                                                        mouseEventType,
                                                                        Qt::MouseEventSynthesizedByQt,
                                                                        false,
-                                                                       device);
+                                                                       device,
+                                                                       touchPoint->id());
                         fake.flags |= QWindowSystemInterfacePrivate::WindowSystemEvent::Synthetic;
                         processMouseEvent(&fake);
                     }

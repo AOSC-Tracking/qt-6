@@ -18,6 +18,7 @@ qt_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} helloworld_en.ts helloworld_d
 #! [auto_determine_ts_file_paths]
 project(myproject)
 cmake_minimum_required(VERSION 3.19)
+find_package(Qt6 COMPONENTS Core LinguistTools)
 qt_standard_project_setup(I18N_TRANSLATED_LANGUAGES de fr)
 
 add_subdirectory(libs)
@@ -117,8 +118,10 @@ set_property(DIRECTORY tests PROPERTY QT_EXCLUDE_FROM_TRANSLATION ON)
 qt_add_executable(myapp
     main.cpp
     untranslatable.cpp
-    3rdparty/sqlite3.h
-    3rdparty/sqlite3.c
+    3rdparty/sqlite/sqlite3.h
+    3rdparty/sqlite/sqlite3.c
+    3rdparty/zlib/src/gzlib.c
+    3rdparty/zlib/src/zlib.h
 )
 set_property(TARGET myapp PROPERTY QT_EXCLUDE_SOURCES_FROM_TRANSLATION
     untranslatable.cpp

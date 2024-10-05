@@ -26,7 +26,6 @@
 
 extern "C" {
 #include "libavutil/hwcontext.h"
-#include "libavutil/pixfmt.h"
 }
 
 Q_DECLARE_JNI_CLASS(QtCamera2, "org/qtproject/qt/android/multimedia/QtCamera2");
@@ -49,7 +48,7 @@ Q_GLOBAL_STATIC(QReadWriteLock, rwLock)
 
 namespace {
 
-QCameraFormat getDefaultCameraFormat()
+QCameraFormat getDefaultCameraFormat(const QCameraDevice & cameraDevice)
 {
     // default settings
     QCameraFormatPrivate *defaultFormat = new QCameraFormatPrivate{
@@ -58,7 +57,12 @@ QCameraFormat getDefaultCameraFormat()
         .minFrameRate = 12,
         .maxFrameRate = 30,
     };
-    return defaultFormat->create();
+    QCameraFormat format = defaultFormat->create();
+
+    if (!cameraDevice.videoFormats().empty() && !cameraDevice.videoFormats().contains(format))
+        return cameraDevice.videoFormats().first();
+
+    return format;
 }
 
 bool checkCameraPermission()
@@ -98,7 +102,7 @@ QAndroidCamera::QAndroidCamera(QCamera *camera) : QPlatformCamera(camera)
     if (camera) {
         m_cameraDevice = camera->cameraDevice();
         m_cameraFormat = !camera->cameraFormat().isNull() ? camera->cameraFormat()
-                                                          : getDefaultCameraFormat();
+                                                          : getDefaultCameraFormat(m_cameraDevice);
         updateCameraCharacteristics();
     }
 
@@ -129,7 +133,7 @@ void QAndroidCamera::setCamera(const QCameraDevice &camera)
 
     m_cameraDevice = camera;
     updateCameraCharacteristics();
-    m_cameraFormat = getDefaultCameraFormat();
+    m_cameraFormat = getDefaultCameraFormat(camera);
 
     if (active)
         setActive(true);
@@ -262,7 +266,7 @@ void QAndroidCamera::setActive(bool active)
         int height = m_cameraFormat.resolution().height();
 
         if (width < 0 || height < 0) {
-            m_cameraFormat = getDefaultCameraFormat();
+            m_cameraFormat = getDefaultCameraFormat(m_cameraDevice);
             width = m_cameraFormat.resolution().width();
             height = m_cameraFormat.resolution().height();
         }
@@ -332,9 +336,11 @@ void QAndroidCamera::setState(QAndroidCamera::State newState)
 
 bool QAndroidCamera::setCameraFormat(const QCameraFormat &format)
 {
-    const auto chosenFormat = format.isNull() ? getDefaultCameraFormat() : format;
+    const auto chosenFormat = format.isNull() ? getDefaultCameraFormat(m_cameraDevice) : format;
 
-    if (chosenFormat == m_cameraFormat || !m_cameraDevice.videoFormats().contains(chosenFormat))
+    if (chosenFormat == m_cameraFormat)
+        return true;
+    if (!m_cameraDevice.videoFormats().contains(chosenFormat))
         return false;
 
     m_cameraFormat = chosenFormat;
@@ -364,9 +370,17 @@ void QAndroidCamera::updateCameraCharacteristics()
         return;
     }
 
-    const float maxZoom = deviceManager.callMethod<jfloat>(
-                "getMaxZoom", QJniObject::fromString(m_cameraDevice.id()).object<jstring>());
+    float maxZoom = 1.0;
+    float minZoom = 1.0;
+    const auto zoomRange = deviceManager.callMethod<jfloat[]>(
+                "getZoomRange", QJniObject::fromString(m_cameraDevice.id()).object<jstring>());
+    if (zoomRange.isValid() && zoomRange.size() == 2) {
+        minZoom = zoomRange[0];
+        maxZoom = zoomRange[1];
+    }
+
     maximumZoomFactorChanged(maxZoom);
+    minimumZoomFactorChanged(minZoom);
     if (maxZoom < zoomFactor()) {
         zoomTo(1.0, -1.0);
     }

@@ -456,7 +456,7 @@ QVariant QCocoaTheme::themeHint(ThemeHint hint) const
     case QPlatformTheme::SpellCheckUnderlineStyle:
         return QVariant(int(QTextCharFormat::DotLine));
     case QPlatformTheme::UseFullScreenForPopupMenu:
-        return QVariant(bool([[NSApplication sharedApplication] presentationOptions] & NSApplicationPresentationFullScreen));
+            return false;
     case QPlatformTheme::InteractiveResizeAcrossScreens:
         return !NSScreen.screensHaveSeparateSpaces;
     case QPlatformTheme::ShowDirectoriesFirst:
@@ -467,6 +467,8 @@ QVariant QCocoaTheme::themeHint(ThemeHint hint) const
         return NSEvent.keyRepeatDelay * 1000;
     case QPlatformTheme::KeyboardAutoRepeatRate:
         return 1.0 / NSEvent.keyRepeatInterval;
+    case QPlatformTheme::ShowIconsInMenus:
+        return false;
     default:
         break;
     }

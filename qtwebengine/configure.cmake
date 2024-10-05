@@ -310,12 +310,13 @@ qt_feature("webengine-developer-build" PRIVATE
 )
 qt_feature("webengine-system-re2" PRIVATE
     LABEL "re2"
+    AUTODETECT FALSE
     CONDITION UNIX AND TEST_re2
 )
 qt_feature("webengine-system-icu" PRIVATE
     LABEL "icu"
     AUTODETECT FALSE
-    CONDITION ICU_FOUND
+    CONDITION UNIX AND NOT APPLE AND ICU_FOUND
 )
 qt_feature("webengine-system-libwebp" PRIVATE
     LABEL "libwebp, libwebpmux and libwebpdemux"

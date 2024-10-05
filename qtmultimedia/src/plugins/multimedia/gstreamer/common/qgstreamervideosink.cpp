@@ -3,34 +3,33 @@
 
 #include <common/qgstreamervideosink_p.h>
 #include <common/qgstvideorenderersink_p.h>
-#include <common/qgstsubtitlesink_p.h>
 #include <common/qgst_debug_p.h>
 #include <common/qgstutils_p.h>
 #include <rhi/qrhi.h>
 
-#if QT_CONFIG(gstreamer_gl)
-#include <QGuiApplication>
-#include <QtGui/qopenglcontext.h>
-#include <QWindow>
-#include <qpa/qplatformnativeinterface.h>
-#include <gst/gl/gstglconfig.h>
+#include <QtCore/qdebug.h>
+#include <QtCore/qloggingcategory.h>
 
-#if GST_GL_HAVE_WINDOW_X11 && __has_include("X11/Xlib-xcb.h")
+#if QT_CONFIG(gstreamer_gl)
+#  include <QtGui/qguiapplication.h>
+#  include <QtGui/qopenglcontext.h>
+#  include <QtGui/qwindow.h>
+#  include <QtGui/qpa/qplatformnativeinterface.h>
+#  include <gst/gl/gstglconfig.h>
+#  include <gst/gl/gstgldisplay.h>
+
+#  if QT_CONFIG(gstreamer_gl_x11)
 #    include <gst/gl/x11/gstgldisplay_x11.h>
-#endif
-#if GST_GL_HAVE_PLATFORM_EGL
+#  endif
+#  if QT_CONFIG(gstreamer_gl_egl)
 #    include <gst/gl/egl/gstgldisplay_egl.h>
 #    include <EGL/egl.h>
 #    include <EGL/eglext.h>
-#endif
-#if GST_GL_HAVE_WINDOW_WAYLAND && __has_include("wayland-client.h")
+#  endif
+#  if QT_CONFIG(gstreamer_gl_wayland)
 #    include <gst/gl/wayland/gstgldisplay_wayland.h>
-#endif
+#  endif
 #endif // #if QT_CONFIG(gstreamer_gl)
-
-#include <QtCore/qdebug.h>
-
-#include <QtCore/qloggingcategory.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -120,9 +119,6 @@ QGstreamerVideoSink::QGstreamerVideoSink(QVideoSink *parent)
         m_sinkBin.add(m_gstCapsFilter);
         m_sinkBin.addGhostPad(m_gstCapsFilter, "sink");
     }
-
-    m_gstSubtitleSink =
-            QGstElement(GST_ELEMENT(QGstSubtitleSink::createSink(this)), QGstElement::NeedsRef);
 }
 
 QGstreamerVideoSink::~QGstreamerVideoSink()
@@ -130,26 +126,28 @@ QGstreamerVideoSink::~QGstreamerVideoSink()
     emit aboutToBeDestroyed();
 
     unrefGstContexts();
-
-    setPipeline(QGstPipeline());
 }
 
 QGstElement QGstreamerVideoSink::gstSink()
 {
-    updateSinkElement();
+    if (!m_gstVideoSink) {
+        if (!m_gstQtSink)
+            createQtSink();
+
+        updateSinkElement(m_gstQtSink);
+    }
+
     return m_sinkBin;
 }
 
-void QGstreamerVideoSink::setPipeline(QGstPipeline pipeline)
+void QGstreamerVideoSink::setActive(bool isActive)
 {
-    m_pipeline = std::move(pipeline);
-}
+    if (m_isActive == isActive)
+        return;
+    m_isActive = isActive;
 
-bool QGstreamerVideoSink::inStoppedState() const
-{
-    if (m_pipeline.isNull())
-        return true;
-    return m_pipeline.inStoppedState();
+    if (m_gstQtSink)
+        m_gstQtSink.setActive(isActive);
 }
 
 void QGstreamerVideoSink::setRhi(QRhi *rhi)
@@ -161,46 +159,42 @@ void QGstreamerVideoSink::setRhi(QRhi *rhi)
 
     m_rhi = rhi;
     updateGstContexts();
-    if (!m_gstQtSink.isNull()) {
-        // force creation of a new sink with proper caps
+    if (m_gstQtSink) {
+        QGstVideoRendererSinkElement oldSink = std::move(m_gstQtSink);
+
+        // force creation of a new sink with proper caps.
         createQtSink();
-        updateSinkElement();
+        updateSinkElement(m_gstQtSink);
     }
 }
 
 void QGstreamerVideoSink::createQtSink()
 {
-    if (m_gstQtSink)
-        m_gstQtSink.setStateSync(GST_STATE_NULL);
+    Q_ASSERT(!m_gstQtSink);
 
-    m_gstQtSink =
-            QGstElement(reinterpret_cast<GstElement *>(QGstVideoRendererSink::createSink(this)),
-                        QGstElement::NeedsRef);
+    m_gstQtSink = QGstVideoRendererSink::createSink(this);
+    m_gstQtSink.set("async", false); // no asynchronous state changes
+    m_gstQtSink.setActive(m_isActive);
 }
 
-void QGstreamerVideoSink::updateSinkElement()
+void QGstreamerVideoSink::updateSinkElement(QGstVideoRendererSinkElement newSink)
 {
-    QGstElement newSink;
-    if (m_gstQtSink.isNull())
-        createQtSink();
-    newSink = m_gstQtSink;
-
     if (newSink == m_gstVideoSink)
         return;
 
-    m_pipeline.modifyPipelineWhileNotRunning([&] {
-        if (!m_gstVideoSink.isNull())
+    m_gstCapsFilter.src().modifyPipelineInIdleProbe([&] {
+        if (m_gstVideoSink)
             m_sinkBin.stopAndRemoveElements(m_gstVideoSink);
 
-        newSink.set("async", false); // no asynchronous state changes
-
-        m_gstVideoSink = newSink;
+        m_gstVideoSink = std::move(newSink);
         m_sinkBin.add(m_gstVideoSink);
         qLinkGstElements(m_gstCapsFilter, m_gstVideoSink);
-        m_gstVideoSink.setState(GST_STATE_PAUSED);
+        GstEvent *event = gst_event_new_reconfigure();
+        gst_element_send_event(m_gstVideoSink.element(), event);
+        m_gstVideoSink.syncStateWithParent();
     });
 
-    m_pipeline.dumpGraph("updateVideoSink");
+    m_sinkBin.dumpPipelineGraph("updateVideoSink");
 }
 
 void QGstreamerVideoSink::unrefGstContexts()
@@ -236,16 +230,16 @@ void QGstreamerVideoSink::updateGstContexts()
     GstGLPlatform glPlatform = GST_GL_PLATFORM_EGL;
     // use the egl display if we have one
     if (m_eglDisplay) {
-#if GST_GL_HAVE_PLATFORM_EGL
+#  if QT_CONFIG(gstreamer_gl_egl)
         gstGlDisplay.reset(
                 GST_GL_DISPLAY_CAST(gst_gl_display_egl_new_with_egl_display(m_eglDisplay)));
         m_eglImageTargetTexture2D = eglGetProcAddress("glEGLImageTargetTexture2DOES");
-#endif
+#  endif
     } else {
         auto display = pni->nativeResourceForIntegration("display"_ba);
 
         if (display) {
-#if GST_GL_HAVE_WINDOW_X11 && __has_include("X11/Xlib-xcb.h")
+#  if QT_CONFIG(gstreamer_gl_x11)
             if (platform == QLatin1String("xcb")) {
                 contextName = "glxcontext"_ba;
                 glPlatform = GST_GL_PLATFORM_GLX;
@@ -253,8 +247,8 @@ void QGstreamerVideoSink::updateGstContexts()
                 gstGlDisplay.reset(GST_GL_DISPLAY_CAST(
                         gst_gl_display_x11_new_with_display(reinterpret_cast<Display *>(display))));
             }
-#endif
-#if GST_GL_HAVE_WINDOW_WAYLAND && __has_include("wayland-client.h")
+#  endif
+#  if QT_CONFIG(gstreamer_gl_wayland)
             if (platform.startsWith(QLatin1String("wayland"))) {
                 Q_ASSERT(!gstGlDisplay);
                 gstGlDisplay.reset(GST_GL_DISPLAY_CAST(gst_gl_display_wayland_new_with_display(
@@ -304,8 +298,10 @@ void QGstreamerVideoSink::updateGstContexts()
     gst_structure_set(structure, "context", GST_TYPE_GL_CONTEXT, displayContext.get(), nullptr);
     displayContext.close();
 
-    if (m_pipeline)
-        gst_element_set_context(m_pipeline.element(), m_gstGlLocalContext.get());
+    QGstPipeline pipeline = m_sinkBin.getPipeline();
+
+    if (pipeline)
+        gst_element_set_context(pipeline.element(), m_gstGlLocalContext.get());
 #endif // #if QT_CONFIG(gstreamer_gl)
 }
 

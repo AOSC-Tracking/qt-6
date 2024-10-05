@@ -911,6 +911,19 @@ void QQuickControlPrivate::itemFocusChanged(QQuickItem *item, Qt::FocusReason re
         setLastFocusChangeReason(reason);
 }
 
+bool QQuickControlPrivate::setLastFocusChangeReason(Qt::FocusReason reason)
+{
+    Q_Q(QQuickControl);
+    Qt::FocusReason oldReason = static_cast<Qt::FocusReason>(focusReason);
+    const auto focusReasonChanged = QQuickItemPrivate::setLastFocusChangeReason(reason);
+    if (focusReasonChanged)
+        emit q->focusReasonChanged();
+    if (isKeyFocusReason(oldReason) != isKeyFocusReason(reason))
+        emit q->visualFocusChanged();
+
+    return focusReasonChanged;
+}
+
 QQuickControl::QQuickControl(QQuickItem *parent)
     : QQuickItem(*(new QQuickControlPrivate), parent)
 {
@@ -1353,11 +1366,14 @@ bool QQuickControl::isMirrored() const
     return d->isMirrored();
 }
 
+// ### Qt 7: replace with signal parameter: QTBUG-117596
 /*!
     \qmlproperty enumeration QtQuick.Controls::Control::focusReason
-    \readonly
 
     This property holds the reason of the last focus change.
+
+    The value of this property is modified by Qt whenever focus is transferred,
+    and you should never have to set this property yourself.
 
     \note This property does not indicate whether the item has \l {Item::activeFocus}
         {active focus}, but the reason why the item either gained or lost focus.
@@ -1384,11 +1400,7 @@ Qt::FocusReason QQuickControl::focusReason() const
 void QQuickControl::setFocusReason(Qt::FocusReason reason)
 {
     Q_D(QQuickControl);
-    Qt::FocusReason oldReason = static_cast<Qt::FocusReason>(d->focusReason);
     d->setLastFocusChangeReason(reason);
-    emit focusReasonChanged();
-    if (isKeyFocusReason(oldReason) != isKeyFocusReason(reason))
-        emit visualFocusChanged();
 }
 
 /*!
@@ -1403,7 +1415,7 @@ void QQuickControl::setFocusReason(Qt::FocusReason reason)
     \l Item::activeFocus. This ensures that key focus is only visualized when
     interacting with keys - not when interacting via touch or mouse.
 
-    \sa Item::focusReason, Item::activeFocus
+    \sa focusReason, Item::activeFocus
 */
 bool QQuickControl::hasVisualFocus() const
 {
@@ -1448,7 +1460,7 @@ void QQuickControl::setHovered(bool hovered)
     \qmlproperty bool QtQuick.Controls::Control::hoverEnabled
 
     This property determines whether the control accepts hover events. The default value
-    is \c Qt.styleHints.useHoverEffects.
+    is \c Application.styleHints.useHoverEffects.
 
     Setting this property propagates the value to all child controls that do not have
     \c hoverEnabled explicitly set.
@@ -1969,22 +1981,12 @@ QFont QQuickControl::defaultFont() const
 
 void QQuickControl::focusInEvent(QFocusEvent *event)
 {
-    Q_D(QQuickControl);
-    Qt::FocusReason oldReason = static_cast<Qt::FocusReason>(d->focusReason);
     QQuickItem::focusInEvent(event);
-    Qt::FocusReason reason = event->reason();
-    if (isKeyFocusReason(oldReason) != isKeyFocusReason(reason))
-        emit visualFocusChanged();
 }
 
 void QQuickControl::focusOutEvent(QFocusEvent *event)
 {
-    Q_D(QQuickControl);
-    Qt::FocusReason oldReason = static_cast<Qt::FocusReason>(d->focusReason);
     QQuickItem::focusOutEvent(event);
-    Qt::FocusReason reason = event->reason();
-    if (isKeyFocusReason(oldReason) != isKeyFocusReason(reason))
-        emit visualFocusChanged();
 }
 
 #if QT_CONFIG(quicktemplates2_hover)

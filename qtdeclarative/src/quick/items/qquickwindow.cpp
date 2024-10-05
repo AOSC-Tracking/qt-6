@@ -43,6 +43,7 @@
 #include <private/qqmldebugserviceinterfaces_p.h>
 #include <private/qqmldebugconnector_p.h>
 #include <private/qsgdefaultrendercontext_p.h>
+#include <private/qsgsoftwarerenderer_p.h>
 #if QT_CONFIG(opengl)
 #include <private/qopengl_p.h>
 #include <QOpenGLContext>
@@ -292,37 +293,31 @@ struct PolishLoopDetector
         if (itemsToPolish.size() > itemsRemainingBeforeUpdatePolish) {
             // Detected potential polish loop.
             ++numPolishLoopsInSequence;
-            if (numPolishLoopsInSequence >= 1000) {
+            if (numPolishLoopsInSequence == 10000) {
+                // We have looped 10,000 times without actually reducing the list of items to
+                // polish, give up for now.
+                // This is not a fix, just a remedy so that the application can be somewhat
+                // responsive.
+                numPolishLoopsInSequence = 0;
+                return true;
+            }
+            if (numPolishLoopsInSequence >= 1000 && numPolishLoopsInSequence < 1005) {
                 // Start to warn about polish loop after 1000 consecutive polish loops
-                if (numPolishLoopsInSequence == 100000) {
-                    // We have looped 100,000 times without actually reducing the list of items to
-                    // polish, give up for now.
-                    // This is not a fix, just a remedy so that the application can be somewhat
-                    // responsive.
-                    numPolishLoopsInSequence = 0;
-                    return true;
-                } else if (numPolishLoopsInSequence < 1005) {
-                    // Show the 5 next items involved in the polish loop.
-                    // (most likely they will be the same 5 items...)
-                    QQuickItem *guiltyItem = itemsToPolish.last();
-                    qmlWarning(item) << "possible QQuickItem::polish() loop";
+                // Show the 5 next items involved in the polish loop.
+                // (most likely they will be the same 5 items...)
+                QQuickItem *guiltyItem = itemsToPolish.last();
+                qmlWarning(item) << "possible QQuickItem::polish() loop";
 
-                    auto typeAndObjectName = [](QQuickItem *item) {
-                        QString typeName = QQmlMetaType::prettyTypeName(item);
-                        QString objName = item->objectName();
-                        if (!objName.isNull())
-                            return QLatin1String("%1(%2)").arg(typeName, objName);
-                        return typeName;
-                    };
+                auto typeAndObjectName = [](QQuickItem *item) {
+                    QString typeName = QQmlMetaType::prettyTypeName(item);
+                    QString objName = item->objectName();
+                    if (!objName.isNull())
+                        return QLatin1String("%1(%2)").arg(typeName, objName);
+                    return typeName;
+                };
 
-                    qmlWarning(guiltyItem) << typeAndObjectName(guiltyItem)
-                               << " called polish() inside updatePolish() of " << typeAndObjectName(item);
-
-                    if (numPolishLoopsInSequence == 1004)
-                        // Enough warnings. Reset counter in order to speed things up and re-detect
-                        // more loops
-                        numPolishLoopsInSequence = 0;
-                }
+                qmlWarning(guiltyItem) << typeAndObjectName(guiltyItem)
+                            << " called polish() inside updatePolish() of " << typeAndObjectName(item);
             }
         } else {
             numPolishLoopsInSequence = 0;
@@ -332,22 +327,6 @@ struct PolishLoopDetector
     const QVector<QQuickItem*> &itemsToPolish;      // Just a ref to the one in polishItems()
     int numPolishLoopsInSequence = 0;
 };
-
-static const QQuickItem *firstItemWithDirtyChildrenStacking(const QQuickItem *item)
-{
-    if (QQuickItemPrivate::get(item)->dirtyAttributes
-        & QQuickItemPrivate::ChildrenStackingChanged) {
-        return item;
-    }
-
-    const auto childItems = item->childItems();
-    for (const auto *childItem : childItems) {
-        if (auto *dirtyItem = firstItemWithDirtyChildrenStacking(childItem))
-            return dirtyItem;
-    }
-
-    return nullptr;
-}
 
 void QQuickWindowPrivate::polishItems()
 {
@@ -383,9 +362,9 @@ void QQuickWindowPrivate::polishItems()
     }
 #endif
 
-    if (auto *dirtyItem = firstItemWithDirtyChildrenStacking(contentItem)) {
-        qCDebug(lcQuickWindow) << dirtyItem << "has dirty child stacking order";
+    if (needsChildWindowStackingOrderUpdate) {
         updateChildWindowStackingOrder();
+        needsChildWindowStackingOrderUpdate = false;
     }
 }
 
@@ -537,6 +516,7 @@ void QQuickWindowPrivate::syncSceneGraph()
 {
     Q_Q(QQuickWindow);
 
+    const bool wasRtDirty = redirect.renderTargetDirty;
     ensureCustomRenderTarget();
 
     QRhiCommandBuffer *cb = nullptr;
@@ -558,7 +538,7 @@ void QQuickWindowPrivate::syncSceneGraph()
         invalidateFontData(contentItem);
     }
 
-    if (!renderer) {
+    if (Q_UNLIKELY(!renderer)) {
         forceUpdate(contentItem);
 
         QSGRootNode *rootNode = new QSGRootNode;
@@ -568,6 +548,10 @@ void QQuickWindowPrivate::syncSceneGraph()
                                                                      : QSGRendererInterface::RenderMode2DNoDepthBuffer;
         renderer = context->createRenderer(renderMode);
         renderer->setRootNode(rootNode);
+    } else if (Q_UNLIKELY(wasRtDirty)
+               && q->rendererInterface()->graphicsApi() == QSGRendererInterface::Software) {
+        auto softwareRenderer = static_cast<QSGSoftwareRenderer *>(renderer);
+        softwareRenderer->markDirty();
     }
 
     updateDirtyNodes();
@@ -847,9 +831,14 @@ QQmlListProperty<QObject> QQuickWindowPrivate::data()
                                      QQuickWindowPrivate::data_removeLast);
 }
 
-void QQuickWindowPrivate::dirtyItem(QQuickItem *)
+void QQuickWindowPrivate::dirtyItem(QQuickItem *item)
 {
     Q_Q(QQuickWindow);
+
+    QQuickItemPrivate *itemPriv = QQuickItemPrivate::get(item);
+    if (itemPriv->dirtyAttributes & QQuickItemPrivate::ChildrenStackingChanged)
+        needsChildWindowStackingOrderUpdate = true;
+
     q->maybeUpdate();
 }
 

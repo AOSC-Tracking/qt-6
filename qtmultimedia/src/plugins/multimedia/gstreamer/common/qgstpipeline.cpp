@@ -1,18 +1,16 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
-#include <QtCore/qmap.h>
-#include <QtCore/qtimer.h>
-#include <QtCore/qmutex.h>
-#include <QtCore/qlist.h>
-#include <QtCore/qabstracteventdispatcher.h>
-#include <QtCore/qcoreapplication.h>
-#include <QtCore/qproperty.h>
+#include <QtCore/qloggingcategory.h>
 
 #include "qgstpipeline_p.h"
-#include "qgstreamermessage_p.h"
+#include "qgst_bus_p.h"
+
+#include <thread>
 
 QT_BEGIN_NAMESPACE
+
+static Q_LOGGING_CATEGORY(qLcGstPipeline, "qt.multimedia.gstpipeline");
 
 static constexpr GstSeekFlags rateChangeSeekFlags =
 #if GST_CHECK_VERSION(1, 18, 0)
@@ -21,149 +19,26 @@ static constexpr GstSeekFlags rateChangeSeekFlags =
         GST_SEEK_FLAG_FLUSH;
 #endif
 
-class QGstPipelinePrivate : public QObject
+class QGstPipelinePrivate : public QGstBus
 {
 public:
-    int m_ref = 0;
-    guint m_tag = 0;
-    GstBus *m_bus = nullptr;
-    QTimer *m_intervalTimer = nullptr;
-    QMutex filterMutex;
-    QList<QGstreamerSyncMessageFilter*> syncFilters;
-    QList<QGstreamerBusMessageFilter*> busFilters;
-    bool inStoppedState = true;
     mutable std::chrono::nanoseconds m_position{};
-    double m_rate = 1.;
-    bool m_flushOnConfigChanges = false;
-    bool m_pendingFlush = false;
 
+    double m_rate = 1.;
     int m_configCounter = 0;
     GstState m_savedState = GST_STATE_NULL;
 
-    explicit QGstPipelinePrivate(GstBus *bus, QObject *parent = nullptr);
-    ~QGstPipelinePrivate();
-
-    void ref() { ++ m_ref; }
-    void deref() { if (!--m_ref) delete this; }
-
-    void installMessageFilter(QGstreamerSyncMessageFilter *filter);
-    void removeMessageFilter(QGstreamerSyncMessageFilter *filter);
-    void installMessageFilter(QGstreamerBusMessageFilter *filter);
-    void removeMessageFilter(QGstreamerBusMessageFilter *filter);
-
-    void processMessage(const QGstreamerMessage &msg)
-    {
-        for (QGstreamerBusMessageFilter *filter : std::as_const(busFilters)) {
-            if (filter->processBusMessage(msg))
-                break;
-        }
-    }
-
-private:
-    static GstBusSyncReply syncGstBusFilter(GstBus *bus, GstMessage *message,
-                                            QGstPipelinePrivate *d)
-    {
-        if (!message)
-            return GST_BUS_PASS;
-
-        Q_UNUSED(bus);
-        QMutexLocker lock(&d->filterMutex);
-
-        for (QGstreamerSyncMessageFilter *filter : std::as_const(d->syncFilters)) {
-            if (filter->processSyncMessage(
-                        QGstreamerMessage{ message, QGstreamerMessage::NeedsRef })) {
-                gst_message_unref(message);
-                return GST_BUS_DROP;
-            }
-        }
-
-        return GST_BUS_PASS;
-    }
-
-    void processMessage(GstMessage *message)
-    {
-        if (!message)
-            return;
-
-        QGstreamerMessage msg{
-            message,
-            QGstreamerMessage::NeedsRef,
-        };
-
-        processMessage(msg);
-    }
-
-    static gboolean busCallback(GstBus *, GstMessage *message, gpointer data)
-    {
-        static_cast<QGstPipelinePrivate *>(data)->processMessage(message);
-        return TRUE;
-    }
+    explicit QGstPipelinePrivate(QGstBusHandle);
 };
 
-QGstPipelinePrivate::QGstPipelinePrivate(GstBus* bus, QObject* parent)
-  : QObject(parent),
-    m_bus(bus)
+QGstPipelinePrivate::QGstPipelinePrivate(QGstBusHandle bus)
+    : QGstBus{
+          std::move(bus),
+      }
 {
-    // glib event loop can be disabled either by env variable or QT_NO_GLIB define, so check the dispacher
-    QAbstractEventDispatcher *dispatcher = QCoreApplication::eventDispatcher();
-    const bool hasGlib = dispatcher && dispatcher->inherits("QEventDispatcherGlib");
-    if (!hasGlib) {
-        m_intervalTimer = new QTimer(this);
-        m_intervalTimer->setInterval(250);
-        QObject::connect(m_intervalTimer, &QTimer::timeout, this, [this] {
-            GstMessage *message;
-            while ((message = gst_bus_poll(m_bus, GST_MESSAGE_ANY, 0)) != nullptr) {
-                processMessage(message);
-                gst_message_unref(message);
-            }
-        });
-        m_intervalTimer->start();
-    } else {
-        m_tag = gst_bus_add_watch_full(bus, G_PRIORITY_DEFAULT, busCallback, this, nullptr);
-    }
-
-    gst_bus_set_sync_handler(bus, (GstBusSyncHandler)syncGstBusFilter, this, nullptr);
 }
 
-QGstPipelinePrivate::~QGstPipelinePrivate()
-{
-    delete m_intervalTimer;
-
-    if (m_tag)
-        gst_bus_remove_watch(m_bus);
-
-    gst_bus_set_sync_handler(m_bus, nullptr, nullptr, nullptr);
-    gst_object_unref(GST_OBJECT(m_bus));
-}
-
-void QGstPipelinePrivate::installMessageFilter(QGstreamerSyncMessageFilter *filter)
-{
-    if (filter) {
-        QMutexLocker lock(&filterMutex);
-        if (!syncFilters.contains(filter))
-            syncFilters.append(filter);
-    }
-}
-
-void QGstPipelinePrivate::removeMessageFilter(QGstreamerSyncMessageFilter *filter)
-{
-    if (filter) {
-        QMutexLocker lock(&filterMutex);
-        syncFilters.removeAll(filter);
-    }
-}
-
-void QGstPipelinePrivate::installMessageFilter(QGstreamerBusMessageFilter *filter)
-{
-    if (filter && !busFilters.contains(filter))
-        busFilters.append(filter);
-}
-
-void QGstPipelinePrivate::removeMessageFilter(QGstreamerBusMessageFilter *filter)
-{
-    if (filter)
-        busFilters.removeAll(filter);
-}
+// QGstPipeline
 
 QGstPipeline QGstPipeline::create(const char *name)
 {
@@ -171,19 +46,30 @@ QGstPipeline QGstPipeline::create(const char *name)
     return adopt(pipeline);
 }
 
+QGstPipeline QGstPipeline::createFromFactory(const char *factory, const char *name)
+{
+    QGstElement playbin3 = QGstElement::createFromFactory(factory, name);
+    GstPipeline *pipeline = qGstCheckedCast<GstPipeline>(playbin3.element());
+
+    return QGstPipeline::adopt(pipeline);
+}
+
 QGstPipeline QGstPipeline::adopt(GstPipeline *pipeline)
 {
-    QGstPipelinePrivate *d = new QGstPipelinePrivate(gst_pipeline_get_bus(pipeline));
-    g_object_set_data_full(qGstCheckedCast<GObject>(pipeline), "pipeline-private", d,
-                           [](gpointer ptr) {
-                               delete reinterpret_cast<QGstPipelinePrivate *>(ptr);
-                               return;
-                           });
-
-    return QGstPipeline{
+    QGstPipeline wrappedObject{
         pipeline,
         QGstPipeline::NeedsRef,
     };
+
+    QGstBusHandle bus{
+        gst_pipeline_get_bus(pipeline),
+        QGstBusHandle::HasRef,
+    };
+
+    auto d = std::make_unique<QGstPipelinePrivate>(std::move(bus));
+    wrappedObject.set("pipeline-private", std::move(d));
+
+    return wrappedObject;
 }
 
 QGstPipeline::QGstPipeline(GstPipeline *p, RefMode mode) : QGstBin(qGstCheckedCast<GstBin>(p), mode)
@@ -191,24 +77,6 @@ QGstPipeline::QGstPipeline(GstPipeline *p, RefMode mode) : QGstBin(qGstCheckedCa
 }
 
 QGstPipeline::~QGstPipeline() = default;
-
-bool QGstPipeline::inStoppedState() const
-{
-    QGstPipelinePrivate *d = getPrivate();
-    return d->inStoppedState;
-}
-
-void QGstPipeline::setInStoppedState(bool stopped)
-{
-    QGstPipelinePrivate *d = getPrivate();
-    d->inStoppedState = stopped;
-}
-
-void QGstPipeline::setFlushOnConfigChanges(bool flush)
-{
-    QGstPipelinePrivate *d = getPrivate();
-    d->m_flushOnConfigChanges = flush;
-}
 
 void QGstPipeline::installMessageFilter(QGstreamerSyncMessageFilter *filter)
 {
@@ -236,31 +104,18 @@ void QGstPipeline::removeMessageFilter(QGstreamerBusMessageFilter *filter)
 
 GstStateChangeReturn QGstPipeline::setState(GstState state)
 {
-    QGstPipelinePrivate *d = getPrivate();
-    auto retval = gst_element_set_state(element(), state);
-    if (d->m_pendingFlush) {
-        d->m_pendingFlush = false;
-        flush();
-    }
-    return retval;
+    return gst_element_set_state(element(), state);
 }
 
-void QGstPipeline::processMessages(GstMessageType types)
+bool QGstPipeline::processNextPendingMessage(GstMessageType types, std::chrono::nanoseconds timeout)
 {
     QGstPipelinePrivate *d = getPrivate();
-    QGstreamerMessage message{
-        gst_bus_pop_filtered(d->m_bus, types),
-        QGstreamerMessage::HasRef,
-    };
-    d->processMessage(message);
+    return d->processNextPendingMessage(types, timeout);
 }
 
-void QGstPipeline::dumpGraph(const char *fileName)
+bool QGstPipeline::processNextPendingMessage(std::chrono::nanoseconds timeout)
 {
-    if (isNull())
-        return;
-
-    QGstBin{ bin(), QGstBin::NeedsRef }.dumpGraph(fileName);
+    return processNextPendingMessage(GST_MESSAGE_ANY, timeout);
 }
 
 void QGstPipeline::beginConfig()
@@ -312,8 +167,6 @@ void QGstPipeline::endConfig()
     if (d->m_configCounter)
         return;
 
-    if (d->m_flushOnConfigChanges)
-        d->m_pendingFlush = true;
     if (d->m_savedState == GST_STATE_PLAYING)
         setState(GST_STATE_PLAYING);
     d->m_savedState = GST_STATE_NULL;
@@ -328,18 +181,31 @@ void QGstPipeline::seek(std::chrono::nanoseconds pos, double rate)
 {
     using namespace std::chrono_literals;
 
+    // CAVEAT: we need to ensure that no async operation is currently in-flight, i.e
+    // gst_element_get_state does not return GST_STATE_CHANGE_ASYNC.
+    // Apparently this can happen when (a) the pipeline is changed due to new sinks being added or
+    // the like and (b) during pending seeks.
+    bool asyncChangeSuccess = waitForAsyncStateChangeComplete();
+    if (!asyncChangeSuccess) {
+        qWarning() << "QGstPipeline::seek: async pipeline change in progress. Seeking impossible";
+        return;
+    }
+
     QGstPipelinePrivate *d = getPrivate();
     // always adjust the rate, so it can be set before playback starts
     // setting position needs a loaded media file that's seekable
 
+    qCDebug(qLcGstPipeline) << "QGstPipeline::seek to" << pos << "rate:" << rate;
+
     bool success = (rate > 0)
-            ? gst_element_seek(element(), d->m_rate, GST_FORMAT_TIME, GST_SEEK_FLAG_FLUSH,
+            ? gst_element_seek(element(), rate, GST_FORMAT_TIME, GST_SEEK_FLAG_FLUSH,
                                GST_SEEK_TYPE_SET, pos.count(), GST_SEEK_TYPE_END, 0)
-            : gst_element_seek(element(), d->m_rate, GST_FORMAT_TIME, GST_SEEK_FLAG_FLUSH,
+            : gst_element_seek(element(), rate, GST_FORMAT_TIME, GST_SEEK_FLAG_FLUSH,
                                GST_SEEK_TYPE_SET, 0, GST_SEEK_TYPE_SET, pos.count());
 
     if (!success) {
         qDebug() << "seek: gst_element_seek failed" << pos;
+        dumpGraph("seekSeekFailed");
         return;
     }
 
@@ -348,10 +214,11 @@ void QGstPipeline::seek(std::chrono::nanoseconds pos, double rate)
 
 void QGstPipeline::seek(std::chrono::nanoseconds pos)
 {
+    qCDebug(qLcGstPipeline) << "QGstPipeline::seek to" << pos;
     seek(pos, getPrivate()->m_rate);
 }
 
-void QGstPipeline::setPlaybackRate(double rate)
+void QGstPipeline::setPlaybackRate(double rate, bool forceFlushingSeek)
 {
     QGstPipelinePrivate *d = getPrivate();
     if (rate == d->m_rate)
@@ -359,7 +226,9 @@ void QGstPipeline::setPlaybackRate(double rate)
 
     d->m_rate = rate;
 
-    applyPlaybackRate(/*instantRateChange =*/true);
+    qCDebug(qLcGstPipeline) << "QGstPipeline::setPlaybackRate to" << rate;
+
+    applyPlaybackRate(forceFlushingSeek);
 }
 
 double QGstPipeline::playbackRate() const
@@ -368,16 +237,31 @@ double QGstPipeline::playbackRate() const
     return d->m_rate;
 }
 
-void QGstPipeline::applyPlaybackRate(bool instantRateChange)
+void QGstPipeline::applyPlaybackRate(bool forceFlushingSeek)
 {
     QGstPipelinePrivate *d = getPrivate();
 
-    bool success = gst_element_seek(element(), d->m_rate, GST_FORMAT_UNDEFINED,
-                                    instantRateChange ? rateChangeSeekFlags : GST_SEEK_FLAG_FLUSH,
-                                    GST_SEEK_TYPE_NONE, GST_CLOCK_TIME_NONE, GST_SEEK_TYPE_NONE,
-                                    GST_CLOCK_TIME_NONE);
-    if (!success)
-        qDebug() << "setPlaybackRate: gst_element_seek failed";
+    // do not GST_SEEK_FLAG_FLUSH with GST_SEEK_TYPE_NONE
+    // https://gitlab.freedesktop.org/gstreamer/gstreamer/-/issues/3604
+    if (!forceFlushingSeek && GST_CHECK_VERSION(1, 18, 0)) {
+        bool asyncChangeSuccess = waitForAsyncStateChangeComplete();
+        if (!asyncChangeSuccess) {
+            qWarning()
+                    << "QGstPipeline::seek: async pipeline change in progress. Seeking impossible";
+            return;
+        }
+
+        qCDebug(qLcGstPipeline) << "QGstPipeline::applyPlaybackRate instantly";
+        bool success = gst_element_seek(
+                element(), d->m_rate, GST_FORMAT_UNDEFINED, rateChangeSeekFlags, GST_SEEK_TYPE_NONE,
+                GST_CLOCK_TIME_NONE, GST_SEEK_TYPE_NONE, GST_CLOCK_TIME_NONE);
+        if (!success) {
+            qDebug() << "setPlaybackRate: gst_element_seek failed";
+            dumpGraph("applyPlaybackRateSeekFailed");
+        }
+    } else {
+        seek(position(), d->m_rate);
+    }
 }
 
 void QGstPipeline::setPosition(std::chrono::nanoseconds pos)
@@ -387,10 +271,17 @@ void QGstPipeline::setPosition(std::chrono::nanoseconds pos)
 
 std::chrono::nanoseconds QGstPipeline::position() const
 {
-    gint64 pos;
     QGstPipelinePrivate *d = getPrivate();
-    if (gst_element_query_position(element(), GST_FORMAT_TIME, &pos))
-        d->m_position = std::chrono::nanoseconds{ pos };
+    std::optional<std::chrono::nanoseconds> pos = QGstElement::position();
+    if (pos) {
+        d->m_position = *pos;
+        qCDebug(qLcGstPipeline) << "QGstPipeline::position:"
+                                << std::chrono::round<std::chrono::milliseconds>(*pos);
+    } else {
+        qDebug() << "QGstPipeline: failed to query position, using previous position";
+        dumpGraph("positionQueryFailed");
+    }
+
     return d->m_position;
 }
 
@@ -400,26 +291,87 @@ std::chrono::milliseconds QGstPipeline::positionInMs() const
     return round<milliseconds>(position());
 }
 
-std::chrono::nanoseconds QGstPipeline::duration() const
+void QGstPipeline::setPositionAndRate(std::chrono::nanoseconds pos, double rate)
 {
-    gint64 d;
-    if (!gst_element_query_duration(element(), GST_FORMAT_TIME, &d))
-        return {};
-    return std::chrono::nanoseconds{ d };
+    QGstPipelinePrivate *d = getPrivate();
+    d->m_rate = rate;
+    seek(pos, rate);
 }
 
-std::chrono::milliseconds QGstPipeline::durationInMs() const
+std::optional<std::chrono::nanoseconds>
+QGstPipeline::queryPosition(std::chrono::nanoseconds timeout) const
 {
+    using namespace std::chrono_literals;
     using namespace std::chrono;
-    return round<milliseconds>(duration());
+
+    std::chrono::nanoseconds totalSleepTime{};
+
+    for (;;) {
+        std::optional<nanoseconds> dur = QGstElement::duration();
+        if (dur)
+            return dur;
+
+        if (totalSleepTime >= timeout)
+            return std::nullopt;
+        std::this_thread::sleep_for(20ms);
+        totalSleepTime += 20ms;
+    }
+}
+
+std::optional<std::chrono::nanoseconds>
+QGstPipeline::queryDuration(std::chrono::nanoseconds timeout) const
+{
+    using namespace std::chrono_literals;
+    using namespace std::chrono;
+
+    std::chrono::nanoseconds totalSleepTime{};
+
+    for (;;) {
+        std::optional<nanoseconds> dur = QGstElement::duration();
+        if (dur)
+            return dur;
+
+        if (totalSleepTime >= timeout)
+            return std::nullopt;
+
+        std::this_thread::sleep_for(20ms);
+        totalSleepTime += 20ms;
+    }
+}
+
+std::optional<std::pair<std::chrono::nanoseconds, std::chrono::nanoseconds>>
+QGstPipeline::queryPositionAndDuration(std::chrono::nanoseconds timeout) const
+{
+    using namespace std::chrono_literals;
+    using namespace std::chrono;
+
+    std::chrono::nanoseconds totalSleepTime{};
+
+    std::optional<nanoseconds> dur;
+    std::optional<nanoseconds> pos;
+
+    for (;;) {
+        if (!dur)
+            dur = QGstElement::duration();
+        if (!pos)
+            pos = QGstElement::position();
+
+        if (dur && pos)
+            return std::pair{ *dur, *pos };
+
+        if (totalSleepTime >= timeout)
+            return std::nullopt;
+
+        std::this_thread::sleep_for(20ms);
+        totalSleepTime += 20ms;
+    }
 }
 
 QGstPipelinePrivate *QGstPipeline::getPrivate() const
 {
-    gpointer p = g_object_get_data(qGstCheckedCast<GObject>(object()), "pipeline-private");
-    auto *d = reinterpret_cast<QGstPipelinePrivate *>(p);
-    Q_ASSERT(d);
-    return d;
+    QGstPipelinePrivate *ret = getObject<QGstPipelinePrivate>("pipeline-private");
+    Q_ASSERT(ret);
+    return ret;
 }
 
 QT_END_NAMESPACE

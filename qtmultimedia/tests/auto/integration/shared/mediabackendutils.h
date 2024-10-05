@@ -6,10 +6,17 @@
 
 #include <QtTest/qtestcase.h>
 #include <private/qplatformmediaintegration_p.h>
+#include <QtGui/private/qguiapplication_p.h>
+#include <QtGui/qpa/qplatformintegration.h>
 
 inline bool isGStreamerPlatform()
 {
     return QPlatformMediaIntegration::instance()->name() == "gstreamer";
+}
+
+inline bool isQNXPlatform()
+{
+    return QPlatformMediaIntegration::instance()->name() == "qnx";
 }
 
 inline bool isDarwinPlatform()
@@ -30,6 +37,12 @@ inline bool isFFMPEGPlatform()
 inline bool isWindowsPlatform()
 {
     return QPlatformMediaIntegration::instance()->name() == "windows";
+}
+
+inline bool isRhiRenderingSupported()
+{
+    return QGuiApplicationPrivate::platformIntegration()->hasCapability(
+            QPlatformIntegration::RhiBasedRendering);
 }
 
 inline bool isCI()

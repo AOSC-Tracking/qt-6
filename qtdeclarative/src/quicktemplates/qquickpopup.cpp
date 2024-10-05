@@ -338,6 +338,59 @@ Q_LOGGING_CATEGORY(lcPopup, "qt.quick.controls.popup")
         }
     }
     \endcode
+
+    \section1 Polish Behavior of Closed Popups
+
+    When a popup is closed, it has no associated window, and neither do its
+    child items. This means that any child items will not be
+    \l {QQuickItem::polish}{polished} until the popup is shown. For this
+    reason, you cannot, for example, rely on a \l ListView within a closed
+    \c Popup to update its \c count property:
+
+    \code
+    import QtQuick
+    import QtQuick.Controls
+
+    ApplicationWindow {
+        width: 640
+        height: 480
+        visible: true
+
+        SomeModel {
+            id: someModel
+        }
+
+        Button {
+            text: view.count
+            onClicked: popup.open()
+        }
+
+        Popup {
+            id: popup
+            width: 400
+            height: 400
+            contentItem: ListView {
+                id: view
+                model: someModel
+                delegate: Label {
+                    text: display
+
+                    required property string display
+                }
+            }
+        }
+    }
+    \endcode
+
+    In the example above, the Button's text will not update when rows are added
+    to or removed from \c someModel after \l {Component::completed}{component
+    completion} while the popup is closed.
+
+    Instead, a \c count property can be added to \c SomeModel that is updated
+    whenever the \l {QAbstractItemModel::}{rowsInserted}, \l
+    {QAbstractItemModel::}{rowsRemoved}, and \l
+    {QAbstractItemModel::}{modelReset} signals are emitted. The \c Button can
+    then bind this property to its \c text.
 */
 
 /*!
@@ -718,6 +771,13 @@ void QQuickPopupPrivate::finalizeExitTransition()
     hadActiveFocusBeforeExitTransition = false;
     emit q->visibleChanged();
     emit q->closed();
+#if QT_CONFIG(accessibility)
+    const auto type = q->effectiveAccessibleRole() == QAccessible::PopupMenu
+                        ? QAccessible::PopupMenuEnd
+                        : QAccessible::DialogEnd;
+    QAccessibleEvent ev(q->popupItem(), type);
+    QAccessible::updateAccessibility(&ev);
+#endif
     if (popupItem) {
         popupItem->setScale(prevScale);
         popupItem->setOpacity(prevOpacity);
@@ -728,6 +788,13 @@ void QQuickPopupPrivate::opened()
 {
     Q_Q(QQuickPopup);
     emit q->opened();
+#if QT_CONFIG(accessibility)
+    const auto type = q->effectiveAccessibleRole() == QAccessible::PopupMenu
+                        ? QAccessible::PopupMenuStart
+                        : QAccessible::DialogStart;
+    QAccessibleEvent ev(q->popupItem(), type);
+    QAccessible::updateAccessibility(&ev);
+#endif
 }
 
 QMarginsF QQuickPopupPrivate::getMargins() const
@@ -2653,7 +2720,8 @@ void QQuickPopup::resetBottomInset()
     }
     \endcode
 
-    \sa Item::palette, Window::palette, ColorGroup, Palette
+    \b {See also}: \l Item::palette, \l Window::palette, \l ColorGroup,
+       \l [QML] {Palette}
 */
 
 bool QQuickPopup::filtersChildMouseEvents() const

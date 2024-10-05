@@ -552,6 +552,7 @@ void AttachedPropertyReuse::onRead(const QQmlSA::Element &element, const QString
             emitWarning("Using attached type %1 already initialized in a parent scope."_L1.arg(
                                 element.name()),
                         category, attachedLocation, suggestion);
+            return;
         }
 
         return;
@@ -678,7 +679,7 @@ void QmlLintQuickPlugin::registerPasses(QQmlSA::PassManager *manager,
                            "Accessible must be attached to an Item");
         addAttachedWarning({ "QtQuick", "LayoutMirroring" },
                            { { "QtQuick", "Item" }, { "QtQuick", "Window" } },
-                           "LayoutDirection attached property only works with Items and Windows");
+                           "LayoutMirroring attached property only works with Items and Windows");
         addAttachedWarning({ "QtQuick", "EnterKey" }, { { "QtQuick", "Item" } },
                            "EnterKey attached property only works with Items");
     }
@@ -713,10 +714,6 @@ void QmlLintQuickPlugin::registerPasses(QQmlSA::PassManager *manager,
                            "Attached properties of SwipeDelegate must be accessed through an Item");
         addAttachedWarning({ "QtQuick.Templates", "SwipeView" }, { { "QtQuick", "Item" } },
                            "SwipeView must be attached to an Item");
-        addAttachedWarning(
-                { "QtQuick.Templates", "Tumbler" }, { { "QtQuick", "Tumbler" } },
-                "Tumbler: attached properties of Tumbler must be accessed through a delegate item",
-                true);
         addVarBindingWarning("QtQuick.Templates", "Tumbler",
                              { { "contentItem", { "QtQuick", "PathView" } },
                                { "contentItem", { "QtQuick", "ListView" } } });

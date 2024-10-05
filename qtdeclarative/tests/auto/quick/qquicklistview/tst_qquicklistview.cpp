@@ -171,6 +171,7 @@ private slots:
     void headerSnapToItem_data();
     void headerSnapToItem();
     void snapToItemWithSpacing_QTBUG_59852();
+    void snapToItemWithSectionAtStart();
     void snapOneItemResize_QTBUG_43555();
     void snapOneItem_data();
     void snapOneItem();
@@ -5396,6 +5397,27 @@ void tst_QQuickListView::snapToItemWithSpacing_QTBUG_59852()
     releaseView(window);
 }
 
+void tst_QQuickListView::snapToItemWithSectionAtStart() // QTBUG-30768
+{
+    QQuickView window;
+    QVERIFY(QQuickTest::showView(window, testFileUrl("snapToItemWithSectionAtStart.qml")));
+    QQuickListView *listView = qobject_cast<QQuickListView *>(window.rootObject());
+    QTRY_VERIFY(listView);
+
+    // Both sections and elements are 30px high. The list height is 300px, so
+    // it fits exactly 10 elements. We can do some random flicks, but the
+    // content position always MUST be divisible by 30.
+    for (int i = 0; i < 10; ++i) {
+        const bool even = (i % 2 == 0);
+        const QPoint start = even ? QPoint(20, 100 + i * 5) : QPoint(20, 20 + i * 3);
+        const QPoint end = even ? start - QPoint(0, 50 + i * 10) : start + QPoint(0, 50 + i * 5);
+
+        flick(&window, start, end, 180);
+        QTRY_COMPARE(listView->isMoving(), false); // wait until it stops
+        QCOMPARE(int(listView->contentY()) % 30, 0);
+    }
+}
+
 static void drag_helper(QWindow *window, QPoint *startPos, const QPoint &delta)
 {
     QPoint pos = *startPos;
@@ -7788,7 +7810,7 @@ void tst_QQuickListView::multipleTransitions()
         QQuickItem *item = findItem<QQuickItem>(contentItem, "wrapper", i);
         QVERIFY2(item, qPrintable(QString("Item %1 not found").arg(i)));
         QTRY_COMPARE(item->x(), 0.0);
-        QTRY_COMPARE(item->y(), i*20.0);
+        QTRY_COMPARE(item->y() - listview->originY(), i*20.0);
         QQuickText *name = findItem<QQuickText>(contentItem, "textName", i);
         QVERIFY(name != nullptr);
         QTRY_COMPARE(name->text(), model.name(i));

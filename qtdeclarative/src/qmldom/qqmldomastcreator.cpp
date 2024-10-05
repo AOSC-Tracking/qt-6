@@ -419,6 +419,8 @@ bool QQmlDomAstCreator::visit(AST::UiPublicMember *el)
             param.name = args->name.toString();
             param.typeName = args->type ? args->type->toString() : QString();
             index_type idx = index_type(mInfo.parameters.size());
+            if (!args->colonToken.isValid())
+                param.typeAnnotationStyle = MethodParameter::TypeAnnotationStyle::Prefix;
             mInfo.parameters.append(param);
             auto argLocs = FileLocations::ensure(nodeStack.last().fileLocations,
                                                  Path::Field(Fields::parameters).index(idx),
@@ -1207,7 +1209,9 @@ void QQmlDomAstCreator::endVisit(AST::UiEnumDeclaration *)
 
 bool QQmlDomAstCreator::visit(AST::UiEnumMemberList *el)
 {
-    EnumItem it(el->member.toString(), el->value);
+    EnumItem it(el->member.toString(), el->value,
+                el->valueToken.isValid() ? EnumItem::ValueKind::ExplicitValue
+                                         : EnumItem::ValueKind::ImplicitValue);
     EnumDecl &eDecl = std::get<EnumDecl>(currentNode().value);
     Path itPathFromDecl = eDecl.addValue(it);
     const auto map = createMap(DomType::EnumItem, itPathFromDecl, nullptr);

@@ -185,8 +185,6 @@ bool QLibraryPrivate::load_sys()
     Handle hnd = nullptr;
     for (int prefix = 0; retry && !hnd && prefix < prefixes.size(); prefix++) {
         for (int suffix = 0; retry && !hnd && suffix < suffixes.size(); suffix++) {
-            if (!prefixes.at(prefix).isEmpty() && name.startsWith(prefixes.at(prefix)))
-                continue;
             if (path.isEmpty() && prefixes.at(prefix).contains(u'/'))
                 continue;
             if (!suffixes.at(suffix).isEmpty() && name.endsWith(suffixes.at(suffix)))
@@ -236,8 +234,8 @@ bool QLibraryPrivate::load_sys()
 
     locker.relock();
     if (!hnd) {
-        errorString = QLibrary::tr("Cannot load library %1: %2").arg(fileName,
-                                                                     QLatin1StringView(dlerror()));
+        errorString = QLibrary::tr("Cannot load library %1: %2")
+                .arg(fileName, QString::fromLocal8Bit(dlerror()));
     }
     if (hnd) {
         qualifiedFileName = attempt;
@@ -262,8 +260,8 @@ bool QLibraryPrivate::unload_sys()
         if (!qstrcmp(error, "Shared objects still referenced")) // On QNX that's only "informative"
             return true;
 #endif
-        errorString = QLibrary::tr("Cannot unload library %1: %2").arg(fileName,
-                                                                       QLatin1StringView(error));
+        errorString = QLibrary::tr("Cannot unload library %1: %2")
+                .arg(fileName, QString::fromLocal8Bit(error));
         return false;
     }
     errorString.clear();

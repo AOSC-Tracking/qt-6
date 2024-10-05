@@ -31,6 +31,7 @@
 #include <private/qv4jsonobject_p.h>
 #include <private/qv4objectproto_p.h>
 #include <private/qv4qobjectwrapper_p.h>
+#include <private/qv4sequenceobject_p.h>
 #include <private/qv4stackframe_p.h>
 
 #include <QtCore/qstring.h>
@@ -229,7 +230,9 @@ The following functions are also on the Qt object.
     The \c styleHints object provides platform-specific style hints and settings.
     See the \l QStyleHints documentation for further details.
 
-    You should access StyleHints via \l Application::styleHints instead.
+    You should access StyleHints via \l Application::styleHints instead, as
+    this provides better type information for tooling such as the
+    \l {Qt Quick Compiler}.
 
     \note The \c styleHints object is only available when using the Qt Quick module.
 */
@@ -1781,14 +1784,20 @@ static QString serializeArray(Object *array, ExecutionEngine *v4, QSet<QV4::Heap
     Scope scope(v4);
     ScopedValue val(scope);
     QString result;
-
     alreadySeen.insert(array->d());
+
+    ScopedObject detached(scope);
+    if (Sequence *reference = array->as<Sequence>())
+        detached = ReferenceObject::detached(reference->d());
+    else
+        detached = array;
+
     result += QLatin1Char('[');
-    const uint length = array->getLength();
+    const uint length = detached->getLength();
     for (uint i = 0; i < length; ++i) {
         if (i != 0)
             result += QLatin1Char(',');
-        val = array->get(i);
+        val = detached->get(i);
         if (val->isManaged() && val->managed()->isArrayLike())
             if (!alreadySeen.contains(val->objectValue()->d()))
                 result += serializeArray(val->objectValue(), v4, alreadySeen);
@@ -1798,6 +1807,7 @@ static QString serializeArray(Object *array, ExecutionEngine *v4, QSet<QV4::Heap
             result += val->toQStringNoThrow();
     }
     result += QLatin1Char(']');
+
     alreadySeen.remove(array->d());
     return result;
 };

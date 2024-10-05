@@ -106,6 +106,7 @@ private slots:
     void fadeDimmer_data();
     void fadeDimmer();
     void noDimmer();
+    void resetHoveredStateForItemsWithinPopup();
 
 private:
     QScopedPointer<QPointingDevice> touchScreen = QScopedPointer<QPointingDevice>(QTest::createTouchDevice());
@@ -1765,7 +1766,6 @@ void tst_QQuickPopup::tabFence()
 
     QQuickPopup *popup = window->property("dialog").value<QQuickPopup*>();
     QVERIFY(popup);
-    popup->setModal(true);
     popup->open();
     QTRY_VERIFY(popup->isOpened());
 
@@ -1777,6 +1777,20 @@ void tst_QQuickPopup::tabFence()
     QVERIFY(dialogButton1);
     QQuickButton *dialogButton2 = window->property("dialogButton2").value<QQuickButton*>();
     QVERIFY(dialogButton2);
+
+    // Dialog is not tab fenced by default
+    outsideButton1->forceActiveFocus();
+    QVERIFY(outsideButton1->hasActiveFocus());
+    QTest::keyClick(window, Qt::Key_Tab);
+    QVERIFY(outsideButton2->hasActiveFocus());
+    QTest::keyClick(window, Qt::Key_Tab);
+    QVERIFY(dialogButton1->hasActiveFocus());
+    QTest::keyClick(window, Qt::Key_Tab);
+    QVERIFY(dialogButton2->hasActiveFocus());
+    QTest::keyClick(window, Qt::Key_Tab);
+    QVERIFY(outsideButton1->hasActiveFocus());
+
+    popup->setModal(true);
 
     // When modal, focus loops between the two external buttons
     outsideButton1->forceActiveFocus();
@@ -2356,6 +2370,39 @@ void tst_QQuickPopup::noDimmer()
     QVERIFY(dimmer);
     // this must not crash
     QTRY_VERIFY(!drawer->isModal());
+}
+
+void tst_QQuickPopup::resetHoveredStateForItemsWithinPopup()
+{
+    QQuickControlsApplicationHelper helper(this, "resetHoveredForItemsWithinOverlay.qml");
+    QVERIFY2(helper.ready, helper.failureMessage());
+
+    QQuickWindow *window = helper.window;
+    window->show();
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+
+    QQuickPopup *controlsPopup = window->property("controlsPopup").value<QQuickPopup*>();
+    QVERIFY(controlsPopup);
+
+    QQuickPopup *blockInputPopup = window->property("blockInputPopup").value<QQuickPopup*>();
+    QVERIFY(controlsPopup);
+
+    controlsPopup->open();
+    QTRY_VERIFY(controlsPopup->isOpened());
+
+    QTest::mouseMove(window, QPoint(window->width() / 2, window->height() / 2));
+
+    auto *controlItem = qobject_cast<QQuickControl *>(controlsPopup->contentItem()->childItems().at(0));
+    QVERIFY(controlItem);
+    // Check hover enabled for the control item within the popup
+    QTRY_VERIFY(controlItem->isHovered());
+
+    // Open the modal popup window over the existing control item
+    blockInputPopup->open();
+    QTRY_VERIFY(blockInputPopup->isOpened());
+
+    // Control item hovered shall be disabled once we open the modal popup
+    QTRY_VERIFY(!controlItem->isHovered());
 }
 
 QTEST_QUICKCONTROLS_MAIN(tst_QQuickPopup)

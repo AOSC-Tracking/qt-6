@@ -92,6 +92,7 @@ public:
 #if QT_CONFIG(cursor)
     void setCursor(const QCursor *cursor, const QSharedPointer<QWaylandBuffer> &cachedBuffer = {}, int fallbackOutputScale = 1);
 #endif
+    void handleStartDrag();
     void handleEndDrag();
 
 #if QT_CONFIG(wayland_datadevice)
@@ -192,6 +193,7 @@ protected:
     friend class QWaylandPointerGestureSwipe;
     friend class QWaylandPointerGesturePinch;
     friend class QWaylandWindow;
+    friend class QWaylandTabletToolV2;
 };
 
 inline uint32_t QWaylandInputDevice::serial() const
@@ -320,6 +322,7 @@ private:
 
 public:
     void releaseButtons();
+    void leavePointers();
 
     QWaylandInputDevice *mParent = nullptr;
     QPointer<QWaylandSurface> mFocus;

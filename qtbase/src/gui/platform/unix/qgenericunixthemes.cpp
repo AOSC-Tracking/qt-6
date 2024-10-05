@@ -503,6 +503,8 @@ QVariant QGenericUnixTheme::themeHint(ThemeHint hint) const
         return QVariant(mouseCursorTheme());
     case QPlatformTheme::MouseCursorSize:
         return QVariant(mouseCursorSize());
+    case QPlatformTheme::PreferFileIconFromTheme:
+        return true;
     default:
         break;
     }
@@ -835,6 +837,10 @@ void QKdeThemePrivate::refresh()
     const QVariant singleClickValue = readKdeSetting(KdeSetting::SingleClick);
     if (singleClickValue.isValid())
         singleClick = singleClickValue.toBool();
+    else if (kdeVersion >= 6) // Plasma 6 defaults to double-click
+        singleClick = false;
+    else // earlier version to single-click
+        singleClick = true;
 
     const QVariant showIconsOnPushButtonsValue = readKdeSetting(KdeSetting::ShowIconsOnPushButtons);
     if (showIconsOnPushButtonsValue.isValid())
@@ -1108,6 +1114,8 @@ QVariant QKdeTheme::themeHint(QPlatformTheme::ThemeHint hint) const
         return QVariant(mouseCursorTheme());
     case QPlatformTheme::MouseCursorSize:
         return QVariant(mouseCursorSize());
+    case QPlatformTheme::PreferFileIconFromTheme:
+        return true;
     default:
         break;
     }
@@ -1385,6 +1393,8 @@ QVariant QGnomeTheme::themeHint(QPlatformTheme::ThemeHint hint) const
         return QVariant(mouseCursorTheme());
     case QPlatformTheme::MouseCursorSize:
         return QVariant(mouseCursorSize());
+    case QPlatformTheme::PreferFileIconFromTheme:
+        return true;
     default:
         break;
     }
@@ -1490,6 +1500,7 @@ QStringList QGenericUnixTheme::themeNames()
         QList<QByteArray> gtkBasedEnvironments;
         gtkBasedEnvironments << "GNOME"
                              << "X-CINNAMON"
+                             << "PANTHEON"
                              << "UNITY"
                              << "MATE"
                              << "XFCE"

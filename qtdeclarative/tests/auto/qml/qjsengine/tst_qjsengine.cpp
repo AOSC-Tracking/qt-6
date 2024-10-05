@@ -317,6 +317,15 @@ private slots:
     void deleteDefineCycle();
     void deleteFromSparseArray();
 
+    void generatorFunctionInTailCallPosition();
+    void generatorMethodInTailCallPosition();
+
+    void consoleLogSequence();
+
+    void generatorStackOverflow_data();
+    void generatorStackOverflow();
+    void generatorInfiniteRecursion();
+
 public:
     Q_INVOKABLE QJSValue throwingCppMethod1();
     Q_INVOKABLE void throwingCppMethod2();
@@ -6378,6 +6387,125 @@ void tst_QJSEngine::deleteFromSparseArray()
     QCOMPARE(result.property("length").toNumber(), 20001);
     QVERIFY(result.property(10000).isUndefined());
     QVERIFY(result.property(20000).isUndefined());
+}
+
+void tst_QJSEngine::generatorFunctionInTailCallPosition() {
+  QJSEngine engine;
+  QJSValue result = engine.evaluate(R"(
+    "use strict";
+    function* gen() {
+        yield 0;
+    }
+    function caller() { return gen(); }
+    caller();
+  )");
+
+  QVERIFY(!result.isError());
+  QVERIFY(!result.isUndefined());
+}
+
+void tst_QJSEngine::generatorMethodInTailCallPosition() {
+  QJSEngine engine;
+  QJSValue result = engine.evaluate(R"(
+    "use strict";
+    class Class {
+        *gen() {
+            yield 0;
+        }
+
+        caller() { return this.gen(); }
+    }
+    var c = new Class();
+    c.caller();
+  )");
+
+  QVERIFY(!result.isError());
+  QVERIFY(!result.isUndefined());
+}
+
+static unsigned stringListFetchCount = 0;
+class StringListProvider : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QStringList strings READ strings CONSTANT)
+
+public:
+    QStringList strings() const
+    {
+        ++stringListFetchCount;
+        QStringList ret;
+        for (int i = 0; i < 10; ++i)
+            ret.append(QString::number(i));
+        return ret;
+    }
+};
+
+void tst_QJSEngine::consoleLogSequence()
+{
+    QJSEngine engine;
+    engine.installExtensions(QJSEngine::ConsoleExtension);
+
+    engine.globalObject().setProperty(
+                QStringLiteral("object"), engine.newQObject(new StringListProvider));
+
+    QTest::ignoreMessage(QtDebugMsg, "[0,1,2,3,4,5,6,7,8,9]");
+
+    engine.evaluate(QStringLiteral("console.log(object.strings)"));
+    QCOMPARE(stringListFetchCount, 1);
+}
+
+void tst_QJSEngine::generatorStackOverflow_data() {
+    QTest::addColumn<QString>("code");
+    QTest::addColumn<int>("callDepth");
+
+    auto makeCode = [](QString method) {
+        return uR"(
+            function* gen() { yield 1; yield 2; }
+            function indirection(g) { return g.%1(); }
+
+            var g = gen();
+            g.next() // used to trigger a resume in return and throw
+            indirection(g);
+          )"_s.arg(method);
+    };
+
+    QTest::addRow("Stack Overflow on calling a generator function")
+        << u"function* gen(){}; gen()"_s << 1;
+    QTest::addRow("Stack Overflow on next") << makeCode(u"next"_s) << 2;
+    QTest::addRow("Stack Overflow on return") << makeCode(u"return"_s) << 2;
+    QTest::addRow("Stack Overflow on throw") << makeCode(u"throw"_s) << 2;
+}
+
+void tst_QJSEngine::generatorStackOverflow() {
+    QFETCH(QString, code);
+    QFETCH(int, callDepth);
+
+    const auto guard = qScopeGuard([maxCallDepth = QV4::ExecutionEngine::maxCallDepth()]() {
+        QV4::ExecutionEngine::setMaxCallDepth(maxCallDepth);
+    });
+
+    QJSEngine engine;
+
+    QV4::ExecutionEngine::setMaxCallDepth(callDepth);
+    engine.handle()->callDepth = 0;
+
+    QJSValue result = engine.evaluate(code);
+
+    QVERIFY(result.isError());
+    QCOMPARE(result.errorType(), QJSValue::RangeError);
+    QCOMPARE(result.toString(), "RangeError: Maximum call stack size exceeded.");
+}
+
+void tst_QJSEngine::generatorInfiniteRecursion() {
+    QJSEngine engine;
+    QJSValue result = engine.evaluate(R"(
+        function* gen() { yield* gen() }
+        for (const nothing of gen()) {}
+    )");
+
+    QVERIFY(result.isError());
+    QCOMPARE(result.errorType(), QJSValue::RangeError);
+    QCOMPARE(result.toString(), "RangeError: Maximum call stack size exceeded.");
 }
 
 QTEST_MAIN(tst_QJSEngine)

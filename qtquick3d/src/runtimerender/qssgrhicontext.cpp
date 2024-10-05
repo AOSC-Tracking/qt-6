@@ -98,9 +98,9 @@ Q_TRACE_POINT(qtquick3d, QSSG_draw, int vertexCount, int instanceCount);
 
     The active stencil reference value.
 
-    \note Only used when \l{QSSGRhiGraphicsPipeline::Flags::UsesStencilRef}{UsesStencilRef} is set.
+    \note Only used when \l{QSSGRhiGraphicsPipelineState::Flag::}{UsesStencilRef} is set.
 
-    \sa QRhiCommandBuffer::stencilRef()
+    \sa QRhiCommandBuffer::setStencilRef()
  */
 
 /*!
@@ -147,7 +147,7 @@ Q_TRACE_POINT(qtquick3d, QSSG_draw, int vertexCount, int instanceCount);
 
     The scissor rect.
 
-    \note Only used if \l{QSSGRhiGraphicsPipelineState::Flags::UsesScissor}{UsesScissor} is set.
+    \note Only used if \l{QSSGRhiGraphicsPipelineState::Flag::}{UsesScissor} is set.
 
     \sa QRhiCommandBuffer::setScissor()
  */
@@ -1194,6 +1194,12 @@ QRhiShaderResourceBindings *QSSGRhiContextPrivate::srb(const QSSGRhiShaderResour
     return srb;
 }
 
+void QSSGRhiContextPrivate::releaseCachedSrb(QSSGRhiShaderResourceBindingList &bindings)
+{
+    auto srb = m_srbCache.take(bindings);
+    delete srb;
+}
+
 void QSSGRhiContextPrivate::releaseDrawCallData(QSSGRhiDrawCallData &dcd)
 {
     delete dcd.ubuf;
@@ -1322,8 +1328,12 @@ void QSSGRhiContextPrivate::releaseMesh(QSSGRenderMesh *mesh)
 {
     if (mesh) {
         for (const auto &subset : std::as_const(mesh->subsets)) {
-            if (subset.rhi.targetsTexture)
+            if (subset.rhi.targetsTexture) {
+                // If there is a morph targets texture, it should be the same for
+                // all subsets, so just release and break
                 releaseTexture(subset.rhi.targetsTexture);
+                break;
+            }
         }
     }
     m_meshes.remove(mesh);
@@ -1384,6 +1394,15 @@ QRhiTexture *QSSGRhiContext::dummyTexture(QRhiTexture::Flags flags, QRhiResource
 QSSGRhiInstanceBufferData &QSSGRhiContextPrivate::instanceBufferData(QSSGRenderInstanceTable *instanceTable)
 {
     return m_instanceBuffers[instanceTable];
+}
+
+void QSSGRhiContextPrivate::releaseInstanceBuffer(QSSGRenderInstanceTable *instanceTable)
+{
+    auto it = m_instanceBuffers.constFind(instanceTable);
+    if (it != m_instanceBuffers.constEnd()) {
+        it->buffer->destroy();
+        m_instanceBuffers.erase(it);
+    }
 }
 
 QSSGRhiInstanceBufferData &QSSGRhiContextPrivate::instanceBufferData(const QSSGRenderModel *model)

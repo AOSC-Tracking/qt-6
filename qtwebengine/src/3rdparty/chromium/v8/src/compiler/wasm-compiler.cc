@@ -3341,7 +3341,7 @@ Node* WasmGraphBuilder::MemStart(uint32_t mem_index) {
   DCHECK_NOT_NULL(instance_cache_);
   V8_ASSUME(cached_memory_index_ == kNoCachedMemoryIndex ||
             cached_memory_index_ >= 0);
-  if (mem_index == static_cast<uint8_t>(cached_memory_index_)) {
+  if (mem_index == static_cast<uint32_t>(cached_memory_index_)) {
     return instance_cache_->mem_start;
   }
   return LoadMemStart(mem_index);
@@ -3351,7 +3351,7 @@ Node* WasmGraphBuilder::MemSize(uint32_t mem_index) {
   DCHECK_NOT_NULL(instance_cache_);
   V8_ASSUME(cached_memory_index_ == kNoCachedMemoryIndex ||
             cached_memory_index_ >= 0);
-  if (mem_index == static_cast<uint8_t>(cached_memory_index_)) {
+  if (mem_index == static_cast<uint32_t>(cached_memory_index_)) {
     return instance_cache_->mem_size;
   }
 
@@ -8685,7 +8685,7 @@ wasm::WasmCode* CompileWasmCapiCallWrapper(wasm::NativeModule* native_module,
   {
     std::unique_ptr<wasm::WasmCode> wasm_code = native_module->AddCode(
         wasm::kAnonymousFuncIndex, result.code_desc, result.frame_slot_count,
-        result.tagged_parameter_slots,
+        result.ool_spill_count, result.tagged_parameter_slots,
         result.protected_instructions_data.as_vector(),
         result.source_positions.as_vector(), wasm::WasmCode::kWasmToCapiWrapper,
         wasm::ExecutionTier::kNone, wasm::kNotForDebugging);
@@ -8734,7 +8734,7 @@ wasm::WasmCode* CompileWasmJSFastCallWrapper(wasm::NativeModule* native_module,
   {
     std::unique_ptr<wasm::WasmCode> wasm_code = native_module->AddCode(
         wasm::kAnonymousFuncIndex, result.code_desc, result.frame_slot_count,
-        result.tagged_parameter_slots,
+        result.ool_spill_count, result.tagged_parameter_slots,
         result.protected_instructions_data.as_vector(),
         result.source_positions.as_vector(), wasm::WasmCode::kWasmToJsWrapper,
         wasm::ExecutionTier::kNone, wasm::kNotForDebugging);

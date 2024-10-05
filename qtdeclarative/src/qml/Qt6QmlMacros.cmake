@@ -2572,6 +2572,23 @@ function(qt6_target_qml_sources target)
                         "and .mjs. This leads to unexpected component names."
                     )
                 endif()
+                if(qml_file_ext AND qml_file_ext STREQUAL ".js" AND skip_qmldir STREQUAL "NOTFOUND")
+                    file(
+                        STRINGS ${qml_file_src} pragma_library
+                        REGEX "^\\.pragma library$"
+                        LIMIT_COUNT 1
+                        LIMIT_INPUT 128
+                    )
+                    if(NOT pragma_library)
+                        message(AUTHOR_WARNING
+                            "${qml_file_src} is not an ECMAScript module and also doesn't contain "
+                            "'.pragma library'. It will be re-evaluated in the context of every "
+                            "QML document that explicitly or implicitly imports ${uri}. Set its "
+                            "QT_QML_SKIP_QMLDIR_ENTRY source file property to FALSE if you really "
+                            "want this to happen. Set it to TRUE to prevent it."
+                        )
+                    endif()
+                endif()
 
                 # We previously accepted the singular form of this property name
                 # during tech preview. Issue a warning for that, but still
@@ -2749,6 +2766,7 @@ function(qt6_target_qml_sources target)
             if(NOT TARGET ${target}_tooling)
                 add_library(${target}_tooling INTERFACE)
                 add_dependencies(${target} ${target}_tooling)
+                set_target_properties(${target}_tooling PROPERTIES QT_EXCLUDE_FROM_TRANSLATION ON)
             endif()
             target_sources(${target}_tooling PRIVATE
                 ${copied_files}
@@ -2838,6 +2856,9 @@ function(qt6_generate_foreign_qml_types source_target destination_qml_target)
         VERBATIM
     )
 
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.27")
+        set_source_files_properties(${additional_sources} PROPERTIES SKIP_LINTING ON)
+    endif()
     target_sources(${destination_qml_target} PRIVATE ${additional_sources})
 endfunction()
 

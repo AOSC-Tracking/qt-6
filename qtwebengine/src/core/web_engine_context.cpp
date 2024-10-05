@@ -11,6 +11,7 @@
 #include "base/functional/bind.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
+#include "base/metrics/field_trial.h"
 #include "base/power_monitor/power_monitor.h"
 #include "base/power_monitor/power_monitor_device_source.h"
 #include "base/run_loop.h"
@@ -137,6 +138,8 @@ class GPUInfo
 public:
     enum Vendor {
         Unknown = -1,
+
+        // PCI-SIG-registered vendors
         AMD,
         Apple,
         ARM,
@@ -144,10 +147,20 @@ public:
         ImgTec,
         Intel,
         Microsoft,
-        Mesa,
         Nvidia,
         Qualcomm,
-        Samsung
+        Samsung,
+        Broadcom,
+        VMWare,
+        VirtIO,
+
+        // Khronos-registered vendors
+        Vivante,
+        VeriSilicon,
+        Kazan,
+        CodePlay,
+        Mesa,
+        PoCL,
     };
 
     static GPUInfo *instance()
@@ -159,7 +172,7 @@ public:
     static Vendor vendorIdToVendor(quint64 vendorId)
     {
         // clang-format off
-        // Based on //third_party/dawn/src/dawn/gpu_info.json
+        // Based on //third_party/angle/src/gpu_info_util/SystemInfo.h
         static const std::map<quint64, Vendor> vendorIdMap = {
             {0x0, Unknown},
             {0x1002, AMD},
@@ -168,11 +181,19 @@ public:
             {0x1AE0, Google},
             {0x1010, ImgTec},
             {0x8086, Intel},
-            {0x10005, Mesa},
             {0x1414, Microsoft},
             {0x10DE, Nvidia},
             {0x5143, Qualcomm},
-            {0x144D, Samsung}
+            {0x144D, Samsung},
+            {0x14E4, Broadcom},
+            {0x15AD, VMWare},
+            {0x1AF4, VirtIO},
+            {0x10001, Vivante},
+            {0x10002, VeriSilicon},
+            {0x10003, Kazan},
+            {0x10004, CodePlay},
+            {0x10005, Mesa},
+            {0x10006, PoCL},
         };
         // clang-format on
 
@@ -218,11 +239,19 @@ public:
             {Google, "Google"},
             {ImgTec, "Img Tec"},
             {Intel, "Intel"},
-            {Mesa, "Mesa"},
             {Microsoft, "Microsoft"},
             {Nvidia, "Nvidia"},
             {Qualcomm, "Qualcomm"},
-            {Samsung, "Samsung"}
+            {Samsung, "Samsung"},
+            {Broadcom, "Broadcom"},
+            {VMWare, "VMWare"},
+            {VirtIO, "VirtIO"},
+            {Vivante, "Vivante"},
+            {VeriSilicon, "VeriSilicon"},
+            {Kazan, "Kazan"},
+            {CodePlay, "CodePlay"},
+            {Mesa, "Mesa"},
+            {PoCL, "PoCL"},
         };
         // clang-format on
 
@@ -915,6 +944,7 @@ WebEngineContext::WebEngineContext()
 
     // Explicitly tell Chromium about default-on features we do not support
     disableFeatures.push_back(features::kBackgroundFetch.name);
+    parsedCommandLine->AppendSwitchASCII(switches::kDisableBlinkFeatures, "WebOTP");
     disableFeatures.push_back(features::kWebOTP.name);
     disableFeatures.push_back(features::kWebPayments.name);
     disableFeatures.push_back(features::kWebUsb.name);
@@ -970,6 +1000,10 @@ WebEngineContext::WebEngineContext()
             parsedCommandLine->AppendSwitchASCII(switches::kUseAdapterLuid, luid.toStdString());
     }
 #endif
+    // We need the FieldTrialList to make sure Chromium features are provided to child processes
+    if (!base::FieldTrialList::GetInstance()) {
+        m_fieldTrialList.reset(new base::FieldTrialList());
+    }
 
     initializeFeatureList(parsedCommandLine, enableFeatures, disableFeatures);
 
@@ -1216,7 +1250,7 @@ const char *qWebEngineChromiumVersion() noexcept
 
 const char *qWebEngineChromiumSecurityPatchVersion() noexcept
 {
-    return "125.0.6422.142"; // FIXME: Remember to update
+    return "129.0.6668.58"; // FIXME: Remember to update
 }
 
 QT_END_NAMESPACE
