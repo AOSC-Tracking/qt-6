@@ -4,10 +4,6 @@
 #ifndef QSCATTERSERIES_H
 #define QSCATTERSERIES_H
 
-#if 0
-#  pragma qt_class(QScatterSeries)
-#endif
-
 #include <QtGraphs/qxyseries.h>
 #include <QtGraphs/qgraphsglobal.h>
 
@@ -15,19 +11,19 @@ QT_BEGIN_NAMESPACE
 
 class QScatterSeriesPrivate;
 
-class QT_TECH_PREVIEW_API Q_GRAPHS_EXPORT QScatterSeries : public QXYSeries
+class Q_GRAPHS_EXPORT QScatterSeries : public QXYSeries
 {
     Q_OBJECT
 
+    QML_NAMED_ELEMENT(ScatterSeries)
 public:
     explicit QScatterSeries(QObject *parent = nullptr);
-    ~QScatterSeries();
+    ~QScatterSeries() override;
     QAbstractSeries::SeriesType type() const override;
 
-    QML_NAMED_ELEMENT(ScatterSeries)
 
 protected:
-    QScatterSeries(QScatterSeriesPrivate &d, QObject *parent = nullptr);
+    QScatterSeries(QScatterSeriesPrivate &dd, QObject *parent = nullptr);
 
     void componentComplete() override;
 

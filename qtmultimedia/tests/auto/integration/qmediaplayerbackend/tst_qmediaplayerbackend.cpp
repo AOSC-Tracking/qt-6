@@ -177,6 +177,8 @@ private slots:
     void metadata();
     void metadata_returnsMetadataWithThumbnail_whenMediaHasThumbnail_data();
     void metadata_returnsMetadataWithThumbnail_whenMediaHasThumbnail();
+    void metadata_returnsMetadataWithHasHdrContent_whenMediaHasHdrContent_data();
+    void metadata_returnsMetadataWithHasHdrContent_whenMediaHasHdrContent();
     void playerStateAtEOS();
     void playFromBuffer();
     void audioVideoAvailable();
@@ -268,6 +270,7 @@ private:
     MaybeUrl m_colorMatrix90degClockwiseVideo = QUnexpect{};
     MaybeUrl m_colorMatrix180degClockwiseVideo = QUnexpect{};
     MaybeUrl m_colorMatrix270degClockwiseVideo = QUnexpect{};
+    MaybeUrl m_hdrVideo = QUnexpect{};
     MaybeUrl m_15sVideo = QUnexpect{};
     MaybeUrl m_subtitleVideo = QUnexpect{};
     MaybeUrl m_multitrackVideo = QUnexpect{};
@@ -401,6 +404,7 @@ void tst_QMediaPlayerBackend::initTestCase()
     m_colorMatrix270degClockwiseVideo =
             m_mediaSelector.select("qrc:/testdata/color_matrix_270_deg_clockwise.mp4");
 
+    m_hdrVideo = m_mediaSelector.select("qrc:/testdata/h264_avc1_yuv420p10le_tv_bt2020.mov");
     m_15sVideo = m_mediaSelector.select("qrc:/testdata/15s.mkv");
     m_subtitleVideo = m_mediaSelector.select("qrc:/testdata/subtitletest.mkv");
     m_multitrackVideo = m_mediaSelector.select("qrc:/testdata/multitrack.mkv");
@@ -1751,7 +1755,7 @@ void tst_QMediaPlayerBackend::play_playbackLastsForTheExpectedTime()
     auto timer = QElapsedTimer();
     timer.start();
 
-    QTRY_COMPARE_EQ_WITH_TIMEOUT(player.playbackState(), QMediaPlayer::StoppedState, 10'000);
+    QTRY_COMPARE_EQ_WITH_TIMEOUT(player.playbackState(), QMediaPlayer::StoppedState, 10s);
 
     nanoseconds duration{ timer.durationElapsed() };
     nanoseconds expectedDuration = milliseconds{ int(loops / rate * 1000) };
@@ -1957,7 +1961,7 @@ void tst_QMediaPlayerBackend::setPlaybackRate_changesPlaybackDuration()
 
     QCOMPARE(player.playbackRate(), playbackRate);
 
-    QTRY_COMPARE_EQ_WITH_TIMEOUT(player.playbackState(), QMediaPlayer::StoppedState, 20'000);
+    QTRY_COMPARE_EQ_WITH_TIMEOUT(player.playbackState(), QMediaPlayer::StoppedState, 20s);
 
     auto end = steady_clock::now();
     auto duration = end - begin;
@@ -2447,11 +2451,11 @@ void tst_QMediaPlayerBackend::seekInStoppedState()
     player.play();
 
     QCOMPARE(player.playbackState(), QMediaPlayer::PlayingState);
-    QTRY_VERIFY(player.position() > position);
+    QTRY_COMPARE_GT(player.position(), position);
 
     QTest::qWait(100);
     // Check that it never played from the beginning
-    QVERIFY(player.position() > position);
+    QCOMPARE_GT(player.position(), position);
     for (int i = 0; i < positionSpy.size(); ++i)
         QVERIFY(positionSpy.at(i)[0].value<qint64>() > (position - 200));
 
@@ -2517,11 +2521,11 @@ void tst_QMediaPlayerBackend::seekInStoppedState()
                 || player.mediaStatus() == QMediaPlayer::EndOfMedia);
 
     positionSpy.clear();
-    QTRY_VERIFY(player.position() > (position - 200));
+    QTRY_COMPARE_GT(player.position(), (position - 200));
 
     QTest::qWait(500);
     // Check that it never played from the beginning
-    QVERIFY(player.position() > (position - 200));
+    QCOMPARE_GT(player.position(), (position - 200));
     for (int i = 0; i < positionSpy.size(); ++i)
         QVERIFY(positionSpy.at(i)[0].value<qint64>() > (position - 200));
 }
@@ -2543,11 +2547,11 @@ void tst_QMediaPlayerBackend::subsequentPlayback()
 
     QCOMPARE(player.error(), QMediaPlayer::NoError);
     QTRY_COMPARE(player.playbackState(), QMediaPlayer::PlayingState);
-    QTRY_COMPARE_WITH_TIMEOUT(player.mediaStatus(), QMediaPlayer::EndOfMedia, 10000);
+    QTRY_COMPARE_WITH_TIMEOUT(player.mediaStatus(), QMediaPlayer::EndOfMedia, 10s);
     QCOMPARE(player.playbackState(), QMediaPlayer::StoppedState);
     // Could differ by up to 1 compressed frame length
     QVERIFY(qAbs(player.position() - player.duration()) < 100);
-    QVERIFY(player.position() > 0);
+    QCOMPARE_GT(player.position(), 0);
 
     player.play();
     QTRY_COMPARE(player.playbackState(), QMediaPlayer::PlayingState);
@@ -2555,7 +2559,7 @@ void tst_QMediaPlayerBackend::subsequentPlayback()
     player.pause();
     QCOMPARE(player.playbackState(), QMediaPlayer::PausedState);
     // make sure position does not "jump" closer to the end of the file
-    QVERIFY(player.position() > 1000);
+    QCOMPARE_GT(player.position(), 1000);
     // try to seek back to zero
     player.setPosition(0);
     QTRY_COMPARE(player.position(), qint64(0));
@@ -2582,7 +2586,7 @@ void tst_QMediaPlayerBackend::subsequentPlayback_playsForExpectedDuration()
 
     QVERIFY(player.position() >= 5000);
 
-    QTRY_COMPARE_WITH_TIMEOUT(player.mediaStatus(), QMediaPlayer::EndOfMedia, 10'000);
+    QTRY_COMPARE_WITH_TIMEOUT(player.mediaStatus(), QMediaPlayer::EndOfMedia, 10s);
 
     QElapsedTimer timer;
     timer.start();
@@ -2590,7 +2594,7 @@ void tst_QMediaPlayerBackend::subsequentPlayback_playsForExpectedDuration()
     // playback should take 7 seconds
     player.play();
     QCOMPARE_NE(player.mediaStatus(), QMediaPlayer::EndOfMedia);
-    QTRY_COMPARE_WITH_TIMEOUT(player.mediaStatus(), QMediaPlayer::EndOfMedia, 15'000);
+    QTRY_COMPARE_WITH_TIMEOUT(player.mediaStatus(), QMediaPlayer::EndOfMedia, 15s);
     std::chrono::nanoseconds duration = timer.durationElapsed();
     QCOMPARE_GE(duration + 100ms, std::chrono::milliseconds(player.duration()));
     QCOMPARE_LT(duration, std::chrono::seconds(12));
@@ -2618,7 +2622,7 @@ void tst_QMediaPlayerBackend::multipleMediaPlayback()
     QCOMPARE(player.error(), QMediaPlayer::NoError);
     QCOMPARE(player.playbackState(), QMediaPlayer::PlayingState);
     QVERIFY(player.isSeekable());
-    QTRY_VERIFY(player.position() > 0);
+    QTRY_COMPARE_GT(player.position(), 0);
     QCOMPARE(player.source(), *m_localVideoFile);
 
     player.stop();
@@ -2634,7 +2638,7 @@ void tst_QMediaPlayerBackend::multipleMediaPlayback()
 
     QCOMPARE(player.error(), QMediaPlayer::NoError);
     QCOMPARE(player.playbackState(), QMediaPlayer::PlayingState);
-    QTRY_VERIFY(player.position() > 0);
+    QTRY_COMPARE_GT(player.position(), 0);
     QCOMPARE(player.source(), *m_localVideoFile2);
 
     player.stop();
@@ -3022,6 +3026,32 @@ void tst_QMediaPlayerBackend::metadata_returnsMetadataWithThumbnail_whenMediaHas
     }
 }
 
+void tst_QMediaPlayerBackend::metadata_returnsMetadataWithHasHdrContent_whenMediaHasHdrContent_data()
+{
+    QTest::addColumn<MaybeUrl>("mediaUrl");
+    QTest::addColumn<bool>("hasHdrContent");
+
+    QTest::addRow("SDR Video") << m_localVideoFile << false;
+    QTest::addRow("HDR Video") << m_hdrVideo << true;
+}
+
+void tst_QMediaPlayerBackend::metadata_returnsMetadataWithHasHdrContent_whenMediaHasHdrContent()
+{
+    QFETCH(const MaybeUrl, mediaUrl);
+    QFETCH(const bool, hasHdrContent);
+
+    if (!isFFMPEGPlatform() && !isDarwinPlatform())
+        QSKIP("This test is only for FFmpeg and Darwin backends");
+
+    m_fixture->player.setSource(*mediaUrl);
+    QTRY_VERIFY(!m_fixture->metadataChanged.empty());
+
+    const QMediaMetaData metadata = m_fixture->player.videoTracks().front();
+    const bool hdrContent = metadata.value(QMediaMetaData::HasHdrContent).value<bool>();
+
+    QCOMPARE_EQ(hasHdrContent, hdrContent);
+}
+
 void tst_QMediaPlayerBackend::playerStateAtEOS()
 {
     CHECK_SELECTED_URL(m_localWavFile);
@@ -3151,15 +3181,15 @@ void tst_QMediaPlayerBackend::positionAfterSeek()
     QTRY_COMPARE(player.mediaStatus(), QMediaPlayer::LoadedMedia);
     player.pause();
     player.setPosition(500);
-    QTRY_VERIFY(player.position() == 500);
+    QTRY_COMPARE(player.position(), 500);
     player.setPosition(700);
     QVERIFY(player.position() != 0);
-    QTRY_VERIFY(player.position() == 700);
+    QTRY_COMPARE(player.position(), 700);
     player.play();
-    QTRY_VERIFY(player.position() > 700);
+    QTRY_COMPARE_GT(player.position(), 700);
     player.setPosition(200);
     QVERIFY(player.position() != 0);
-    QTRY_VERIFY(player.position() < 700);
+    QTRY_COMPARE_LT(player.position(), 700);
 }
 
 void tst_QMediaPlayerBackend::pause_rendersVideoAtCorrectResolution_data()
@@ -3218,17 +3248,17 @@ void tst_QMediaPlayerBackend::position()
 
     player.play();
     player.setPosition(1000);
-    QVERIFY(player.position() > 950);
-    QVERIFY(player.position() < 1050);
-    QTRY_VERIFY(player.position() > 1050);
+    QCOMPARE_GT(player.position(), 950);
+    QCOMPARE_LT(player.position(), 1050);
+    QTRY_COMPARE_GT(player.position(), 1050);
 
     player.pause();
     player.setPosition(500);
-    QVERIFY(player.position() > 450);
-    QVERIFY(player.position() < 550);
+    QCOMPARE_GT(player.position(), 450);
+    QCOMPARE_LT(player.position(), 550);
     QTest::qWait(200);
-    QVERIFY(player.position() > 450);
-    QVERIFY(player.position() < 550);
+    QCOMPARE_GT(player.position(), 450);
+    QCOMPARE_LT(player.position(), 550);
 
     using namespace std::chrono;
     using namespace std::chrono_literals;
@@ -3338,9 +3368,15 @@ struct LoopIteration {
 static std::vector<LoopIteration> loopIterations(const QSignalSpy &positionSpy)
 {
     std::vector<LoopIteration> result;
+
+    static constexpr bool dumpPositions = false;
+    static constexpr bool dumpLoops = false;
+
     // Loops through all positions emitted by QMediaPlayer::positionChanged
     for (auto &params : positionSpy) {
         const auto pos = params.front().value<qint64>();
+        if constexpr (dumpPositions)
+            qDebug() << pos;
 
         // Adds new LoopIteration struct to result if position is lower than previous position
         if (result.empty() || pos < result.back().endPos) {
@@ -3352,6 +3388,11 @@ static std::vector<LoopIteration> loopIterations(const QSignalSpy &positionSpy)
             result.back().endPos = pos;
         }
     }
+
+    if constexpr (dumpLoops)
+        for (auto &element : result)
+            qDebug() << element.startPos << element.endPos << element.posCount;
+
     return result;
 }
 
@@ -3390,7 +3431,7 @@ void tst_QMediaPlayerBackend::finiteLoops()
         m_fixture->player.play();
     }
 
-    QTRY_COMPARE_WITH_TIMEOUT(m_fixture->player.playbackState(), QMediaPlayer::StoppedState, 15'000);
+    QTRY_COMPARE_WITH_TIMEOUT(m_fixture->player.playbackState(), QMediaPlayer::StoppedState, 15s);
 
     // Check for expected number of loop iterations and startPos, endPos and posCount per iteration
     std::vector<LoopIteration> iterations = loopIterations(m_fixture->positionChanged);
@@ -3922,7 +3963,8 @@ void tst_QMediaPlayerBackend::play_playsRotatedVideoOutput_whenVideoFileHasOrien
     QTRY_COMPARE(m_fixture->player.playbackState(), QMediaPlayer::PlayingState);
     QVideoFrame videoFrame = m_fixture->surface.waitForFrame();
     QVERIFY(videoFrame.isValid());
-    QCOMPARE(videoFrame.rotation(), expectedRotationAngle);
+    QCOMPARE(videoFrame.surfaceFormat().rotation(), expectedRotationAngle);
+    QCOMPARE(videoFrame.rotation(), QtVideo::Rotation::None);
 #ifdef Q_OS_ANDROID
     QSKIP("frame.toImage will return null image because of QTBUG-108446");
 #endif
@@ -4014,7 +4056,7 @@ void tst_QMediaPlayerBackend::setVideoOutput_whilePaused_updatesNewSink()
 
     QTRY_COMPARE(player.mediaStatus(), QMediaPlayer::LoadedMedia);
     player.play();
-    QTRY_VERIFY(player.position() > 100);
+    QTRY_COMPARE_GT(player.position(), 100);
 
 #ifndef Q_OS_ANDROID // fails with android/ffmpeg
     QCOMPARE(surface1.videoFrame().toImage().pixelColor(10, 10), QColorConstants::White);
@@ -4429,7 +4471,7 @@ void tst_QMediaPlayerBackend::disablingAllTracks_doesNotStopPlayback()
     player.setActiveAudioTrack(-1);
 
     player.play();
-    QTRY_VERIFY(player.position() > 1000);
+    QTRY_COMPARE_GT(player.position(), 1000);
 
     QCOMPARE(m_fixture->surface.m_totalFrames, 0);
 }
@@ -4447,7 +4489,7 @@ void tst_QMediaPlayerBackend::disablingAllTracks_beforeTracksChanged_doesNotStop
     player.setActiveAudioTrack(-1);
 
     player.play();
-    QTRY_VERIFY(player.position() > 1000);
+    QTRY_COMPARE_GT(player.position(), 1000);
 
     QCOMPARE(m_fixture->surface.m_totalFrames, 0);
 }
@@ -4486,7 +4528,7 @@ void tst_QMediaPlayerBackend::stressTest_setupAndTeardown()
             player.setSource(*media);
             if (play) {
                 player.play();
-                QTRY_VERIFY(player.position() > 10);
+                QTRY_COMPARE_GT(player.position(), 10);
             }
         }
         QTest::qWait(rng.bounded(200));
@@ -4517,7 +4559,7 @@ void tst_QMediaPlayerBackend::stressTest_setupAndTeardown_keepAudioOutput()
             player.setSource(*media);
             if (play) {
                 player.play();
-                QTRY_VERIFY(player.position() > 10);
+                QTRY_COMPARE_GT(player.position(), 10);
             }
         }
         QTest::qWait(rng.bounded(200));
@@ -4548,7 +4590,7 @@ void tst_QMediaPlayerBackend::stressTest_setupAndTeardown_keepVideoOutput()
             player.setSource(*media);
             if (play) {
                 player.play();
-                QTRY_VERIFY(player.position() > 10);
+                QTRY_COMPARE_GT(player.position(), 10);
             }
         }
         QTest::qWait(rng.bounded(200));

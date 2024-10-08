@@ -15,6 +15,8 @@
 // We mean it.
 //
 
+#include <limits>
+
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
@@ -37,5 +39,14 @@ extern "C" {
 #define QT_FFMPEG_SWR_CONST_CH_LAYOUT (LIBSWRESAMPLE_VERSION_INT >= AV_VERSION_INT(4, 9, 100))
 #define QT_FFMPEG_AVIO_WRITE_CONST \
   (LIBAVFORMAT_VERSION_MAJOR >= 61)
+#define QT_CODEC_PARAMETERS_HAVE_FRAMERATE \
+  (LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(60, 11, 100)) // since ffmpeg n6.1
+
+using PixelOrSampleFormat = int;
+using AVScore = int;
+constexpr AVScore BestAVScore = std::numeric_limits<AVScore>::max();
+constexpr AVScore DefaultAVScore = 0;
+constexpr AVScore NotSuitableAVScore = std::numeric_limits<AVScore>::min();
+constexpr AVScore MinAVScore = NotSuitableAVScore + 1;
 
 #endif // QFFMPEGDEFS_P_H

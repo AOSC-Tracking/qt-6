@@ -27,17 +27,18 @@ Item {
         labelFormat: "f"
         min: 2.0
         max: 20.0
-        minorTickCount: 1
+        subTickCount: 1
         tickAnchor: 1
         tickInterval: 2.0
 
-        // alignment: Qt.AlignTop // read-only
         gridVisible: false
         labelsAngle: 25
         labelsVisible: false
+        labelDelegate: Text {
+            font.pixelSize: 20
+        }
         lineVisible: false
-        minorGridVisible: false
-        // orientation: Qt.Vertical // read-only
+        subGridVisible: false
         titleColor: "#ff0000"
         titleFont: initializedDummy.font
         titleText: "Initialized"
@@ -55,20 +56,19 @@ Item {
             compare(initial.labelFormat, "")
             compare(initial.min, 0.0)
             compare(initial.max, 10.0)
-            compare(initial.minorTickCount, 0)
+            compare(initial.subTickCount, 0)
             compare(initial.tickAnchor, 0)
             compare(initial.tickInterval, 0)
         }
 
         function test_2_initial_common() {
             // Common properties from AbstractAxis
-            compare(initial.alignment, 0)
             compare(initial.gridVisible, true)
             compare(initial.labelsAngle, 0)
             compare(initial.labelsVisible, true)
+            compare(initial.labelDelegate, null)
             compare(initial.lineVisible, true)
-            compare(initial.minorGridVisible, true)
-            compare(initial.orientation, 0)
+            compare(initial.subGridVisible, true)
             compare(initial.titleColor, "#000000")
             // Initial font needs to be tested like this, as different platforms have different default font (QFont())
             compare(initial.titleFont.family, dummy.font.family)
@@ -85,18 +85,16 @@ Item {
             initial.labelFormat = "d"
             initial.min = -10
             initial.max = 0
-            initial.minorTickCount = 2
+            initial.subTickCount = 2
             initial.tickAnchor = 2
             initial.tickInterval = 3.0
 
             // Common properties from AbstractAxis
-            // initial.alignment = Qt.AlignRight // read-only
             initial.gridVisible = false
             initial.labelsAngle = 45
             initial.labelsVisible = false
             initial.lineVisible = false
-            initial.minorGridVisible = false
-            // initial.orientation = Qt.Horizontal // read-only
+            initial.subGridVisible = false
             initial.titleColor = "#ffffff"
             initial.titleFont = dummy.font
             initial.titleText = "Dummy"
@@ -108,18 +106,16 @@ Item {
             compare(initial.labelFormat, "d")
             compare(initial.min, -10.0)
             compare(initial.max, 0.0)
-            compare(initial.minorTickCount, 2)
+            compare(initial.subTickCount, 2)
             compare(initial.tickAnchor, 2)
             compare(initial.tickInterval, 3.0)
 
             // Common properties from AbstractAxis
-            // compare(initial.alignment, Qt.AlignRight) // read-only
             compare(initial.gridVisible, false)
             compare(initial.labelsAngle, 45)
             compare(initial.labelsVisible, false)
             compare(initial.lineVisible, false)
-            compare(initial.minorGridVisible, false)
-            // compare(initial.orientation, Qt.Horizontal) // read-only
+            compare(initial.subGridVisible, false)
             compare(initial.titleColor, "#ffffff")
             compare(initial.titleFont, dummy.font)
             compare(initial.titleText, "Dummy")
@@ -137,18 +133,17 @@ Item {
             compare(initialized.labelFormat, "f")
             compare(initialized.min, 2.0)
             compare(initialized.max, 20.0)
-            compare(initialized.minorTickCount, 1)
+            compare(initialized.subTickCount, 1)
             compare(initialized.tickAnchor, 1)
             compare(initialized.tickInterval, 2.0)
 
             // Common properties from AbstractAxis
-            // compare(initialized.alignment, Qt.AlignTop) // read-only
             compare(initialized.gridVisible, false)
             compare(initialized.labelsAngle, 25)
             compare(initialized.labelsVisible, false)
+            verify(initialized.labelDelegate)
             compare(initialized.lineVisible, false)
-            compare(initialized.minorGridVisible, false)
-            // compare(initialized.orientation, Qt.Vertical) // read-only
+            compare(initialized.subGridVisible, false)
             compare(initialized.titleColor, "#ff0000")
             compare(initialized.titleFont, initializedDummy.font)
             compare(initialized.titleText, "Initialized")
@@ -162,18 +157,17 @@ Item {
             initialized.labelFormat = "d"
             initialized.min = -10.0
             initialized.max = 0.0
-            initialized.minorTickCount = 2
+            initialized.subTickCount = 2
             initialized.tickAnchor = 2
             initialized.tickInterval = 3.0
 
             // Common properties from AbstractAxis
-            // initialized.alignment = Qt.AlignRight // read-only
             initialized.gridVisible = true
             initialized.labelsAngle = 45
             initialized.labelsVisible = true
+            initialized.labelDelegate = null
             initialized.lineVisible = true
-            initialized.minorGridVisible = true
-            // initialized.orientation = Qt.Horizontal // read-only
+            initialized.subGridVisible = true
             initialized.titleColor = "#ffffff"
             initialized.titleFont = dummy.font
             initialized.titleText = "Dummy"
@@ -185,18 +179,17 @@ Item {
             compare(initialized.labelFormat, "d")
             compare(initialized.min, -10.)
             compare(initialized.max, 0.0)
-            compare(initialized.minorTickCount, 2)
+            compare(initialized.subTickCount, 2)
             compare(initialized.tickAnchor, 2)
             compare(initialized.tickInterval, 3.0)
 
             // Common properties from AbstractAxis
-            // compare(initialized.alignment, Qt.AlignTop) // read-only
             compare(initialized.gridVisible, true)
             compare(initialized.labelsAngle, 45)
             compare(initialized.labelsVisible, true)
+            verify(!initialized.labelDelegate)
             compare(initialized.lineVisible, true)
-            compare(initialized.minorGridVisible, true)
-            // compare(initialized.orientation, Qt.Vertical) // read-only
+            compare(initialized.subGridVisible, true)
             compare(initialized.titleColor, "#ffffff")
             compare(initialized.titleFont, dummy.font)
             compare(initialized.titleText, "Dummy")
@@ -207,11 +200,11 @@ Item {
         function test_3_initialized_change_to_invalid() {
             initialized.max = -10.0
             initialized.min = 10.0
-            initialized.minorTickCount = -1
+            initialized.subTickCount = -1
 
             compare(initialized.max, 10.0)
             compare(initialized.min, 10.0)
-            compare(initialized.minorTickCount, 2) // This was set in previous test case
+            compare(initialized.subTickCount, 2) // This was set in previous test case
         }
     }
 }

@@ -1,5 +1,7 @@
-#include <QtProtobuf/qprotobufserializer.h>
+
 #include "extranamespace.qpb.h"
+
+#include <QtProtobuf/qprotobufregistration.h>
 
 namespace qtprotobufnamespace::tests {
 static QtProtobuf::ProtoTypeRegistrar ProtoTypeRegistrarEmptyMessage(qRegisterProtobufType<EmptyMessage>);

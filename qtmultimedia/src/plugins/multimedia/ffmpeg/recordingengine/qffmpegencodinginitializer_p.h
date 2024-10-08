@@ -5,6 +5,7 @@
 #define QENCODINGINITIALIZER_P_H
 
 #include "qobject.h"
+#include "private/qmediainputencoderinterface_p.h"
 #include <unordered_set>
 #include <vector>
 
@@ -23,6 +24,9 @@ QT_BEGIN_NAMESPACE
 
 class QFFmpegAudioInput;
 class QPlatformVideoSource;
+class QPlatformAudioBufferInput;
+class QPlatformAudioBufferInputBase;
+class QMediaInputEncoderInterface;
 
 namespace QFFmpeg {
 
@@ -30,18 +34,26 @@ class RecordingEngine;
 
 // Initializes RecordingEngine with audio and video sources, potentially lazily
 // upon first frame arrival if video frame format is not pre-determined.
-class EncodingInitializer : public QObject
+class EncodingInitializer : public QObject, private QMediaInputEncoderInterface
 {
 public:
     EncodingInitializer(RecordingEngine &engine);
 
-    void start(QFFmpegAudioInput *audioInput,
+    ~EncodingInitializer() override;
+
+    void start(const std::vector<QPlatformAudioBufferInputBase *> &audioSources,
                const std::vector<QPlatformVideoSource *> &videoSources);
 
 private:
+    void addAudioBufferInput(QPlatformAudioBufferInput *input);
+
+    void addPendingAudioBufferInput(QPlatformAudioBufferInput *input);
+
     void addVideoSource(QPlatformVideoSource *source);
 
     void addPendingVideoSource(QPlatformVideoSource *source);
+
+    void addPendingSource(QObject *source);
 
     void tryStartRecordingEngine();
 
@@ -49,7 +61,9 @@ private:
     void emitStreamInitializationError(QString error);
 
     template <typename F>
-    void erasePendingSource(QObject *source, F &&functionOrError);
+    void erasePendingSource(QObject *source, F &&functionOrError, bool destroyed = false);
+
+    bool canPushFrame() const override;
 
 private:
     RecordingEngine &m_recordingEngine;

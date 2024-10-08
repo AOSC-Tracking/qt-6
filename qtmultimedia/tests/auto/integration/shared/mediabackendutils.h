@@ -56,6 +56,12 @@ inline bool isCI()
       QSKIP(message);            \
   } while (0)
 
+#define QSKIP_IF_NOT_FFMPEG()                             \
+    do {                                                  \
+        if (!isFFMPEGPlatform())                          \
+            QSKIP("Feature is only supported on FFmpeg"); \
+    } while (0)
+
 #define QSKIP_FFMPEG(message) \
   do {                        \
     if (isFFMPEGPlatform())   \

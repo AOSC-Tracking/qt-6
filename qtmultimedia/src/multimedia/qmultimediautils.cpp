@@ -6,8 +6,11 @@
 #include "qvideoframeformat.h"
 
 #include <QtCore/qdir.h>
+#include <QtCore/qloggingcategory.h>
 
 QT_BEGIN_NAMESPACE
+
+static Q_LOGGING_CATEGORY(qLcMultimediaUtils, "qt.multimedia.utils");
 
 Fraction qRealToFraction(qreal value)
 {
@@ -58,9 +61,12 @@ QSize qRotatedFrameSize(QSize size, int rotation)
     return rotation % 180 ? size.transposed() : size;
 }
 
-QSize qRotatedFrameSize(const QVideoFrame &frame)
+QSize qRotatedFramePresentationSize(const QVideoFrame &frame)
 {
-    return qRotatedFrameSize(frame.size(), frame.rotation());
+    // For mirrored frames the rotation can be +/- 180 degrees,
+    // but this inaccuracy doesn't impact on the result.
+    const int rotation = qToUnderlying(frame.rotation()) + qToUnderlying(frame.surfaceFormat().rotation());
+    return qRotatedFrameSize(frame.size(), rotation);
 }
 
 QUrl qMediaFromUserInput(QUrl url)
@@ -92,6 +98,89 @@ bool qShouldUpdateSwapChainFormat(QRhiSwapChain *swapChain,
 
     return qIsAutoHdrEnabled() && swapChain->format() != requiredSwapChainFormat
             && swapChain->isFormatSupported(requiredSwapChainFormat);
+}
+
+static void applyRotation(NormalizedVideoTransformation &transform, int degreesClockwise)
+{
+    if (degreesClockwise) {
+        const int rotationIndex = degreesClockwise / 90;
+        transform.rotationIndex += rotationIndex;
+        if (transform.xMirrorredAfterRotation && rotationIndex % 2 != 0)
+            transform.rotationIndex += 2;
+    }
+}
+
+static void applyRotation(NormalizedVideoTransformation &transform, QtVideo::Rotation rotation)
+{
+    applyRotation(transform, qToUnderlying(rotation));
+}
+
+static void applyXMirror(NormalizedVideoTransformation &transform, bool mirror)
+{
+    transform.xMirrorredAfterRotation ^= mirror;
+}
+
+static void applyYMirror(NormalizedVideoTransformation &transform, bool mirror)
+{
+    if (mirror) {
+        transform.xMirrorredAfterRotation ^= mirror;
+        transform.rotationIndex += 2;
+    }
+}
+
+static void fixTransformation(NormalizedVideoTransformation &transform)
+{
+    transform.rotationIndex %= 4;
+    if (transform.rotationIndex < 0)
+        transform.rotationIndex += 4;
+    transform.rotation = QtVideo::Rotation(transform.rotationIndex * 90);
+}
+
+static void applySurfaceTransformation(NormalizedVideoTransformation &transform,
+                                       const QVideoFrameFormat &format)
+{
+    applyYMirror(transform, format.scanLineDirection() == QVideoFrameFormat::BottomToTop);
+    applyRotation(transform, format.rotation());
+    applyXMirror(transform, format.isMirrored());
+}
+
+Q_MULTIMEDIA_EXPORT NormalizedVideoTransformation
+qNormalizedSurfaceTransformation(const QVideoFrameFormat &format)
+{
+    NormalizedVideoTransformation result;
+    applySurfaceTransformation(result, format);
+    fixTransformation(result);
+    return result;
+}
+
+NormalizedVideoTransformation qNormalizedFrameTransformation(const QVideoFrame &frame,
+                                                             int additionalRotaton)
+{
+    NormalizedVideoTransformation result;
+    applySurfaceTransformation(result, frame.surfaceFormat());
+    applyRotation(result, frame.rotation());
+    applyXMirror(result, frame.mirrored());
+    applyRotation(result, additionalRotaton);
+    fixTransformation(result);
+    return result;
+}
+
+// Only accepts inputs divisible by 90.
+// Invalid input returns no rotation.
+QtVideo::Rotation qVideoRotationFromDegrees(int clockwiseDegrees)
+{
+    if (clockwiseDegrees % 90 != 0) {
+        qCWarning(qLcMultimediaUtils) << "qVideoRotationFromAngle(int) received "
+                                         "input not divisible by 90. Input was: "
+                                      << clockwiseDegrees;
+        return QtVideo::Rotation::None;
+    }
+
+    int newDegrees = clockwiseDegrees % 360;
+    // Adjust negative rotations into positive ones.
+    if (newDegrees < 0)
+        newDegrees += 360;
+    return static_cast<QtVideo::Rotation>(newDegrees);
 }
 
 QT_END_NAMESPACE

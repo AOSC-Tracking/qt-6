@@ -1,5 +1,7 @@
-#include <QtProtobuf/qprotobufserializer.h>
+
 #include "qtprotobufnamespace/optional/tests/optional.qpb.h"
+
+#include <QtProtobuf/qprotobufregistration.h>
 
 namespace qtprotobufnamespace::optional::tests {
 static QtProtobuf::ProtoTypeRegistrar ProtoTypeRegistrarTestStringMessage(qRegisterProtobufType<TestStringMessage>);

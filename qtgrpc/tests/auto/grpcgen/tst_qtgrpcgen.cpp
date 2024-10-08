@@ -124,7 +124,7 @@ class tst_qtgrpcgen : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void initTestCase();
 
     //! Test qt_add_grpc() cmake function
@@ -348,7 +348,7 @@ void tst_qtgrpcgen::cmdLineGeneratedFile()
 void tst_qtgrpcgen::cleanupTestCase()
 {
     // Leave this function at the bottom. It removes generated content.
-    cleanFolder(m_commandLineGenerated);
+    // cleanFolder(m_commandLineGenerated);
 }
 
 QTEST_MAIN(tst_qtgrpcgen)

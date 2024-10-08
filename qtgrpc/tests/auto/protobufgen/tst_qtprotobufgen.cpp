@@ -164,7 +164,7 @@ class tst_qtprotobufgen : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void initTestCase();
 
     //! Test qt_add_protobuf() cmake function
@@ -417,7 +417,7 @@ void tst_qtprotobufgen::cmdLineGeneratedFile_data()
 #ifdef HAVE_QML
         QTest::addRow("nopackage%s", extension.data())
                 << "nopackage"
-                << "QML_URI=nopackage.uri.test;EXPORT_MACRO=TST_QTPROTOBUFGEN_NOPACKAGE_QML_GEN"
+                << "QML;EXPORT_MACRO=TST_QTPROTOBUFGEN_NOPACKAGE_QML_GEN"
                 << "/qml-no-package/"
                 << QString(extension)
                 << "" << "";
@@ -596,7 +596,7 @@ void tst_qtprotobufgen::cmdLineInvalidExportMacro()
 void tst_qtprotobufgen::cleanupTestCase()
 {
     // Leave this function at the bottom. It removes generated content.
-    cleanFolder(m_commandLineGenerated);
+    // cleanFolder(m_commandLineGenerated);
 }
 
 QTEST_MAIN(tst_qtprotobufgen)

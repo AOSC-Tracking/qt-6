@@ -385,6 +385,7 @@ QWaylandInputDevice::QWaylandInputDevice(QWaylandDisplay *display, int version, 
     : QtWayland::wl_seat(display->wl_registry(), id, qMin(version, 9))
     , mQDisplay(display)
     , mDisplay(display->wl_display())
+    , mId(id)
 {
 #if QT_CONFIG(wayland_datadevice)
     if (mQDisplay->dndSelectionHandler()) {
@@ -419,8 +420,13 @@ QWaylandInputDevice::QWaylandInputDevice(QWaylandDisplay *display, int version, 
 #endif
 }
 
-// Can't be in header because dtors for scoped pointers aren't known there.
-QWaylandInputDevice::~QWaylandInputDevice() = default;
+QWaylandInputDevice::~QWaylandInputDevice()
+{
+    if (version() >= WL_SEAT_RELEASE_SINCE_VERSION)
+        release();
+    else
+        wl_seat_destroy(object());
+}
 
 void QWaylandInputDevice::seat_capabilities(uint32_t caps)
 {
@@ -441,7 +447,7 @@ void QWaylandInputDevice::seat_capabilities(uint32_t caps)
             mTouchPadDevice = new QPointingDevice(
                         QLatin1String("touchpad"), 0, QInputDevice::DeviceType::TouchPad,
                         QPointingDevice::PointerType::Finger, QInputDevice::Capability::Position,
-                        MaxTouchPoints, 0, QString(), QPointingDeviceUniqueId(), this);
+                        MaxTouchPoints, 0, mSeatName, QPointingDeviceUniqueId(), this);
             QWindowSystemInterface::registerInputDevice(mTouchPadDevice);
             mPointerGesturePinch.reset(pointerGestures->createPointerGesturePinch(this));
             mPointerGesturePinch->init(pointerGestures->get_pinch_gesture(mPointer->object()));
@@ -462,7 +468,7 @@ void QWaylandInputDevice::seat_capabilities(uint32_t caps)
             mTouchDevice = new QPointingDevice(
                         QLatin1String("some touchscreen"), 0, QInputDevice::DeviceType::TouchScreen,
                         QPointingDevice::PointerType::Finger, QInputDevice::Capability::Position,
-                        MaxTouchPoints, 0,QString(), QPointingDeviceUniqueId(), this);
+                        MaxTouchPoints, 0, mSeatName, QPointingDeviceUniqueId(), this);
             QWindowSystemInterface::registerInputDevice(mTouchDevice);
         }
     } else if (!(caps & WL_SEAT_CAPABILITY_TOUCH) && mTouch) {
@@ -1583,9 +1589,9 @@ void QWaylandInputDevice::Touch::touch_frame()
         const QWindowSystemInterface::TouchPoint &tp = mPendingTouchPoints.constLast();
         // When the touch event is received, the global pos is calculated with the margins
         // in mind. Now we need to adjust again to get the correct local pos back.
-        QMargins margins = window->frameMargins();
+        QMargins margins = mFocus->clientSideMargins();
         QPoint p = tp.area.center().toPoint();
-        QPointF localPos(window->mapFromGlobal(QPoint(p.x() + margins.left(), p.y() + margins.top())));
+        QPointF localPos(mFocus->mapFromGlobal(p) + QPoint(margins.left(), margins.top()));
         if (mFocus->touchDragDecoration(mParent, localPos, tp.area.center(), tp.state, mParent->modifiers()))
             return;
     }

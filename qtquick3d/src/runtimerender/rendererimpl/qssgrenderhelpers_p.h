@@ -33,19 +33,20 @@ class QSSGRhiShaderPipeline;
 namespace RenderHelpers
 {
 
-std::pair<QSSGBoxPoints, QSSGBoxPoints> calculateSortedObjectBounds(const QSSGRenderableObjectList &sortedOpaqueObjects,
-                                                                    const QSSGRenderableObjectList &sortedTransparentObjects);
+std::pair<QSSGBounds3, QSSGBounds3> calculateSortedObjectBounds(const QSSGRenderableObjectList &sortedOpaqueObjects,
+                                                                const QSSGRenderableObjectList &sortedTransparentObjects);
 
 void rhiRenderShadowMap(QSSGRhiContext *rhiCtx,
                         QSSGPassKey passKey,
                         QSSGRhiGraphicsPipelineState &ps,
                         QSSGRenderShadowMap &shadowMapManager,
                         const QSSGRenderCamera &camera,
+                        QSSGRenderCamera *debugCamera,
                         const QSSGShaderLightList &globalLights,
                         const QSSGRenderableObjectList &sortedOpaqueObjects,
                         QSSGRenderer &renderer,
-                        const QSSGBoxPoints &castingObjectsBox,
-                        const QSSGBoxPoints &receivingObjectsBox);
+                        const QSSGBounds3 &castingObjectsBox,
+                        const QSSGBounds3 &receivingObjectsBox);
 
 void rhiRenderReflectionMap(QSSGRhiContext *rhiCtx,
                             QSSGPassKey passKey,
@@ -63,7 +64,8 @@ bool rhiPrepareDepthPass(QSSGRhiContext *rhiCtx,
                          QSSGLayerRenderData &inData,
                          const QSSGRenderableObjectList &sortedOpaqueObjects,
                          const QSSGRenderableObjectList &sortedTransparentObjects,
-                         int samples);
+                         int samples,
+                         int viewCount);
 
 void rhiRenderDepthPass(QSSGRhiContext *rhiCtx, const QSSGRhiGraphicsPipelineState &ps,
                         const QSSGRenderableObjectList &sortedOpaqueObjects,
@@ -87,14 +89,14 @@ bool rhiPrepareScreenTexture(QSSGRhiContext *rhiCtx, const QSize &size, bool wan
 void rhiPrepareGrid(QSSGRhiContext *rhiCtx,
                     QSSGPassKey passKey,
                     QSSGRenderLayer &layer,
-                    QSSGRenderCamera &inCamera,
+                    QSSGRenderCameraList &cameras,
                     QSSGRenderer &renderer);
 
 
 void rhiPrepareSkyBox(QSSGRhiContext *rhiCtx,
                       QSSGPassKey passKey,
                       QSSGRenderLayer &layer,
-                      QSSGRenderCamera &inCamera,
+                      QSSGRenderCameraList &cameras,
                       QSSGRenderer &renderer);
 
 void rhiPrepareSkyBoxForReflectionMap(QSSGRhiContext *rhiCtx,
@@ -113,7 +115,8 @@ Q_QUICK3DRUNTIMERENDER_EXPORT void rhiPrepareRenderable(QSSGRhiContext *rhiCtx,
                                                         QSSGRhiGraphicsPipelineState *ps,
                                                         QSSGShaderFeatures featureSet,
                                                         int samples,
-                                                        QSSGRenderCamera *inCamera = nullptr,
+                                                        int viewCount,
+                                                        QSSGRenderCamera *alteredCamera = nullptr,
                                                         QMatrix4x4 *alteredModelViewProjection = nullptr,
                                                         QSSGRenderTextureCubeFace cubeFace = QSSGRenderTextureCubeFaceNone,
                                                         QSSGReflectionMapEntry *entry = nullptr);

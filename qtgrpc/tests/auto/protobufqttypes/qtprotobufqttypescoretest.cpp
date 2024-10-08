@@ -21,7 +21,7 @@ class QtProtobufQtTypesQtCoreTest : public QObject
 {
     Q_OBJECT
 
-private slots:
+private Q_SLOTS:
     void initTestCase();
     void qUrl();
     void qChar();
@@ -69,7 +69,7 @@ private:
 
 void QtProtobufQtTypesQtCoreTest::initTestCase()
 {
-    QtProtobuf::qRegisterProtobufQtCoreTypes();
+    QtProtobuf::registerProtobufQtCoreTypes();
 }
 
 using namespace qtprotobufnamespace::qttypes::tests;

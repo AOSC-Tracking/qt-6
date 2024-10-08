@@ -33,7 +33,7 @@ QT_BEGIN_NAMESPACE
     \ingroup qmlvaluetypes
     \inqmlmodule QtMultimedia
     \since 6.2
-    //! \instantiates QCameraFormat
+    //! \nativetype QCameraFormat
     \brief Describes a video format supported by a camera device.
     \ingroup multimedia_qml
     \ingroup multimedia_video_qml
@@ -221,7 +221,7 @@ bool QCameraFormat::operator==(const QCameraFormat &other) const
     \ingroup qmlvaluetypes
     \inqmlmodule QtMultimedia
     \since 6.2
-    //! \instantiates QCameraDevice
+    //! \nativetype QCameraDevice
     \brief Describes a camera device.
     \ingroup multimedia_qml
     \ingroup multimedia_video_qml
@@ -382,6 +382,11 @@ QString QCameraDevice::description() const
            mobile device, it means it is on the opposite side to that of the screen.
     \value FrontFace  The camera is on the front face of the system hardware. For example on a
            mobile device, it means it is on the same side as that of the screen.
+           Front-facing cameras generate video frames with the property
+           \l QVideoFrame::mirrored set to \c true. This means that the presentation of these
+           frames is flipped around the vertical axis to display the video output as a mirror,
+           whereas recording only considers the transformations of the surface specified in
+           \l QVideoFrame::surfaceFormat.
 
     \sa position()
 */
@@ -398,6 +403,9 @@ QString QCameraDevice::description() const
            mobile device, it means it is on the opposite side to that of the screen.
     \value cameraDevice.FrontFace  The camera is on the front face of the system hardware. For example on a
            mobile device, it means it is on the same side as that of the screen.
+           Preview of front-facing cameras is flipped around the vertical axis
+           to display the video output as a mirror, whereas this flipping is not
+           performed during recording.
 */
 
 /*!

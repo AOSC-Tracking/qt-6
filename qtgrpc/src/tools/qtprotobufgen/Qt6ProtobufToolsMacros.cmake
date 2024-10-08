@@ -12,7 +12,6 @@ macro(_qt_internal_get_protoc_common_options option_args single_args multi_args)
     )
     set(${single_args}
         EXTRA_NAMESPACE
-        QML_URI
     )
 
     set(${multi_args} "")
@@ -27,6 +26,7 @@ macro(_qt_internal_get_protoc_generate_arguments option_args single_args multi_a
         OUTPUT_HEADERS
         OUTPUT_TARGETS
         EXPORT_MACRO
+        QML_URI
     )
     set(${multi_args}
         PROTO_FILES
@@ -49,6 +49,10 @@ macro(_qt_internal_get_protoc_options out_var prefix option single multi)
             list(APPEND ${out_var} "${opt}=${${prefix}_${opt}}")
         endif()
     endforeach()
+
+    if(${prefix}_QML_URI)
+        list(APPEND ${out_var} "QML=true")
+    endif()
 endmacro()
 
 # Returns the generator target name according to the pre-defined pattern
@@ -185,6 +189,7 @@ function(_qt_internal_protoc_generate target generator output_directory)
     add_custom_target(${deps_target} DEPENDS ${generated_files})
     set_property(TARGET ${target} APPEND PROPERTY
         AUTOGEN_TARGET_DEPENDS "${deps_target}")
+    set_property(TARGET ${target} APPEND PROPERTY AUTOMOC_MACRO_NAMES "Q_PROTOBUF_OBJECT")
     set_property(TARGET ${target} PROPERTY _qt_${generator}_deps_num "${num_deps}")
     set_source_files_properties(${generated_files} PROPERTIES
         GENERATED TRUE
@@ -315,8 +320,6 @@ endfunction()
 #     - Collect PROTO_INCLUDES from the LINK_LIBRARIES property of TARGET
 #     - Collect proto files from the source files of the ${TARGET}
 
-# This function is currently in Technical Preview
-# Its signature and behavior might change.
 function(qt6_add_protobuf target)
     _qt_internal_get_protoc_common_options(protoc_option_opt protoc_single_opt protoc_multi_opt)
     _qt_internal_get_protoc_generate_arguments(protoc_option_arg protoc_single_arg protoc_multi_arg)
@@ -456,7 +459,6 @@ function(qt6_add_protobuf target)
                 " Please, set QML_URI when using .proto without package name."
             )
         endif()
-        list(APPEND generation_options "QML_URI=${qml_uri}")
     endif()
 
     if(arg_PROTO_INCLUDES)
@@ -613,6 +615,7 @@ function(qt6_add_protobuf target)
             ${plugin_options}
             VERSION 1.0
             OUTPUT_DIRECTORY "${qml_module_output_full_path}"
+            DEPENDENCIES QtProtobuf
             OUTPUT_TARGETS qml_output_targets
         )
 
@@ -626,6 +629,10 @@ function(qt6_add_protobuf target)
             )
         endif()
 
+        target_link_libraries(${target} PRIVATE
+            ${QT_CMAKE_EXPORT_NAMESPACE}::ProtobufQuick
+        )
+
         if(DEFINED arg_OUTPUT_TARGETS)
             if(qml_output_targets)
                 list(APPEND ${arg_OUTPUT_TARGETS} ${qml_output_targets})
@@ -634,6 +641,10 @@ function(qt6_add_protobuf target)
                 list(APPEND ${arg_OUTPUT_TARGETS} "${target}plugin")
             endif()
         endif()
+    elseif(existing_uri)
+        target_link_libraries(${target} PRIVATE
+            ${QT_CMAKE_EXPORT_NAMESPACE}::ProtobufQuick
+        )
     endif()
 
     if(DEFINED arg_OUTPUT_HEADERS)

@@ -48,6 +48,8 @@ public:
 
     void setCaptureSession(QFFmpegMediaCaptureSession *session);
 
+    void updateAutoStop() override;
+
 private Q_SLOTS:
     void newDuration(qint64 d) { durationChanged(d); }
     void finalizationDone();

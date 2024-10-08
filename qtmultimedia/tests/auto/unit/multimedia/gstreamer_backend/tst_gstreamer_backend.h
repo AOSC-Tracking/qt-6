@@ -32,6 +32,8 @@ private slots:
     void metadata_taglistToMetaData_extractsDuration();
     void metadata_taglistToMetaData_extractsLanguage();
     void metadata_taglistToMetaData_extractsLanguage_data();
+    void metadata_taglistToMetaData_extractsDate();
+    void metadata_taglistToMetaData_extractsDate_data();
 
     void metadata_capsToMetaData();
     void metadata_capsToMetaData_data();
@@ -46,6 +48,8 @@ private slots:
 
     void qDebug_GstPadDirection();
     void qDebug_GstStreamStatusType();
+
+    void QGstStructureView_parseCameraFormat();
 
 private:
     QGstreamerIntegration integration;

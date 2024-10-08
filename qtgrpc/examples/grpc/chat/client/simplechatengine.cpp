@@ -5,6 +5,9 @@
 #include "simplechatengine.h"
 
 #include <QGrpcHttp2Channel>
+#include <QGrpcChannelOptions>
+
+#include <qprotobufregistration.h>
 
 #include <QDebug>
 #include <QFile>
@@ -16,6 +19,8 @@
 #include <QImage>
 #include <QByteArray>
 #include <QBuffer>
+
+#include <memory>
 
 SimpleChatEngine::SimpleChatEngine(QObject *parent)
     : QObject(parent),
@@ -43,45 +48,51 @@ void SimpleChatEngine::login(const QString &name, const QString &password)
     QUrl url("http://localhost:65002");
 
     // ![0]
-    QGrpcChannelOptions channelOptions(url);
-    QGrpcMetadata metadata = {
+    QGrpcChannelOptions channelOptions;
+    QHash<QByteArray, QByteArray> metadata = {
         { "user-name", { name.toUtf8() } },
         { "user-password", { password.toUtf8() } },
     };
-    channelOptions.withMetadata(metadata);
-    std::shared_ptr<QAbstractGrpcChannel> channel = std::make_shared<QGrpcHttp2Channel>(
-            channelOptions);
+    channelOptions.setMetadata(metadata);
+    std::shared_ptr<QAbstractGrpcChannel>
+        channel = std::make_shared<QGrpcHttp2Channel>(url, channelOptions);
     // ![0]
 
     m_client->attachChannel(channel);
 
     // ![1]
-    auto stream = m_client->streamMessageList(qtgrpc::examples::chat::None());
-    QObject::connect(stream.get(), &QGrpcServerStream::errorOccurred, this,
-                     [this, stream](const QGrpcStatus &status) {
-                         qCritical()
-                                 << "Stream error(" << status.code() << "):" << status.message();
-                         if (status.code() == QGrpcStatus::Unauthenticated) {
-                             emit authFailed();
-                         } else {
-                             emit networkError(status.message());
-                             setState(Disconnected);
-                         }
-                     });
+    auto stream = m_client->messageList(qtgrpc::examples::chat::None());
+    auto streamPtr = stream.get();
+    auto finishedConnection = std::make_shared<QMetaObject::Connection>();
+    *finishedConnection = QObject::connect(streamPtr, &QGrpcServerStream::finished, this,
+                                           [this, finishedConnection,
+                                            stream = std::move(stream)](const QGrpcStatus &status) {
+                                               if (!status.isOk()) {
+                                                   qCritical() << "Stream error(" << status.code()
+                                                               << "):" << status.message();
+                                               }
+                                               if (status.code()
+                                                   == QtGrpc::StatusCode::Unauthenticated) {
+                                                   emit authFailed();
+                                               } else if (status.code() != QtGrpc::StatusCode::Ok) {
+                                                   emit networkError(status.message());
+                                                   setState(Disconnected);
+                                               } else {
+                                                   setState(Disconnected);
+                                               }
+                                               disconnect(*finishedConnection);
+                                           });
 
-    QObject::connect(stream.get(), &QGrpcServerStream::finished, this,
-                     [this, stream]() { setState(Disconnected); });
-
-    QObject::connect(stream.get(), &QGrpcServerStream::messageReceived, this,
-                     [this, name, password, stream]() {
+    QObject::connect(streamPtr, &QGrpcServerStream::messageReceived, this,
+                     [this, name, password, stream = streamPtr]() {
                          if (m_userName != name) {
                              m_userName = name;
                              m_password = password;
                              emit userNameChanged();
                          }
                          setState(Connected);
-                         m_messages.append(
-                                 stream->read<qtgrpc::examples::chat::ChatMessages>().messages());
+                         if (const auto msg = stream->read<qtgrpc::examples::chat::ChatMessages>())
+                             m_messages.append(msg->messages());
                      });
     // ![1]
 }
@@ -94,7 +105,20 @@ void SimpleChatEngine::sendMessage(const QString &content)
     msg.setType(qtgrpc::examples::chat::ChatMessage::ContentType::Text);
     msg.setTimestamp(QDateTime::currentMSecsSinceEpoch());
     msg.setFrom(m_userName);
-    m_client->sendMessage(msg);
+
+    std::unique_ptr<QGrpcCallReply> reply = m_client->sendMessage(msg);
+    // We explicitly take a copy of the reply pointer, since moving it into
+    // the lambda would make the get() function invalid.
+    // Reply's lifetime will be extended until finished() is emitted.
+    // Qt::SingleShotConnection is needed to destroy the lambda (and its capture).
+    auto *replyPtr = reply.get();
+    connect(
+        replyPtr, &QGrpcCallReply::finished, this,
+        [reply = std::move(reply)](const QGrpcStatus &status) {
+            if (!status.isOk())
+                qDebug() << "Failed to send message: " << status;
+        },
+        Qt::SingleShotConnection);
     // ![2]
 }
 
@@ -154,7 +178,16 @@ void SimpleChatEngine::sendImageFromClipboard()
     msg.setType(qtgrpc::examples::chat::ChatMessage::ContentType::Image);
     msg.setTimestamp(QDateTime::currentMSecsSinceEpoch());
     msg.setFrom(m_userName);
-    m_client->sendMessage(msg);
+
+    std::unique_ptr<QGrpcCallReply> reply = m_client->sendMessage(msg);
+    auto *replyPtr = reply.get();
+    connect(
+        replyPtr, &QGrpcCallReply::finished, this,
+        [reply = std::move(reply)](const QGrpcStatus &status) {
+            if (!status.isOk())
+                qDebug() << "Failed to send clipboard message: " << status;
+        },
+        Qt::SingleShotConnection);
 }
 
 ChatMessageModel *SimpleChatEngine::messages()

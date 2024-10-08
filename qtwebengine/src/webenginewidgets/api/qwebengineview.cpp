@@ -897,6 +897,12 @@ void QWebEngineViewPrivate::printRequested()
     });
 }
 
+void QWebEngineViewPrivate::printRequestedByFrame(QWebEngineFrame frame)
+{
+    Q_Q(QWebEngineView);
+    QTimer::singleShot(0, q, [q, frame]() { Q_EMIT q->printRequestedByFrame(frame); });
+}
+
 bool QWebEngineViewPrivate::isVisible() const
 {
     Q_Q(const QWebEngineView);
@@ -1440,7 +1446,20 @@ void QWebEngineView::printToPdf(const std::function<void(const QByteArray&)> &re
     button of PDF viewer plugin.
     Typically, the signal handler can simply call print().
 
-    \sa print()
+    Since 6.8, this signal is only emitted for the main frame, instead of being emitted
+    for any frame that requests printing.
+
+    \sa printRequestedByFrame(), print()
+*/
+
+/*!
+    \fn void QWebEngineView::printRequestedByFrame(QWebEngineFrame frame)
+    \since 6.8
+
+    This signal is emitted when the JavaScript \c{window.print()} method is called on \a frame.
+    If the frame is the main frame, \c{printRequested} is emitted instead.
+
+    \sa printRequested(), print()
 */
 
 /*!
@@ -1478,17 +1497,21 @@ void QWebEngineView::printToPdf(const std::function<void(const QByteArray&)> &re
 void QWebEngineView::print(QPrinter *printer)
 {
 #if QT_CONFIG(webengine_printing_and_pdf)
-    if (page()->d_ptr->currentPrinter) {
+    auto *dPage = page()->d_ptr.get();
+    if (dPage->currentPrinter) {
         qWarning("Cannot print page on printer %ls: Already printing on a device.", qUtf16Printable(printer->printerName()));
         return;
     }
 
-    page()->d_ptr->currentPrinter = printer;
-    page()->d_ptr->ensureInitialized();
-    page()->d_ptr->adapter->printToPDFCallbackResult(printer->pageLayout(),
-                                                     printer->pageRanges(),
-                                                     printer->colorMode() == QPrinter::Color,
-                                                     false);
+    dPage->currentPrinter = printer;
+    dPage->ensureInitialized();
+    std::function callback = [dPage](QSharedPointer<QByteArray> result) {
+        dPage->didPrintPage(std::move(result));
+    };
+    dPage->adapter->printToPDFCallbackResult(std::move(callback), printer->pageLayout(),
+                                             printer->pageRanges(),
+                                             printer->colorMode() == QPrinter::Color, false,
+                                             QtWebEngineCore::WebContentsAdapter::kUseMainFrameId);
 #else
     Q_UNUSED(printer);
     Q_EMIT printFinished(false);

@@ -1,5 +1,7 @@
-#include <QtProtobuf/qprotobufserializer.h>
+
 #include "anymessages.qpb.h"
+
+#include <QtProtobuf/qprotobufregistration.h>
 
 namespace qtproto::tests {
 static QtProtobuf::ProtoTypeRegistrar ProtoTypeRegistrarAnyMessage(qRegisterProtobufType<AnyMessage>);

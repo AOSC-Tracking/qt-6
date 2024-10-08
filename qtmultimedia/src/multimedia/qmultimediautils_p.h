@@ -46,7 +46,7 @@ inline QSize qRotatedFrameSize(QSize size, QtVideo::Rotation rotation)
     return qRotatedFrameSize(size, qToUnderlying(rotation));
 }
 
-Q_MULTIMEDIA_EXPORT QSize qRotatedFrameSize(const QVideoFrame &frame);
+Q_MULTIMEDIA_EXPORT QSize qRotatedFramePresentationSize(const QVideoFrame &frame);
 
 Q_MULTIMEDIA_EXPORT QUrl qMediaFromUserInput(QUrl fileName);
 
@@ -58,6 +58,29 @@ qGetRequiredSwapChainFormat(const QVideoFrameFormat &format);
 Q_MULTIMEDIA_EXPORT bool
 qShouldUpdateSwapChainFormat(QRhiSwapChain *swapChain,
                              QRhiSwapChain::Format requiredSwapChainFormat);
+
+struct NormalizedVideoTransformation
+{
+    QtVideo::Rotation rotation = QtVideo::Rotation::None;
+    int rotationIndex = 0;
+    bool xMirrorredAfterRotation = false;
+};
+
+inline bool operator==(const NormalizedVideoTransformation &lhs,
+                       const NormalizedVideoTransformation &rhs)
+{
+    return lhs.rotation == rhs.rotation
+            && lhs.xMirrorredAfterRotation == rhs.xMirrorredAfterRotation;
+}
+
+Q_MULTIMEDIA_EXPORT NormalizedVideoTransformation
+qNormalizedSurfaceTransformation(const QVideoFrameFormat &format);
+
+Q_MULTIMEDIA_EXPORT NormalizedVideoTransformation
+qNormalizedFrameTransformation(const QVideoFrame &frame, int additionalRotaton = 0);
+
+Q_MULTIMEDIA_EXPORT QtVideo::Rotation
+qVideoRotationFromDegrees(int clockwiseDegrees);
 
 QT_END_NAMESPACE
 

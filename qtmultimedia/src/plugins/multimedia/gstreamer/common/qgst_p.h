@@ -33,6 +33,9 @@
 #include "qgst_handle_types_p.h"
 
 #include <type_traits>
+#ifdef __cpp_lib_three_way_comparison
+#  include <compare>
+#endif
 
 #if QT_CONFIG(gstreamer_photography)
 #  define GST_USE_UNSTABLE_API
@@ -176,6 +179,15 @@ template <typename T> struct QGRange
 {
     T min;
     T max;
+
+#ifdef __cpp_impl_three_way_comparison
+    auto operator<=> (const QGRange &) const = default;
+#else
+    bool operator==(const QGRange &rhs) const
+    {
+        return std::tie(min, max) == std::tie(rhs.min, rhs.max);
+    }
+#endif
 };
 
 struct QGString : QUniqueGStringHandle
@@ -186,6 +198,31 @@ struct QGString : QUniqueGStringHandle
     QByteArrayView asByteArrayView() const { return QByteArrayView{ get() }; }
     QString toQString() const { return QString::fromUtf8(get()); }
 
+#ifdef __cpp_lib_three_way_comparison
+    // clang-format off
+    friend auto operator<=>(const QGString &lhs, const QGString &rhs)
+    {
+        return lhs.asStringView() <=> rhs.asStringView();
+    }
+    friend auto operator<=>(const QGString &lhs, const QLatin1StringView rhs)
+    {
+        return lhs.asStringView() <=> rhs;
+    }
+    friend auto operator<=>(const QGString &lhs, const QByteArrayView rhs)
+    {
+        return lhs.asByteArrayView() <=> rhs;
+    }
+    friend auto operator<=>(const QLatin1StringView lhs, const QGString &rhs)
+    {
+        return lhs <=> rhs.asStringView();
+    }
+    friend auto operator<=>(const QByteArrayView lhs, const QGString &rhs)
+    {
+        return lhs <=> rhs.asByteArrayView();
+    }
+    // clang-format on
+#else
+    // remove once we're on c++20
     bool operator==(const QGString &str) const { return asStringView() == str.asStringView(); }
     bool operator==(const QLatin1StringView str) const { return asStringView() == str; }
     bool operator==(const QByteArrayView str) const { return asByteArrayView() == str; }
@@ -214,16 +251,10 @@ struct QGString : QUniqueGStringHandle
     {
         return lhs < rhs.asByteArrayView();
     }
+#endif
 
     explicit operator QByteArrayView() const { return asByteArrayView(); }
-    explicit operator QByteArray() const
-    {
-        QByteArrayView view{ asByteArrayView() };
-        return QByteArray{
-            view.data(),
-            view.size(),
-        };
-    }
+    explicit operator QByteArray() const { return QByteArray{ asByteArrayView() }; }
 };
 
 class QGValue
@@ -365,6 +396,7 @@ public:
     QSize resolution() const;
     QVideoFrameFormat::PixelFormat pixelFormat() const;
     QGRange<float> frameRateRange() const;
+    std::optional<QGRange<QSize>> resolutionRange() const;
     QGstreamerMessage getMessage();
     std::optional<Fraction> pixelAspectRatio() const;
     QSize nativeSize() const;

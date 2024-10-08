@@ -15,14 +15,14 @@
 // We mean it.
 //
 
-#include <private/qabstractvideobuffer_p.h>
+#include <private/qhwvideobuffer_p.h>
 
 QT_BEGIN_NAMESPACE
 
 class QImageVideoBuffer;
 class QOpenGLFramebufferObject;
 
-class QOpenGLVideoBuffer : public QAbstractVideoBuffer
+class QOpenGLVideoBuffer : public QHwVideoBuffer
 {
 public:
     QOpenGLVideoBuffer(std::unique_ptr<QOpenGLFramebufferObject> fbo);

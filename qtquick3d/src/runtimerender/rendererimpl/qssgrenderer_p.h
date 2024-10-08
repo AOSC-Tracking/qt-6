@@ -84,6 +84,7 @@ private:
     friend class QSSGRenderContextInterface;
     friend class QQuick3DSceneRenderer;
     friend class QQuick3DWindowAttachment;
+    friend class QSSGCleanupObject;
 
     QSSGLayerRenderData *getOrCreateLayerRenderData(QSSGRenderLayer &layer);
     void beginLayerRender(QSSGLayerRenderData &inLayer);
@@ -153,10 +154,15 @@ public:
                                       const QSSGRenderLayer &layer,
                                       const QSSGRenderRay &ray);
 
-    static QSSGRenderPickResult syncPick(const QSSGRenderContextInterface &ctx,
-                                         const QSSGRenderLayer &layer,
+    static PickResultList syncPick(const QSSGRenderContextInterface &ctx,
+                                   const QSSGRenderLayer &layer,
+                                   const QSSGRenderRay &ray,
+                                   QSSGRenderNode *target = nullptr);
+
+    static PickResultList syncPickSubset(const QSSGRenderLayer &layer,
+                                         QSSGBufferManager &bufferManager,
                                          const QSSGRenderRay &ray,
-                                         QSSGRenderNode *target = nullptr);
+                                         QVarLengthArray<QSSGRenderNode *> subset);
 
     // Setting this true enables picking for all the models, regardless of
     // the models pickable property.

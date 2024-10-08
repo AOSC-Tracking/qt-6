@@ -1,9 +1,11 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#include <qtgrpcglobal_p.h>
+#include <QtGrpc/qgrpccalloptions.h>
 
-#include "qgrpccalloptions.h"
+#include <QtCore/qbytearray.h>
+#include <QtCore/qdebug.h>
+#include <QtCore/qvariant.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -19,18 +21,19 @@ using namespace Qt::StringLiterals;
     that are used by gRPC channels to communicate with the services.
 */
 
-struct QGrpcCallOptionsPrivate
+class QGrpcCallOptionsPrivate : public QSharedData
 {
 public:
-    std::optional<QUrl> host;
-    std::optional<std::chrono::milliseconds> deadline;
-    QGrpcMetadata metadata;
+    std::optional<std::chrono::milliseconds> timeout;
+    QHash<QByteArray, QByteArray> metadata;
 };
+
+QT_DEFINE_QESDP_SPECIALIZATION_DTOR(QGrpcCallOptionsPrivate)
 
 /*!
     Constructs an empty QGrpcCallOptions object.
 */
-QGrpcCallOptions::QGrpcCallOptions() : dPtr(std::make_unique<QGrpcCallOptionsPrivate>())
+QGrpcCallOptions::QGrpcCallOptions() : d_ptr(new QGrpcCallOptionsPrivate())
 {
 }
 
@@ -42,28 +45,58 @@ QGrpcCallOptions::~QGrpcCallOptions() = default;
 /*!
     Construct a copy of QGrpcCallOptions with \a other object.
 */
-QGrpcCallOptions::QGrpcCallOptions(const QGrpcCallOptions &other)
-    : dPtr(std::make_unique<QGrpcCallOptionsPrivate>(*other.dPtr))
-{
-}
+QGrpcCallOptions::QGrpcCallOptions(const QGrpcCallOptions &other) = default;
 
 /*!
     Assigns \a other to this QGrpcCallOptions and returns a reference to this
     QGrpcCallOptions.
 */
-QGrpcCallOptions &QGrpcCallOptions::operator=(const QGrpcCallOptions &other)
+QGrpcCallOptions &QGrpcCallOptions::operator=(const QGrpcCallOptions &other) = default;
+
+/*!
+    \fn QGrpcCallOptions::QGrpcCallOptions(QGrpcCallOptions &&other) noexcept
+    Move-constructs a new QGrpcCallOptions from \a other.
+
+    \note The moved-from object \a other is placed in a partially-formed state,
+    in which the only valid operations are destruction and assignment of a new
+    value.
+*/
+
+/*!
+    \fn QGrpcCallOptions &QGrpcCallOptions::operator=(QGrpcCallOptions &&other) noexcept
+    Move-assigns \a other to this QGrpcCallOptions instance and returns a
+    reference to it.
+
+    \note The moved-from object \a other is placed in a partially-formed state,
+    in which the only valid operations are destruction and assignment of a new
+    value.
+*/
+
+/*!
+    \since 6.8
+    Constructs a new QVariant object from this QGrpcCallOptions.
+*/
+QGrpcCallOptions::operator QVariant() const
 {
-    if (this != &other)
-        *dPtr = *other.dPtr;
-    return *this;
+    return QVariant::fromValue(*this);
 }
 
 /*!
-    Sets deadline value with \a deadline and returns updated QGrpcCallOptions object.
+    \since 6.8
+    \fn void QGrpcCallOptions::swap(QGrpcCallOptions &other) noexcept
+    Swaps this instance with \a other. This operation is very fast and never fails.
 */
-QGrpcCallOptions &QGrpcCallOptions::withDeadline(std::chrono::milliseconds deadline)
+
+/*!
+    Sets deadline value with \a timeout and returns updated QGrpcCallOptions object.
+*/
+QGrpcCallOptions &QGrpcCallOptions::setDeadlineTimeout(std::chrono::milliseconds timeout)
 {
-    dPtr->deadline = deadline;
+    if (d_ptr->timeout == timeout)
+        return *this;
+    d_ptr.detach();
+    Q_D(QGrpcCallOptions);
+    d->timeout = timeout;
     return *this;
 }
 
@@ -73,9 +106,28 @@ QGrpcCallOptions &QGrpcCallOptions::withDeadline(std::chrono::milliseconds deadl
     For HTTP2-based channels, \a metadata is converted into HTTP/2 headers, that
     added to the corresponding HTTP/2 request.
 */
-QGrpcCallOptions &QGrpcCallOptions::withMetadata(const QGrpcMetadata &metadata)
+QGrpcCallOptions &QGrpcCallOptions::setMetadata(const QHash<QByteArray, QByteArray> &metadata)
 {
-    dPtr->metadata = metadata;
+    if (d_ptr->metadata == metadata)
+        return *this;
+    d_ptr.detach();
+    Q_D(QGrpcCallOptions);
+    d->metadata = metadata;
+    return *this;
+}
+
+/*!
+    Sets \a metadata for a call and returns updated QGrpcCallOptions object.
+
+    \sa setMetadata()
+*/
+QGrpcCallOptions &QGrpcCallOptions::setMetadata(QHash<QByteArray, QByteArray> &&metadata)
+{
+    if (d_ptr->metadata == metadata)
+        return *this;
+    d_ptr.detach();
+    Q_D(QGrpcCallOptions);
+    d->metadata = std::move(metadata);
     return *this;
 }
 
@@ -88,19 +140,48 @@ QGrpcCallOptions &QGrpcCallOptions::withMetadata(const QGrpcMetadata &metadata)
 
     If value was not set returns empty std::optional.
 */
-std::optional<std::chrono::milliseconds> QGrpcCallOptions::deadline() const noexcept
+std::optional<std::chrono::milliseconds> QGrpcCallOptions::deadlineTimeout() const noexcept
 {
-    return dPtr->deadline;
+    Q_D(const QGrpcCallOptions);
+    return d->timeout;
 }
 
 /*!
+    \fn const QHash<QByteArray, QByteArray> &QGrpcCallOptions::metadata() const & noexcept
+    \fn QHash<QByteArray, QByteArray> QGrpcCallOptions::metadata() && noexcept
+
     Returns metadata used for a call.
 
-    If value was not set returns empty QGrpcMetadata.
+    If the value was not set returns an empty QHash<QByteArray, QByteArray>.
 */
-QGrpcMetadata QGrpcCallOptions::metadata() const
+const QHash<QByteArray, QByteArray> &QGrpcCallOptions::metadata() const & noexcept
 {
-    return dPtr->metadata;
+    Q_D(const QGrpcCallOptions);
+    return d->metadata;
 }
+
+QHash<QByteArray, QByteArray> QGrpcCallOptions::metadata() &&
+{
+    Q_D(QGrpcCallOptions);
+    if (d->ref.loadRelaxed() != 1) // return copy if shared
+        return { d->metadata };
+    return std::move(d->metadata);
+}
+
+#ifndef QT_NO_DEBUG_STREAM
+/*!
+    \since 6.8
+    \fn QDebug QGrpcCallOptions::operator<<(QDebug debug, const QGrpcCallOptions &callOpts)
+    Writes \a callOpts to the specified stream \a debug.
+*/
+QDebug operator<<(QDebug debug, const QGrpcCallOptions &callOpts)
+{
+    const QDebugStateSaver save(debug);
+    debug.nospace().noquote();
+    debug << "QGrpcCallOptions(deadline: " << callOpts.deadlineTimeout()
+          << ", metadata: " << callOpts.metadata() << ')';
+    return debug;
+}
+#endif
 
 QT_END_NAMESPACE

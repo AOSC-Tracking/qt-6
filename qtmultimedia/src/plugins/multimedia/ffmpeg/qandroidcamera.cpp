@@ -28,17 +28,6 @@ extern "C" {
 #include "libavutil/hwcontext.h"
 }
 
-Q_DECLARE_JNI_CLASS(QtCamera2, "org/qtproject/qt/android/multimedia/QtCamera2");
-Q_DECLARE_JNI_CLASS(QtVideoDeviceManager,
-                    "org/qtproject/qt/android/multimedia/QtVideoDeviceManager");
-
-Q_DECLARE_JNI_CLASS(AndroidImageFormat, "android/graphics/ImageFormat");
-
-Q_DECLARE_JNI_CLASS(AndroidImage, "android/media/Image")
-Q_DECLARE_JNI_TYPE(AndroidImagePlaneArray, "[Landroid/media/Image$Plane;")
-Q_DECLARE_JNI_CLASS(JavaByteBuffer, "java/nio/ByteBuffer")
-Q_DECLARE_JNI_TYPE(StringArray, "[Ljava/lang/String;")
-
 QT_BEGIN_NAMESPACE
 static Q_LOGGING_CATEGORY(qLCAndroidCamera, "qt.multimedia.ffmpeg.androidCamera");
 
@@ -144,6 +133,14 @@ std::optional<int> QAndroidCamera::ffmpegHWPixelFormat() const
     return QFFmpegVideoBuffer::toAVPixelFormat(m_androidFramePixelFormat);
 }
 
+QVideoFrameFormat QAndroidCamera::frameFormat() const
+{
+    QVideoFrameFormat result = QPlatformCamera::frameFormat();
+    // Apply rotation for surface only
+    result.setRotation(rotation());
+    return result;
+}
+
 static void deleteFrame(void *opaque, uint8_t *data)
 {
     Q_UNUSED(data);
@@ -199,13 +196,14 @@ void QAndroidCamera::frameAvailable(QJniObject image, bool takePhoto)
     avframe->pts = timestamp;
 
     QVideoFrameFormat format(androidFrame->size(), androidFrame->format());
+    format.setRotation(rotation());
 
     QVideoFrame videoFrame(new QFFmpegVideoBuffer(std::move(avframe)), format);
 
     if (lastTimestamp == 0)
         lastTimestamp = timestamp;
 
-    videoFrame.setRotation(rotation());
+    // apply mirroring for presentation only
     videoFrame.setMirrored(m_cameraDevice.position() == QCameraDevice::Position::FrontFace);
 
     videoFrame.setStartTime(lastTimestamp);
@@ -219,7 +217,7 @@ void QAndroidCamera::frameAvailable(QJniObject image, bool takePhoto)
     lastTimestamp = timestamp;
 }
 
-QtVideo::Rotation QAndroidCamera::rotation()
+QtVideo::Rotation QAndroidCamera::rotation() const
 {
     auto screen = QGuiApplication::primaryScreen();
     auto screenOrientation = screen->orientation();

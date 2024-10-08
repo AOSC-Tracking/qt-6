@@ -14,7 +14,7 @@ QQuickWebEngineSettings::QQuickWebEngineSettings(QQuickWebEngineSettings *parent
 
 /*!
     \qmltype WebEngineSettings
-    //! \instantiates QQuickWebEngineSettings
+    //! \nativetype QQuickWebEngineSettings
     \inqmlmodule QtWebEngine
     \since QtWebEngine 1.1
     \brief Allows configuration of browser properties and attributes.
@@ -76,6 +76,10 @@ bool QQuickWebEngineSettings::javascriptCanOpenWindows() const
 
     To enable also the pasting of clipboard content from JavaScript,
     use javascriptCanPaste.
+
+    Since unrestricted clipboard access is a potential security concern, it is
+    recommended that applications leave this disabled and instead respond to
+    \l{webEnginePermission::permissionType}{ClipboardReadWrite} feature permission requests.
 
     Disabled by default.
 */
@@ -180,8 +184,6 @@ bool QQuickWebEngineSettings::errorPageEnabled() const
     Enables support for Pepper plugins, such as the Flash player.
 
     Disabled by default.
-
-   \sa {Pepper Plugin API}
 */
 bool QQuickWebEngineSettings::pluginsEnabled() const
 {
@@ -383,6 +385,10 @@ bool QQuickWebEngineSettings::webRTCPublicInterfacesOnly() const
     Enables JavaScript \c{execCommand("paste")}.
     This also requires enabling javascriptCanAccessClipboard.
 
+    Since unrestricted clipboard access is a potential security concern, it is
+    recommended that applications leave this disabled and instead respond to
+    \l{webEnginePermission::permissionType}{ClipboardReadWrite} feature permission requests.
+
     Disabled by default.
 */
 bool QQuickWebEngineSettings::javascriptCanPaste() const
@@ -462,6 +468,19 @@ bool QQuickWebEngineSettings::forceDarkMode() const
 }
 
 /*!
+    \qmlproperty bool WebEngineSettings::scrollAnimatorEnabled
+    \since QtWebEngine 6.8
+
+    Enables animated scrolling.
+
+    Disabled by default.
+ */
+bool QQuickWebEngineSettings::scrollAnimatorEnabled() const
+{
+    return d_ptr->testAttribute(QWebEngineSettings::ScrollAnimatorEnabled);
+}
+
+/*!
     \qmlproperty string WebEngineSettings::defaultTextEncoding
     \since QtWebEngine 1.2
 
@@ -473,6 +492,34 @@ bool QQuickWebEngineSettings::forceDarkMode() const
 QString QQuickWebEngineSettings::defaultTextEncoding() const
 {
     return d_ptr->defaultTextEncoding();
+}
+
+ASSERT_ENUMS_MATCH(QQuickWebEngineSettings::ImageAnimationPolicy::Allow,
+                   QWebEngineSettings::ImageAnimationPolicy::Allow)
+ASSERT_ENUMS_MATCH(QQuickWebEngineSettings::ImageAnimationPolicy::AnimateOnce,
+                   QWebEngineSettings::ImageAnimationPolicy::AnimateOnce)
+ASSERT_ENUMS_MATCH(QQuickWebEngineSettings::ImageAnimationPolicy::Disallow,
+                   QWebEngineSettings::ImageAnimationPolicy::Disallow)
+/*!
+    \qmlproperty enumeration WebEngineSettings::imageAnimationPolicy
+    \since QtWebEngine 6.8
+
+    Specifies how an image animation should be handled when the image frames
+    are rendered for animation.
+
+    \value WebEngineSettings.ImageAnimationPolicy.Allow
+           Allows all image animations when the image frames are rendered.
+    \value WebEngineSettings.ImageAnimationPolicy.AnimateOnce
+           Animate the image once when the image frames are rendered.
+    \value WebEngineSettings.ImageAnimationPolicy.Disallow
+           Disallows all image animations when the image frames are rendered.
+
+    Default value is \c {WebEngineSettings.ImageAnimationPolicy.Allow}.
+*/
+QQuickWebEngineSettings::ImageAnimationPolicy QQuickWebEngineSettings::imageAnimationPolicy() const
+{
+    return static_cast<QQuickWebEngineSettings::ImageAnimationPolicy>(
+            d_ptr->imageAnimationPolicy());
 }
 
 ASSERT_ENUMS_MATCH(QQuickWebEngineSettings::DisallowUnknownUrlSchemes, QWebEngineSettings::DisallowUnknownUrlSchemes)
@@ -760,6 +807,14 @@ void QQuickWebEngineSettings::setForceDarkMode(bool on)
         Q_EMIT forceDarkModeChanged();
 }
 
+void QQuickWebEngineSettings::setScrollAnimatorEnabled(bool on)
+{
+    bool wasOn = d_ptr->testAttribute(QWebEngineSettings::ScrollAnimatorEnabled);
+    d_ptr->setAttribute(QWebEngineSettings::ScrollAnimatorEnabled, on);
+    if (wasOn != on)
+        Q_EMIT scrollAnimatorEnabledChanged();
+}
+
 void QQuickWebEngineSettings::setUnknownUrlSchemePolicy(QQuickWebEngineSettings::UnknownUrlSchemePolicy policy)
 {
     QWebEngineSettings::UnknownUrlSchemePolicy oldPolicy = d_ptr->unknownUrlSchemePolicy();
@@ -780,6 +835,17 @@ void QQuickWebEngineSettings::setWebRTCPublicInterfacesOnly(bool on)
 void QQuickWebEngineSettings::setParentSettings(QQuickWebEngineSettings *parentSettings)
 {
     d_ptr->setParentSettings(parentSettings->d_ptr.data());
+}
+
+void QQuickWebEngineSettings::setImageAnimationPolicy(
+        QQuickWebEngineSettings::ImageAnimationPolicy policy)
+{
+    QWebEngineSettings::ImageAnimationPolicy oldPolicy = d_ptr->imageAnimationPolicy();
+    QWebEngineSettings::ImageAnimationPolicy newPolicy =
+            static_cast<QWebEngineSettings::ImageAnimationPolicy>(policy);
+    d_ptr->setImageAnimationPolicy(newPolicy);
+    if (oldPolicy != newPolicy)
+        Q_EMIT imageAnimationPolicyChanged();
 }
 
 QT_END_NAMESPACE

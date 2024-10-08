@@ -4,6 +4,7 @@
 #include "playbackengine/qffmpegvideorenderer_p.h"
 #include "qffmpegvideobuffer_p.h"
 #include "qvideosink.h"
+#include "private/qvideoframe_p.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -68,10 +69,10 @@ VideoRenderer::RenderingResult VideoRenderer::renderInternal(Frame frame)
     format.setColorTransfer(buffer->colorTransfer());
     format.setColorRange(buffer->colorRange());
     format.setMaxLuminance(buffer->maxNits());
-    QVideoFrame videoFrame(buffer.release(), format);
+    format.setRotation(m_rotation);
+    QVideoFrame videoFrame = QVideoFramePrivate::createFrame(std::move(buffer), format);
     videoFrame.setStartTime(frame.pts());
     videoFrame.setEndTime(frame.end());
-    videoFrame.setRotation(m_rotation);
     m_sink->setVideoFrame(videoFrame);
 
     return {};

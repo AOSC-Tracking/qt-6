@@ -47,14 +47,13 @@ void tst_abstractaxis::initialProperties()
     QCOMPARE(m_axis->isLineVisible(), true);
     QCOMPARE(m_axis->labelsVisible(), true);
     QCOMPARE(m_axis->labelsAngle(), 0);
-    QCOMPARE(m_axis->isGridLineVisible(), true);
-    QCOMPARE(m_axis->isMinorGridLineVisible(), true);
+    QCOMPARE(m_axis->labelDelegate(), nullptr);
+    QCOMPARE(m_axis->isGridVisible(), true);
+    QCOMPARE(m_axis->isSubGridVisible(), true);
     QCOMPARE(m_axis->titleText(), QString());
     QCOMPARE(m_axis->titleColor(), QColor());
     QCOMPARE(m_axis->isTitleVisible(), true);
     QCOMPARE(m_axis->titleFont(), QFont());
-    QCOMPARE(m_axis->orientation(), Qt::Orientation(0));
-    QCOMPARE(m_axis->alignment(), 0);
 }
 
 void tst_abstractaxis::initializeProperties()
@@ -62,32 +61,31 @@ void tst_abstractaxis::initializeProperties()
     QVERIFY(m_axis);
 
     auto font = QFont("Arial", 20, 2, true);
+    auto labelDelegate = new QQmlComponent(this);
 
     m_axis->setVisible(false);
     m_axis->setLineVisible(false);
     m_axis->setLabelsVisible(false);
     m_axis->setLabelsAngle(90.0);
-    m_axis->setGridLineVisible(false);
-    m_axis->setMinorGridLineVisible(false);
+    m_axis->setLabelDelegate(labelDelegate);
+    m_axis->setGridVisible(false);
+    m_axis->setSubGridVisible(false);
     m_axis->setTitleText("Title");
     m_axis->setTitleColor("#ff0000");
     m_axis->setTitleVisible(false);
     m_axis->setTitleFont(font);
-    m_axis->setOrientation(Qt::Vertical);
-    // no setter for alignment?
 
     QCOMPARE(m_axis->isVisible(), false);
     QCOMPARE(m_axis->isLineVisible(), false);
     QCOMPARE(m_axis->labelsVisible(), false);
     QCOMPARE(m_axis->labelsAngle(), 90.0);
-    QCOMPARE(m_axis->isGridLineVisible(), false);
-    QCOMPARE(m_axis->isMinorGridLineVisible(), false);
+    QCOMPARE(m_axis->labelDelegate(), labelDelegate);
+    QCOMPARE(m_axis->isGridVisible(), false);
+    QCOMPARE(m_axis->isSubGridVisible(), false);
     QCOMPARE(m_axis->titleText(), "Title");
     QCOMPARE(m_axis->titleColor(), "#ff0000");
     QCOMPARE(m_axis->isTitleVisible(), false);
     QCOMPARE(m_axis->titleFont(), font);
-    QCOMPARE(m_axis->orientation(), Qt::Vertical);
-    QCOMPARE(m_axis->alignment(), 0);
 }
 
 void tst_abstractaxis::showHide()

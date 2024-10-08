@@ -35,6 +35,20 @@ qt_find_package(EGL PROVIDED_TARGETS EGL::EGL)
 
 
 qt_find_package(FFmpeg OPTIONAL_COMPONENTS AVCODEC AVFORMAT AVUTIL SWRESAMPLE SWSCALE PROVIDED_TARGETS FFmpeg::avcodec FFmpeg::avformat FFmpeg::avutil FFmpeg::swresample FFmpeg::swscale MODULE_NAME multimedia QMAKE_LIB ffmpeg)
+qt_find_package_extend_sbom(
+    TARGETS
+        FFmpeg::avcodec
+        FFmpeg::avformat
+        FFmpeg::avutil
+        FFmpeg::swresample
+        FFmpeg::swscale
+    ATTRIBUTION_FILE_DIR_PATHS
+        # Need to pass an absolute path here, otherwise the file will be relative to the root of
+        # the source tree, not the current dir, because system libraries are processed in the
+        # source root directory.
+        ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/ffmpeg
+)
+qt_find_package(PipeWire PROVIDED_TARGETS PipeWire::PipeWire MODULE_NAME multimedia QMAKE_LIB pipewire)
 qt_find_package(VAAPI COMPONENTS VA DRM PROVIDED_TARGETS VAAPI::VAAPI MODULE_NAME multimedia QMAKE_LIB vaapi)
 
 #### Tests
@@ -87,6 +101,11 @@ qt_feature("ffmpeg" PRIVATE
     ENABLE INPUT_ffmpeg STREQUAL 'yes'
     DISABLE INPUT_ffmpeg STREQUAL 'no'
     CONDITION FFmpeg_FOUND AND (APPLE OR WIN32 OR ANDROID OR QNX OR QT_FEATURE_pulseaudio)
+)
+qt_feature("pipewire" PRIVATE
+    LABEL "PipeWire"
+    ENABLE INPUT_pipewire STREQUAL 'yes'
+    CONDITION QT_FEATURE_dbus AND TARGET PipeWire::PipeWire
 )
 qt_feature("alsa" PUBLIC PRIVATE
     LABEL "ALSA (experimental)"
@@ -202,6 +221,9 @@ qt_configure_end_summary_section()
 qt_configure_add_summary_section(NAME "Plugin")
 qt_configure_add_summary_entry(ARGS "gstreamer")
 qt_configure_add_summary_entry(ARGS "ffmpeg")
+qt_configure_add_summary_section(NAME "FFmpeg plugin features")
+qt_configure_add_summary_entry(ARGS "pipewire")
+qt_configure_end_summary_section()
 qt_configure_add_summary_entry(ARGS "mmrenderer")
 qt_configure_add_summary_entry(ARGS "avfoundation")
 qt_configure_add_summary_entry(ARGS "wmf")
@@ -219,3 +241,32 @@ qt_configure_add_report_entry(
     MESSAGE "No backend for low level audio found."
     CONDITION NOT QT_FEATURE_alsa AND NOT QT_FEATURE_pulseaudio AND NOT QT_FEATURE_mmrenderer AND NOT QT_FEATURE_coreaudio AND NOT QT_FEATURE_wmsdk AND NOT ANDROID AND NOT WASM
 )
+
+qt_configure_add_report_entry(
+    TYPE WARNING
+    MESSAGE "No media backend found"
+    CONDITION LINUX AND NOT (QT_FEATURE_gstreamer OR QT_FEATURE_ffmpeg)
+)
+
+if (TARGET GStreamer::GStreamer)
+    qt_config_compile_test(gstreamer_version_check
+        LABEL "GStreamer minimum version test"
+        LIBRARIES
+            GStreamer::Core
+        CODE
+    "#include <gst/gstversion.h>
+
+    static_assert(GST_CHECK_VERSION(1, 20, 0), \"Minimum required GStreamer version is 1.20\");
+
+    int main()
+    {
+        return 0;
+    }"
+    )
+
+    qt_configure_add_report_entry(
+        TYPE WARNING
+        MESSAGE "Minimum required GStreamer version is 1.20."
+        CONDITION QT_FEATURE_gstreamer AND NOT TEST_gstreamer_version_check
+    )
+endif()

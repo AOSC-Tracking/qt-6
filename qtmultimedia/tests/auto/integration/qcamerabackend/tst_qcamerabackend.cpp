@@ -364,7 +364,7 @@ void tst_QCameraBackend::testCameraCapture()
 
     int id = imageCapture.captureToFile();
 
-    QTRY_VERIFY_WITH_TIMEOUT(!savedSignal.isEmpty(), 8000);
+    QTRY_VERIFY_WITH_TIMEOUT(!savedSignal.isEmpty(), 8s);
 
     QTRY_COMPARE(capturedSignal.size(), 1);
     QCOMPARE(capturedSignal.last().first().toInt(), id);
@@ -636,7 +636,7 @@ void tst_QCameraBackend::testVideoRecording()
     QMediaPlayer player;
     player.setSource(fileName);
 
-    QTRY_COMPARE_WITH_TIMEOUT(player.mediaStatus(), QMediaPlayer::LoadedMedia, 8000);
+    QTRY_COMPARE_WITH_TIMEOUT(player.mediaStatus(), QMediaPlayer::LoadedMedia, 8s);
     QCOMPARE_EQ(player.metaData().value(QMediaMetaData::Resolution).toSize(), QSize(320, 240));
     QCOMPARE_GT(player.duration(), 350);
     QCOMPARE_LT(player.duration(), 650);

@@ -7,22 +7,21 @@ namespace TestService {
 using namespace Qt::StringLiterals;
 
 Client::Client(QObject *parent)
-    : QAbstractGrpcClient("qtgrpc.tests.nomessages.TestService"_L1, parent)
+    : QGrpcClientBase("qtgrpc.tests.nomessages.TestService"_L1, parent)
 {
 }
 
+Client::~Client() = default;
 
-std::shared_ptr<QGrpcCallReply> Client::testMethod(const qtprotobufnamespace::tests::SimpleStringMessage &arg, const QGrpcCallOptions &options)
+std::unique_ptr<QGrpcCallReply> Client::testMethod(const qtprotobufnamespace::tests::SimpleStringMessage &arg)
 {
-    return call<qtprotobufnamespace::tests::SimpleStringMessage>("testMethod"_L1, arg, options);
+    return call("testMethod"_L1, arg, {});
 }
 
-void Client::testMethod(const qtprotobufnamespace::tests::SimpleStringMessage &arg, const QObject *context, const std::function<void(std::shared_ptr<QGrpcCallReply>)> &callback, const QGrpcCallOptions &options)
+
+std::unique_ptr<QGrpcCallReply> Client::testMethod(const qtprotobufnamespace::tests::SimpleStringMessage &arg, const QGrpcCallOptions &options)
 {
-    std::shared_ptr<QGrpcCallReply> reply = call<qtprotobufnamespace::tests::SimpleStringMessage>("testMethod"_L1, arg, options);
-    QObject::connect(reply.get(), &QGrpcCallReply::finished, context, [reply, callback]() {
-        callback(reply);
-    }, Qt::SingleShotConnection);
+    return call("testMethod"_L1, arg, options);
 }
 
 } // namespace TestService

@@ -4,19 +4,15 @@
 #ifndef QABSTRACTDATAPROXY_H
 #define QABSTRACTDATAPROXY_H
 
-#if 0
-#  pragma qt_class(QAbstractDataProxy)
-#endif
-
-#include <QtCore/QObject>
-#include <QtCore/QScopedPointer>
+#include <QtCore/qobject.h>
+#include <QtCore/qscopedpointer.h>
 #include <QtGraphs/qgraphsglobal.h>
 
 QT_BEGIN_NAMESPACE
 
 class QAbstractDataProxyPrivate;
 
-class QT_TECH_PREVIEW_API Q_GRAPHS_EXPORT QAbstractDataProxy : public QObject
+class Q_GRAPHS_EXPORT QAbstractDataProxy : public QObject
 {
     Q_OBJECT
     Q_DECLARE_PRIVATE(QAbstractDataProxy)
@@ -24,7 +20,12 @@ class QT_TECH_PREVIEW_API Q_GRAPHS_EXPORT QAbstractDataProxy : public QObject
     Q_PROPERTY(QAbstractDataProxy::DataType type READ type CONSTANT)
 
 public:
-    enum class DataType { None, Bar, Scatter, Surface };
+    enum class DataType {
+        None,
+        Bar,
+        Scatter,
+        Surface,
+    };
     Q_ENUM(DataType)
 
 protected:

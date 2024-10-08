@@ -16,18 +16,20 @@
 // We mean it.
 //
 
+#include <QtProtobuf/qabstractprotobufserializer.h>
+#include <QtProtobuf/qprotobufpropertyordering.h>
+#include <QtProtobuf/qprotobufserializer.h>
+#include <QtProtobuf/qprotobufrepeatediterator.h>
+#include <QtProtobuf/qtprotobuftypes.h>
+
+#include <QtProtobuf/private/qprotobufselfcheckiterator_p.h>
+#include <QtProtobuf/private/qtprotobuflogging_p.h>
+
 #include <QtCore/qendian.h>
 #include <QtCore/qstring.h>
 #include <QtCore/qbytearray.h>
 #include <QtCore/qhash.h>
 #include <QtCore/qvariant.h>
-#include <QtCore/private/qbytearray_p.h>
-
-#include <QtProtobuf/private/qprotobufselfcheckiterator_p.h>
-#include <QtProtobuf/private/qtprotobuflogging_p.h>
-#include <QtProtobuf/qabstractprotobufserializer.h>
-#include <QtProtobuf/qprotobufserializer.h>
-#include <QtProtobuf/qtprotobuftypes.h>
 
 #include <optional>
 #include <type_traits>
@@ -154,7 +156,7 @@ public:
         return !value.value<V>().isEmpty();
     }
 
-    explicit QProtobufSerializerPrivate(QProtobufSerializer *q);
+    QProtobufSerializerPrivate() = default;
     ~QProtobufSerializerPrivate() = default;
     // ###########################################################################
     //                                Serializers
@@ -303,7 +305,7 @@ public:
     //                                Deserializers
     // ###########################################################################
     template<typename V, typename std::enable_if_t<IsUnsignedInt<V>::value, int> = 0>
-    Q_REQUIRED_RESULT static std::optional<V>
+    [[nodiscard]] static std::optional<V>
     deserializeVarintCommon(QProtobufSelfcheckIterator &it)
     {
         qProtoDebug("currentByte: 0x%x", *it);
@@ -326,7 +328,7 @@ public:
 
     //-------------Integral and floating point types deserializers---------------
     template<typename V, typename std::enable_if_t<IsI32OrI64<V>::value, int> = 0>
-    Q_REQUIRED_RESULT static bool deserializeBasic(QProtobufSelfcheckIterator &it,
+    [[nodiscard]] static bool deserializeBasic(QProtobufSelfcheckIterator &it,
                                                    QVariant &variantValue)
     {
         qsizetype size = sizeof(V);
@@ -339,7 +341,7 @@ public:
     }
 
     template<typename V, typename std::enable_if_t<IsUnsignedInt<V>::value, int> = 0>
-    Q_REQUIRED_RESULT static bool deserializeBasic(QProtobufSelfcheckIterator &it,
+    [[nodiscard]] static bool deserializeBasic(QProtobufSelfcheckIterator &it,
                                                    QVariant &variantValue)
     {
         qProtoDebug("currentByte: 0x%x", *it);
@@ -352,7 +354,7 @@ public:
     }
 
     template<typename V, typename std::enable_if_t<IsZigZagInt<V>::value, int> = 0>
-    Q_REQUIRED_RESULT static bool deserializeBasic(QProtobufSelfcheckIterator &it,
+    [[nodiscard]] static bool deserializeBasic(QProtobufSelfcheckIterator &it,
                                                    QVariant &variantValue)
     {
         qProtoDebug("currentByte: 0x%x", *it);
@@ -367,7 +369,7 @@ public:
     }
 
     template<typename V, typename std::enable_if_t<IsSignedInt<V>::value, int> = 0>
-    Q_REQUIRED_RESULT static bool deserializeBasic(QProtobufSelfcheckIterator &it,
+    [[nodiscard]] static bool deserializeBasic(QProtobufSelfcheckIterator &it,
                                                    QVariant &variantValue)
     {
         qProtoDebug("currentByte: 0x%x", *it);
@@ -384,7 +386,7 @@ public:
 
     //-----------------QString and QByteArray types deserializers----------------
     template<typename V, typename std::enable_if_t<IsLengthDelimited<V>::value, int> = 0>
-    Q_REQUIRED_RESULT static bool deserializeBasic(QProtobufSelfcheckIterator &it,
+    [[nodiscard]] static bool deserializeBasic(QProtobufSelfcheckIterator &it,
                                                    QVariant &variantValue)
     {
         std::optional<QByteArray> result = deserializeLengthDelimited(it);
@@ -401,7 +403,7 @@ public:
 
     //-------------------------List types deserializers--------------------------
     template<typename V>
-    Q_REQUIRED_RESULT static bool deserializeList(QProtobufSelfcheckIterator &it,
+    [[nodiscard]] static bool deserializeList(QProtobufSelfcheckIterator &it,
                                                   QVariant &previousValue)
     {
         qProtoDebug("currentByte: 0x%x", *it);
@@ -427,16 +429,18 @@ public:
     }
 
     template<typename V>
-    Q_REQUIRED_RESULT static bool deserializeNonPackedList(QProtobufSelfcheckIterator &it,
+    [[nodiscard]] static bool deserializeNonPackedList(QProtobufSelfcheckIterator &it,
                                                            QVariant &previousValue)
     {
         qProtoDebug("currentByte: 0x%x", *it);
+        Q_ASSERT_X(previousValue.metaType() == QMetaType::fromType<QList<V>>()
+                       && previousValue.data(),
+                   "QProtobufSerializerPrivate::deserializeNonPackedList",
+                   "Previous value metatype doesn't match the list metatype");
         QVariant variantValue;
         if (deserializeBasic<V>(it, variantValue)) {
-            auto out = previousValue.value<QList<V>>();
-            qProtoDebug() << out;
-            out.append(variantValue.value<V>());
-            previousValue.setValue(out);
+            QList<V> *out = reinterpret_cast<QList<V> *>(previousValue.data());
+            out->append(variantValue.value<V>());
             return true;
         }
         return false;
@@ -455,14 +459,16 @@ public:
         if (!opt)
             return std::nullopt;
         quint64 length = opt.value();
-        if (!it.isValid() || quint64(it.bytesLeft()) < length || length > quint64(MaxByteArraySize))
+        if (!it.isValid() || quint64(it.bytesLeft()) < length
+            || length > quint64(QByteArray::maxSize())) {
             return std::nullopt;
+        }
         QByteArray result(it.data(), qsizetype(length));
         it += length;
         return { result };
     }
 
-    Q_REQUIRED_RESULT
+    [[nodiscard]]
     static bool decodeHeader(QProtobufSelfcheckIterator &it, int &fieldIndex,
                              QtProtobuf::WireTypes &wireType);
     static QByteArray encodeHeader(int fieldIndex, QtProtobuf::WireTypes wireType);
@@ -498,44 +504,53 @@ public:
     static void skipVarint(QProtobufSelfcheckIterator &it);
     static void skipLengthDelimited(QProtobufSelfcheckIterator &it);
 
-    void serializeMessage(const QProtobufMessage *message,
-                          const QtProtobufPrivate::QProtobufPropertyOrdering &ordering);
+    void serializeObject(const QProtobufMessage *message,
+                         const QtProtobufPrivate::QProtobufFieldInfo &fieldInfo);
+    bool deserializeObject(QProtobufMessage *message);
 
-    void serializeProperty(const QVariant &propertyValue,
-                           const QtProtobufPrivate::QProtobufPropertyOrderingInfo &fieldInfo);
-    Q_REQUIRED_RESULT
-    bool deserializeProperty(QProtobufMessage *message,
-                             const QtProtobufPrivate::QProtobufPropertyOrdering &ordering);
+    void serializeEnumList(const QList<QtProtobuf::int64> &value,
+                           const QtProtobufPrivate::QProtobufFieldInfo &fieldInfo);
 
-    void setDeserializationError(QAbstractProtobufSerializer::DeserializationError error,
+    bool deserializeEnumList(QList<QtProtobuf::int64> &value);
+
+    void serializeMessage(const QProtobufMessage *message);
+
+    void serializeProperty(QVariant propertyValue,
+                           const QtProtobufPrivate::QProtobufFieldInfo &fieldInfo);
+    [[nodiscard]] bool deserializeProperty(QProtobufMessage *message);
+
+    void setDeserializationError(QAbstractProtobufSerializer::Error error,
                                  const QString &errorString);
     void clearError();
     void setUnexpectedEndOfStreamError();
 
-    Q_REQUIRED_RESULT
-    bool deserializeMapPair(QVariant &key, QVariant &value);
+    [[nodiscard]] bool storeCachedValue(QProtobufMessage *message);
+    void clearCachedValue();
 
-    QAbstractProtobufSerializer::DeserializationError deserializationError =
-            QAbstractProtobufSerializer::NoDeserializerError;
-    QString deserializationErrorString;
+    QAbstractProtobufSerializer::Error lastError =
+            QAbstractProtobufSerializer::Error::UnknownType;
+    QString lastErrorString;
 
     QProtobufSelfcheckIterator it;
     QByteArray result;
 
     bool preserveUnknownFields = true;
 
-    static const QtProtobufPrivate::QProtobufPropertyOrderingInfo mapValueOrdering;
+    static const QtProtobufPrivate::QProtobufFieldInfo mapValueOrdering;
+
+    QVariant cachedPropertyValue;
+    QProtobufRepeatedIterator cachedRepeatedIterator;
+    int cachedIndex = -1;
 
 private:
     Q_DISABLE_COPY_MOVE(QProtobufSerializerPrivate)
-    QProtobufSerializer *q_ptr;
 };
 
 inline bool
-isOneofOrOptionalField(const QtProtobufPrivate::QProtobufPropertyOrderingInfo &fieldInfo)
+isOneofOrOptionalField(const QtProtobufPrivate::QProtobufFieldInfo &fieldInfo)
 {
-    return fieldInfo.getFieldFlags() & QtProtobufPrivate::Oneof
-        || fieldInfo.getFieldFlags() & QtProtobufPrivate::Optional;
+    return fieldInfo.fieldFlags() & QtProtobufPrivate::FieldFlag::Oneof
+        || fieldInfo.fieldFlags() & QtProtobufPrivate::FieldFlag::Optional;
 }
 
 QT_END_NAMESPACE

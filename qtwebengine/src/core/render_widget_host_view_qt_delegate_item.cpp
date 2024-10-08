@@ -347,6 +347,8 @@ void RenderWidgetHostViewQtDelegateItem::itemChange(ItemChange change, const Ite
             if (!m_isPopup)
                 onHide();
         }
+    } else if (change == QQuickItem::ItemDevicePixelRatioHasChanged) {
+        m_client->visualPropertiesChanged();
     }
 }
 

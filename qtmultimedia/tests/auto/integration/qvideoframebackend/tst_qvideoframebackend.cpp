@@ -257,7 +257,7 @@ void tst_QVideoFrameBackend::toImage_returnsImage_whenCalledFromSeparateThreadAn
     player.play();
 
     // assert
-    QTRY_COMPARE_GE_WITH_TIMEOUT(images.size(), 10u, 60 * 1000 /*ms*/ );
+    QTRY_COMPARE_GE_WITH_TIMEOUT(images.size(), 10u, std::chrono::seconds(60) );
 }
 
 QTEST_MAIN(tst_QVideoFrameBackend)

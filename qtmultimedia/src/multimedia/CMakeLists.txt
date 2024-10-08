@@ -23,9 +23,12 @@ qt_internal_add_module(Multimedia
         audio/qaudiodecoder.cpp audio/qaudiodecoder.h audio/qaudiodecoder_p.h
         audio/qaudiodevice.cpp audio/qaudiodevice.h audio/qaudiodevice_p.h
         audio/qaudioinput.cpp audio/qaudioinput.h
+        audio/qaudiobufferinput.cpp audio/qaudiobufferinput.h
+        audio/qaudiobufferoutput.cpp audio/qaudiobufferoutput.h audio/qaudiobufferoutput_p.h
         audio/qaudiooutput.cpp audio/qaudiooutput.h
         audio/qaudioformat.cpp audio/qaudioformat.h
         audio/qaudiohelpers.cpp audio/qaudiohelpers_p.h
+        audio/qaudioringbuffer_p.h
         audio/qaudiosource.cpp audio/qaudiosource.h
         audio/qaudiosink.cpp audio/qaudiosink.h
         audio/qaudiosystem.cpp audio/qaudiosystem_p.h
@@ -57,23 +60,28 @@ qt_internal_add_module(Multimedia
         platform/qplatformvideodevices.cpp platform/qplatformvideodevices_p.h
         platform/qplatformvideosink.cpp platform/qplatformvideosink_p.h
         platform/qplatformvideosource.cpp platform/qplatformvideosource_p.h
+        platform/qplatformvideoframeinput.cpp platform/qplatformvideoframeinput_p.h
+        platform/qplatformaudiobufferinput.cpp platform/qplatformaudiobufferinput_p.h
         playback/qmediaplayer.cpp playback/qmediaplayer.h playback/qmediaplayer_p.h
         qmediadevices.cpp qmediadevices.h
-        qmediaenumdebug.h
         qmediaformat.cpp  qmediaformat.h
         qmediametadata.cpp qmediametadata.h
         qmediastoragelocation.cpp qmediastoragelocation_p.h
         qmediatimerange.cpp qmediatimerange.h
         qmultimediautils.cpp qmultimediautils_p.h
+        qmediaframeinput.cpp qmediaframeinput_p.h
         qmaybe_p.h
         qtmultimediaglobal.h qtmultimediaglobal_p.h
         qerrorinfo_p.h
+        qmediainputencoderinterface_p.h
         recording/qmediacapturesession.cpp recording/qmediacapturesession.h recording/qmediacapturesession_p.h
         recording/qmediarecorder.cpp recording/qmediarecorder.h recording/qmediarecorder_p.h
         recording/qscreencapture.cpp recording/qscreencapture.h
         recording/qwindowcapture.cpp recording/qwindowcapture.h
         recording/qcapturablewindow.cpp recording/qcapturablewindow.h recording/qcapturablewindow_p.h
-        video/qabstractvideobuffer.cpp video/qabstractvideobuffer_p.h
+        recording/qvideoframeinput.cpp recording/qvideoframeinput.h
+        video/qabstractvideobuffer.cpp video/qabstractvideobuffer.h
+        video/qhwvideobuffer.cpp video/qhwvideobuffer_p.h
         video/qmemoryvideobuffer.cpp video/qmemoryvideobuffer_p.h
         video/qimagevideobuffer.cpp video/qimagevideobuffer_p.h
         video/qvideoframe.cpp video/qvideoframe.h video/qvideoframe_p.h
@@ -105,7 +113,6 @@ qt_internal_add_module(Multimedia
         Qt::GuiPrivate
     NO_PCH_SOURCES
         compat/removed_api.cpp
-    GENERATE_CPP_EXPORTS
 )
 
 qt_internal_extend_target(Multimedia
@@ -174,7 +181,7 @@ qt_internal_extend_target(Multimedia CONDITION ANDROID
 
 if(ANDROID)
     set_property(TARGET Multimedia APPEND PROPERTY QT_ANDROID_BUNDLED_JAR_DEPENDENCIES
-        jar/Qt${QtMultimedia_VERSION_MAJOR}AndroidMultimedia.jar:org.qtproject.qt.android.multimedia.QtAudioDeviceManager
+        jar/Qt${QtMultimedia_VERSION_MAJOR}AndroidMultimedia.jar
     )
 endif()
 

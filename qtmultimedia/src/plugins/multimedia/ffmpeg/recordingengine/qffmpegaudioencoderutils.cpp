@@ -26,7 +26,7 @@ AVSampleFormat adjustSampleFormat(const AVSampleFormat *supportedFormats, AVSamp
         return DefaultAVScore - (bpsRequested - bps) - 1000000;
     };
 
-    const auto result = findBestAVFormat(supportedFormats, calcScore).first;
+    const auto result = findBestAVValue(supportedFormats, calcScore).first;
     return result == AV_SAMPLE_FMT_NONE ? requested : result;
 }
 

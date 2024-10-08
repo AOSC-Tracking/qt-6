@@ -287,18 +287,16 @@ void Player::metaDataChanged()
         m_metaDataLabels[i]->setDisabled(true);
     }
 
-    for (auto &key : metaData.keys()) {
+    for (auto &&[key, value] : metaData.asKeyValueRange()) {
         int i = int(key);
         if (key == QMediaMetaData::CoverArtImage) {
-            QVariant v = metaData.value(key);
             if (QLabel *cover = qobject_cast<QLabel *>(m_metaDataFields[key])) {
-                QImage coverImage = v.value<QImage>();
+                QImage coverImage = value.value<QImage>();
                 cover->setPixmap(QPixmap::fromImage(coverImage));
             }
         } else if (key == QMediaMetaData::ThumbnailImage) {
-            QVariant v = metaData.value(key);
             if (QLabel *thumbnail = qobject_cast<QLabel *>(m_metaDataFields[key])) {
-                QImage thumbnailImage = v.value<QImage>();
+                QImage thumbnailImage = value.value<QImage>();
                 thumbnail->setPixmap(QPixmap::fromImage(thumbnailImage));
             }
         } else if (QLineEdit *field = qobject_cast<QLineEdit *>(m_metaDataFields[key])) {
@@ -307,6 +305,20 @@ void Player::metaDataChanged()
         }
         m_metaDataFields[i]->setDisabled(false);
         m_metaDataLabels[i]->setDisabled(false);
+    }
+
+    const QList<QMediaMetaData> tracks = m_player->videoTracks();
+    const int currentVideoTrack = m_player->activeVideoTrack();
+    if (currentVideoTrack >= 0 && currentVideoTrack < tracks.size()) {
+        const QMediaMetaData track = tracks.value(currentVideoTrack);
+        for (const QMediaMetaData::Key &key : track.keys()) {
+            if (QLineEdit *field = qobject_cast<QLineEdit *>(m_metaDataFields[key])) {
+                QString stringValue = track.stringValue(key);
+                field->setText(stringValue);
+            }
+            m_metaDataFields[key]->setDisabled(true);
+            m_metaDataLabels[key]->setDisabled(true);
+        }
     }
 #endif
 }

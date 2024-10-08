@@ -98,6 +98,15 @@ Item {
                 yPosRole: "pop_density"
             }
         }
+
+        //! [4]
+        onTapped: {
+            // Disable the default input handler
+            unsetDefaultTapHandler()
+            // Implement own custom event handler
+            console.log("Custom tap event handler")
+        }
+        //! [4]
     }
     ListModel {
         id: dataModel
@@ -185,3 +194,46 @@ GraphsView {
     }
 }
 //! [10]
+
+//! [11]
+import QtGraphs
+
+GraphsView {
+    LineSeries {
+        GraphTransition {
+            GraphPointAnimation {}
+        }
+    }
+
+        SplineSeries {
+            GraphTransition {
+                SplineControlAnimation {}
+            }
+        }
+}
+//! [11]
+
+//! [12]
+import QtGraphs
+
+GraphsView {
+    LineSeries {
+        GraphTransition {
+            GraphPointAnimation { duration: 1000; easingCurve.type: Easing.OutCubic  }
+        }
+    }
+}
+//! [12]
+
+//! [13]
+import QtGraphs
+
+GraphsView {
+    SplineSeries {
+        GraphTransition {
+            GraphPointAnimation { duration: 1000; easingCurve.type: Easing.OutCubic  }
+            SplineControlAnimation { duration: 1000; easingCurve.type: Easing.OutCubic }
+        }
+    }
+}
+//! [13]

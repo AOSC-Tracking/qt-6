@@ -17,6 +17,7 @@ qt_internal_add_plugin(QFFmpegMediaPlugin
     SOURCES
         qffmpeg.cpp qffmpeg_p.h
         qffmpegdefs_p.h
+        qffmpegcodecstorage.cpp qffmpegcodecstorage_p.h
         qffmpegioutils.cpp qffmpegioutils_p.h
         qffmpegavaudioformat.cpp qffmpegavaudioformat_p.h
         qffmpegaudiodecoder.cpp qffmpegaudiodecoder_p.h
@@ -68,6 +69,8 @@ qt_internal_add_plugin(QFFmpegMediaPlugin
         recordingengine/qffmpegrecordingengine.cpp
         recordingengine/qffmpegencodinginitializer_p.h
         recordingengine/qffmpegencodinginitializer.cpp
+        recordingengine/qffmpegrecordingengineutils_p.h
+        recordingengine/qffmpegrecordingengineutils.cpp
         recordingengine/qffmpegvideoencoder_p.h
         recordingengine/qffmpegvideoencoder.cpp
         recordingengine/qffmpegvideoencoderutils_p.h
@@ -95,6 +98,17 @@ if (LINUX OR ANDROID)
     qt_internal_multimedia_add_ffmpeg_stubs()
 endif()
 
+if (QT_FEATURE_pipewire)
+    qt_internal_extend_target(QFFmpegMediaPlugin
+        INCLUDE_DIRECTORIES "${PipeWire_INCLUDE_DIRS};${Spa_INCLUDE_DIRS}"
+        SOURCES
+            qpipewirecapture.cpp qpipewirecapture_p.h
+            qpipewirecapturehelper.cpp qpipewirecapturehelper_p.h
+            symbolstubs/qffmpegsymbols-pipewire.cpp
+        LIBRARIES
+            Qt::DBus
+    )
+endif()
 
 if (QT_FEATURE_vaapi)
     qt_internal_extend_target(QFFmpegMediaPlugin
@@ -245,14 +259,22 @@ endif()
 # TODO: get libs from FindFFmpeg.cmake
 set(ffmpeg_libs FFmpeg::avformat FFmpeg::avcodec FFmpeg::swresample FFmpeg::swscale FFmpeg::avutil)
 
-if (QT_DEPLOY_FFMPEG AND NOT BUILD_SHARED_LIBS)
+if (QT_DEPLOY_FFMPEG AND NOT BUILD_SHARED_LIBS AND NOT UIKIT)
     message(FATAL_ERROR "QT_DEPLOY_FFMPEG is not implemented yet for static builds")
 endif()
 
-if (QT_DEPLOY_FFMPEG AND FFMPEG_SHARED_LIBRARIES AND BUILD_SHARED_LIBS)
+if (QT_DEPLOY_FFMPEG AND FFMPEG_SHARED_LIBRARIES AND (BUILD_SHARED_LIBS OR UIKIT))
     include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/QtDeployFFmpeg.cmake")
     qt_internal_multimedia_copy_or_install_ffmpeg()
 endif()
 
-qt_internal_extend_target(QFFmpegMediaPlugin LIBRARIES ${ffmpeg_libs})
+if(BUILD_SHARED_LIBS)
+    qt_internal_extend_target(QFFmpegMediaPlugin LIBRARIES ${ffmpeg_libs})
+else()
+    foreach(ffmpeg_lib IN LISTS ffmpeg_libs)
+        qt_internal_add_target_include_dirs(QFFmpegMediaPlugin ${ffmpeg_lib})
+        target_include_directories(QFFmpegMediaPlugin PRIVATE
+            "$<TARGET_PROPERTY:${ffmpeg_lib},INTERFACE_COMPILE_DEFINITIONS>")
+    endforeach()
+endif()
 

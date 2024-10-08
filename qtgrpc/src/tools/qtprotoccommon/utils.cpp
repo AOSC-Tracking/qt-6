@@ -4,7 +4,6 @@
 
 #include "utils.h"
 
-#include <sstream>
 #include <string_view>
 
 #include <cctype>
@@ -69,6 +68,11 @@ void asciiToLower(std::string &str)
     std::transform(std::begin(str), std::end(str), std::begin(str), toLower);
 }
 
+void asciiToUpper(std::string &str)
+{
+    std::transform(std::begin(str), std::end(str), std::begin(str), utils::toAsciiUpper);
+}
+
 std::string removeFileSuffix(std::string fileName)
 {
     size_t dot = fileName.rfind('.'), slash = fileName.rfind('/');
@@ -101,13 +105,6 @@ std::string deCapitalizeAsciiName(std::string name)
     return name;
 }
 
-std::string escapedQmlUri(const std::string &uri)
-{
-    assert(!uri.empty());
-    static std::regex uriExceptionsRegex("[^a-zA-Z0-9]");
-    return std::regex_replace(uri, uriExceptionsRegex, "_");
-}
-
 std::string &rtrim(std::string &s)
 {
     const size_t cut = s.find_last_not_of(asciiSpacing);
@@ -135,6 +132,21 @@ std::string &trim(std::string &s)
     s = s.substr(firstKept, lastKept + 1 - firstKept);
     return s;
 }
+
+bool HeaderComparator::operator()(const std::string &lhs, const std::string &rhs) const
+{
+    static constexpr std::string_view qtCorePrefix = "QtCore/";
+
+    bool lhsStartsWithQtCore = utils::startsWith(lhs, qtCorePrefix);
+    bool rhsStartsWithQtCore = utils::startsWith(rhs, qtCorePrefix);
+    if (lhsStartsWithQtCore && !rhsStartsWithQtCore)
+        return false;
+    if (!lhsStartsWithQtCore && rhsStartsWithQtCore)
+        return true;
+
+    return lhs < rhs;
+}
+
 
 // TODO C++20: use the std::string(_view) methods directly
 template<typename T>

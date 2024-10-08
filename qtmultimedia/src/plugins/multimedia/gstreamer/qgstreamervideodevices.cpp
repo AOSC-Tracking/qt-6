@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qgstreamervideodevices_p.h"
+
 #include <QtMultimedia/qmediadevices.h>
 #include <QtMultimedia/private/qcameradevice_p.h>
+#include <QtCore/qloggingcategory.h>
 
 #include <common/qgst_p.h>
+#include <common/qgst_debug_p.h>
 #include <common/qgstutils_p.h>
 #include <common/qglist_helper_p.h>
 
@@ -15,6 +18,8 @@
 #endif
 
 QT_BEGIN_NAMESPACE
+
+static Q_LOGGING_CATEGORY(ltVideoDevices, "qt.multimedia.gstreamer.videodevices");
 
 QGstreamerVideoDevices::QGstreamerVideoDevices(QPlatformMediaIntegration *integration)
     : QPlatformVideoDevices(integration),
@@ -78,25 +83,38 @@ QList<QCameraDevice> QGstreamerVideoDevices::videoDevices() const
             devices.append(info->create());
 
         auto caps = QGstCaps(gst_device_get_caps(device.gstDevice.get()), QGstCaps::HasRef);
-        if (!caps.isNull()) {
+        if (caps) {
             QList<QCameraFormat> formats;
             QSet<QSize> photoResolutions;
 
             int size = caps.size();
             for (int i = 0; i < size; ++i) {
                 auto cap = caps.at(i);
-
-                QSize resolution = cap.resolution();
-                if (!resolution.isValid())
-                    continue;
-
                 auto pixelFormat = cap.pixelFormat();
                 auto frameRate = cap.frameRateRange();
 
-                auto *f = new QCameraFormatPrivate{ QSharedData(), pixelFormat, resolution,
-                                                    frameRate.min, frameRate.max };
-                formats << f->create();
-                photoResolutions.insert(resolution);
+                if (pixelFormat == QVideoFrameFormat::PixelFormat::Format_Invalid) {
+                    qCDebug(ltVideoDevices) << "pixel format not supported:" << cap;
+                    continue; // skip pixel formats that we don't support
+                }
+
+                auto addFormatForResolution = [&](QSize resolution) {
+                    auto *f = new QCameraFormatPrivate{
+                        QSharedData(), pixelFormat, resolution, frameRate.min, frameRate.max,
+                    };
+                    formats.append(f->create());
+                    photoResolutions.insert(resolution);
+                };
+
+                std::optional<QGRange<QSize>> resolutionRange = cap.resolutionRange();
+                if (resolutionRange) {
+                    addFormatForResolution(resolutionRange->min);
+                    addFormatForResolution(resolutionRange->max);
+                } else {
+                    QSize resolution = cap.resolution();
+                    if (resolution.isValid())
+                        addFormatForResolution(resolution);
+                }
             }
             info->videoFormats = formats;
             // ### sort resolutions?

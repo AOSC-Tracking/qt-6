@@ -20,7 +20,9 @@
 
 #include <QtQuick3D/qtquick3dglobal.h>
 #include <QtQuick3D/private/qquick3dpickresult_p.h>
+#if QT_CONFIG(quick_shadereffect)
 #include <QtQuick/private/qquickshadereffectsource_p.h>
+#endif
 
 #include <QtQuick3DRuntimeRender/private/qssgrenderpickresult_p.h>
 
@@ -52,7 +54,9 @@ class Q_QUICK3D_EXPORT QQuick3DViewport : public QQuickItem
     Q_PROPERTY(QQuick3DNode *scene READ scene NOTIFY sceneChanged)
     Q_PROPERTY(QQuick3DNode *importScene READ importScene WRITE setImportScene NOTIFY importSceneChanged FINAL)
     Q_PROPERTY(RenderMode renderMode READ renderMode WRITE setRenderMode NOTIFY renderModeChanged FINAL)
+#if QT_CONFIG(quick_shadereffect)
     Q_PROPERTY(QQuickShaderEffectSource::Format renderFormat READ renderFormat WRITE setRenderFormat NOTIFY renderFormatChanged FINAL REVISION(6, 4))
+#endif
     Q_PROPERTY(QQuick3DRenderStats *renderStats READ renderStats CONSTANT)
     Q_PROPERTY(QQmlListProperty<QQuick3DObject> extensions READ extensions FINAL REVISION(6, 6))
     Q_PROPERTY(int explicitTextureWidth READ explicitTextureWidth WRITE setExplicitTextureWidth NOTIFY explicitTextureWidthChanged FINAL REVISION(6, 7))
@@ -81,7 +85,9 @@ public:
     QQuick3DNode *scene() const;
     QQuick3DNode *importScene() const;
     RenderMode renderMode() const;
+#if QT_CONFIG(quick_shadereffect)
     Q_REVISION(6, 4) QQuickShaderEffectSource::Format renderFormat() const;
+#endif
     QQuick3DRenderStats *renderStats() const;
 
     QQuick3DSceneRenderer *createRenderer() const;
@@ -94,11 +100,16 @@ public:
     Q_INVOKABLE QVector3D mapTo3DScene(const QVector3D &viewPos) const;
 
     Q_INVOKABLE QQuick3DPickResult pick(float x, float y) const;
+    Q_REVISION(6, 8) Q_INVOKABLE QQuick3DPickResult pick(float x, float y, QQuick3DModel *model) const;
+    Q_REVISION(6, 8) Q_INVOKABLE QList<QQuick3DPickResult> pickSubset(float x, float y, const QJSValue &models) const;
     Q_REVISION(6, 2) Q_INVOKABLE QList<QQuick3DPickResult> pickAll(float x, float y) const;
     Q_REVISION(6, 2) Q_INVOKABLE QQuick3DPickResult rayPick(const QVector3D &origin, const QVector3D &direction) const;
     Q_REVISION(6, 2) Q_INVOKABLE QList<QQuick3DPickResult> rayPickAll(const QVector3D &origin, const QVector3D &direction) const;
 
     void processPointerEventFromRay(const QVector3D &origin, const QVector3D &direction, QPointerEvent *event);
+    bool singlePointPick(QSinglePointEvent *event, const QVector3D &origin, const QVector3D &direction);
+
+    Q_REVISION(6, 8) Q_INVOKABLE void setTouchpoint(QQuickItem *target, const QPointF &position, int pointId, bool active);
 
     QQuick3DLightmapBaker *maybeLightmapBaker();
     QQuick3DLightmapBaker *lightmapBaker();
@@ -131,7 +142,9 @@ public Q_SLOTS:
     void setEnvironment(QQuick3DSceneEnvironment * environment);
     void setImportScene(QQuick3DNode *inScene);
     void setRenderMode(QQuick3DViewport::RenderMode renderMode);
+#if QT_CONFIG(quick_shadereffect)
     Q_REVISION(6, 4) void setRenderFormat(QQuickShaderEffectSource::Format format);
+#endif
     Q_REVISION(6, 7) void setExplicitTextureWidth(int width);
     Q_REVISION(6, 7) void setExplicitTextureHeight(int height);
     void cleanupDirectRenderer();
@@ -157,7 +170,12 @@ Q_SIGNALS:
     Q_REVISION(6, 7) void effectiveTextureSizeChanged();
 
 private:
+    void setMultiViewCameras(QQuick3DCamera **firstCamera, int count);
+
     friend class QQuick3DExtensionListHelper;
+    friend class QQuick3DXrManager;
+    friend class QQuick3DXrManagerPrivate;
+    friend class QQuick3DRenderLayerHelpers;
 
     Q_DISABLE_COPY(QQuick3DViewport)
     struct SubsceneInfo {
@@ -171,6 +189,7 @@ private:
     void setupDirectRenderer(RenderMode mode);
     bool checkIsVisible() const;
     bool internalPick(QPointerEvent *event, const QVector3D &origin = QVector3D(), const QVector3D &direction = QVector3D()) const;
+    QPair<QQuickItem *, QPointF> getItemAndPosition(const QSSGRenderPickResult &pickResult);
     QVarLengthArray<QSSGRenderPickResult, 20> getPickResults(QQuick3DSceneRenderer *renderer, const QVector3D &origin, const QVector3D &direction) const;
     QVarLengthArray<QSSGRenderPickResult, 20> getPickResults(QQuick3DSceneRenderer *renderer, const QEventPoint &eventPoint) const;
     bool forwardEventToSubscenes(QPointerEvent *event,
@@ -178,16 +197,17 @@ private:
                                  QQuick3DSceneRenderer *renderer,
                                  const QFlatMap<QQuickItem *, SubsceneInfo> &visitedSubscenes) const;
 
-    void processPickedObject(const QSSGRenderGraphObject *backendObject,
-                             const QSSGRenderPickResult &pickResult,
+    void processPickedObject(const QSSGRenderPickResult &pickResult,
                              int pointIndex,
                              QPointerEvent *event,
                              QFlatMap<QQuickItem *, SubsceneInfo> &vistedSubscenes) const;
     QQuickItem *getSubSceneRootItem(QQuick3DMaterial *material) const;
+    QQuick3DPickResult getNearestPickResult(const QVarLengthArray<QSSGRenderPickResult, 20> &pickResults) const;
     QQuick3DPickResult processPickResult(const QSSGRenderPickResult &pickResult) const;
     QQuick3DObject *findFrontendNode(const QSSGRenderGraphObject *backendObject) const;
     QQuick3DSceneManager *findChildSceneManager(QQuick3DObject *inObject, QQuick3DSceneManager *manager = nullptr);
     QQuick3DCamera *m_camera = nullptr;
+    QVarLengthArray<QQuick3DCamera *, 2> m_multiViewCameras;
     QQuick3DSceneEnvironment *m_environment = nullptr;
     QQuick3DSceneRootNode *m_sceneRoot = nullptr;
     QQuick3DNode *m_importScene = nullptr;
@@ -196,7 +216,9 @@ private:
     mutable QQuick3DSGDirectRenderer *m_directRenderer = nullptr;
     bool m_renderModeDirty = false;
     RenderMode m_renderMode = Offscreen;
+#if QT_CONFIG(quick_shadereffect)
     QQuickShaderEffectSource::Format m_renderFormat = QQuickShaderEffectSource::RGBA8;
+#endif
     int m_explicitTextureWidth = 0;
     int m_explicitTextureHeight = 0;
     QSize m_effectiveTextureSize;
@@ -207,6 +229,18 @@ private:
     QQuick3DLightmapBaker *m_lightmapBaker = nullptr;
     QList<QQuick3DObject *> m_extensions;
     bool m_extensionListDirty = false;
+
+    struct TouchState {
+        QQuickItem *target = nullptr;
+        QPointF position;
+        bool isPressed = false;
+    };
+    QPointingDevice *m_syntheticTouchDevice = nullptr;
+    QVarLengthArray<TouchState, 2> m_touchState{2};
+
+    QPointer<QQuickItem> m_prevMouseItem = nullptr;
+    QPointF m_prevMousePos;
+
     Q_QUICK3D_PROFILE_ID
 };
 

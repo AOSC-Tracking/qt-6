@@ -4,6 +4,7 @@
 #include "native_skia_output_device_vulkan.h"
 
 #include "gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h"
+#include "ui/base/ozone_buildflags.h"
 
 #include <QtGui/qvulkaninstance.h>
 #include <QtGui/qvulkanfunctions.h>
@@ -11,17 +12,17 @@
 #include <QtQuick/qsgtexture.h>
 
 #if defined(USE_OZONE)
-#include "ui/ozone/buildflags.h"
-#if BUILDFLAG(OZONE_PLATFORM_X11)
+#if BUILDFLAG(IS_OZONE_X11)
 // We need to define USE_VULKAN_XCB for proper vulkan function pointers.
 // Avoiding it may lead to call wrong vulkan functions.
 // This is originally defined in chromium/gpu/vulkan/BUILD.gn.
 #define USE_VULKAN_XCB
-#endif // BUILDFLAG(OZONE_PLATFORM_X11)
+#endif // BUILDFLAG(IS_OZONE_X11)
 #include "gpu/vulkan/vulkan_function_pointers.h"
-
 #include "components/viz/common/gpu/vulkan_context_provider.h"
 #include "gpu/vulkan/vulkan_device_queue.h"
+#include "third_party/skia/include/gpu/vk/GrVkTypes.h"
+#include "third_party/skia/include/gpu/ganesh/vk/GrVkBackendSurface.h"
 #endif // defined(USE_OZONE)
 
 namespace QtWebEngineCore {
@@ -84,7 +85,8 @@ QSGTexture *NativeSkiaOutputDeviceVulkan::texture(QQuickWindow *win, uint32_t te
             return nullptr;
         }
 
-        backendTexture.getVkImageInfo(&vkImageInfo);
+        GrBackendTextures::GetVkImageInfo(backendTexture, &vkImageInfo);
+
         if (vkImageInfo.fAlloc.fMemory == VK_NULL_HANDLE) {
             qWarning("VULKAN: Unable to access Vulkan memory.");
             return nullptr;
@@ -175,21 +177,24 @@ QSGTexture *NativeSkiaOutputDeviceVulkan::texture(QQuickWindow *win, uint32_t te
     externalMemoryImageCreateInfo.pNext = nullptr;
     externalMemoryImageCreateInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_BIT;
 
-    HRESULT status = S_OK;
-    HANDLE sharedHandle = nullptr;
-    IDXGIResource1 *resource = nullptr;
-    if (!overlayImage->nv12_texture()) {
+    Q_ASSERT(overlayImage->type() == gl::DCLayerOverlayType::kNV12Texture);
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> chromeTexture = overlayImage->nv12_texture();
+    if (!chromeTexture) {
         qWarning("VULKAN: No D3D texture.");
         return nullptr;
     }
-    status = overlayImage->nv12_texture()->QueryInterface(__uuidof(IDXGIResource1),
-                                                          (void **)&resource);
-    Q_ASSERT(status == S_OK);
-    status = resource->CreateSharedHandle(NULL, DXGI_SHARED_RESOURCE_READ, NULL, &sharedHandle);
-    Q_ASSERT(status == S_OK);
 
-    if (!sharedHandle)
-        qFatal("VULKAN: Unable to extract shared handle.");
+    HRESULT hr;
+
+    Microsoft::WRL::ComPtr<IDXGIResource1> dxgiResource;
+    hr = chromeTexture->QueryInterface(IID_PPV_ARGS(&dxgiResource));
+    Q_ASSERT(SUCCEEDED(hr));
+
+    HANDLE sharedHandle = INVALID_HANDLE_VALUE;
+    hr = dxgiResource->CreateSharedHandle(nullptr, DXGI_SHARED_RESOURCE_READ, nullptr,
+                                          &sharedHandle);
+    Q_ASSERT(SUCCEEDED(hr));
+    Q_ASSERT(sharedHandle != INVALID_HANDLE_VALUE);
 #endif
 
     constexpr VkImageUsageFlags kUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
@@ -200,7 +205,7 @@ QSGTexture *NativeSkiaOutputDeviceVulkan::texture(QQuickWindow *win, uint32_t te
     importedImageCreateInfo.pNext = &externalMemoryImageCreateInfo;
     importedImageCreateInfo.flags = 0;
     importedImageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
-    importedImageCreateInfo.format = gpu::ToVkFormat(m_frontBuffer->sharedImageFormat());
+    importedImageCreateInfo.format = gpu::ToVkFormatSinglePlanar(m_frontBuffer->sharedImageFormat());
     importedImageCreateInfo.extent.width = static_cast<uint32_t>(size().width());
     importedImageCreateInfo.extent.height = static_cast<uint32_t>(size().height());
     importedImageCreateInfo.extent.depth = 1;

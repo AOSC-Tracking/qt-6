@@ -48,6 +48,16 @@ qt_add_qmake_lib_dependency(fontconfig freetype)
 qt_find_package(gbm PROVIDED_TARGETS gbm::gbm MODULE_NAME gui QMAKE_LIB gbm)
 qt_find_package(WrapSystemHarfbuzz 2.6.0 PROVIDED_TARGETS WrapSystemHarfbuzz::WrapSystemHarfbuzz MODULE_NAME gui QMAKE_LIB harfbuzz)
 qt_find_package(Libinput PROVIDED_TARGETS Libinput::Libinput MODULE_NAME gui QMAKE_LIB libinput)
+qt_find_package_extend_sbom(TARGETS Libinput::Libinput
+    COPYRIGHTS
+        "Copyright © 2006-2009 Simon Thum"
+        "Copyright © 2008-2012 Kristian Høgsberg"
+        "Copyright © 2010-2012 Intel Corporation"
+        "Copyright © 2010-2011 Benjamin Franzke"
+        "Copyright © 2011-2012 Collabora, Ltd."
+        "Copyright © 2013-2014 Jonas Ådahl"
+        "Copyright © 2013-2015 Red Hat, Inc."
+)
 qt_find_package(WrapSystemJpeg PROVIDED_TARGETS WrapSystemJpeg::WrapSystemJpeg MODULE_NAME gui QMAKE_LIB libjpeg)
 qt_find_package(WrapSystemMd4c PROVIDED_TARGETS WrapSystemMd4c::WrapSystemMd4c MODULE_NAME gui QMAKE_LIB libmd4c)
 qt_find_package(WrapSystemPNG PROVIDED_TARGETS WrapSystemPNG::WrapSystemPNG MODULE_NAME gui QMAKE_LIB libpng)
@@ -353,15 +363,25 @@ qt_config_compile_test(evdev
     CODE
 "#if defined(__FreeBSD__)
 #  include <dev/evdev/input.h>
+#elif defined(__VXWORKS__)
+#include <evdevLib.h>
+typedef EV_DEV_EVENT input_event;
 #else
 #  include <linux/input.h>
 #  include <linux/kd.h>
 #endif
 enum {
+#if defined(__VXWORKS__)
+    e1 = EV_DEV_ABS,
+    e2 = EV_DEV_PTR_ABS_X,
+    e3 = EV_DEV_PTR_ABS_Y,
+    e4 = EV_DEV_PTR_BTN_TOUCH,
+#else
     e1 = ABS_PRESSURE,
     e2 = ABS_X,
     e3 = REL_X,
     e4 = SYN_REPORT,
+#endif
 };
 
 int main(void)
@@ -580,7 +600,7 @@ qt_config_compile_test(directwrite3
 int main(int, char **)
 {
     IUnknown *factory = nullptr;
-    DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory3),
+    DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory6),
                         &factory);
     return 0;
 }
@@ -811,6 +831,10 @@ qt_feature("vulkan" PUBLIC
     LABEL "Vulkan"
     CONDITION QT_FEATURE_library AND QT_FEATURE_vkgen AND WrapVulkanHeaders_FOUND
 )
+qt_feature("metal" PUBLIC
+    LABEL "Metal"
+    CONDITION MACOS OR IOS OR VISIONOS
+)
 qt_feature("vkkhrdisplay" PRIVATE
     SECTION "Platform plugins"
     LABEL "VK_KHR_display"
@@ -889,7 +913,7 @@ qt_feature("jpeg" PRIVATE
     CONDITION QT_FEATURE_imageformatplugin
     DISABLE INPUT_libjpeg STREQUAL 'no'
 )
-qt_feature_definition("jpeg" "QT_NO_IMAGEFORMAT_JPEG" NEGATE)
+qt_feature_definition("jpeg" "QT_NO_IMAGEFORMAT_JPEG" NEGATE VALUE "1")
 qt_feature("system-jpeg" PRIVATE
     LABEL "  Using system libjpeg"
     CONDITION QT_FEATURE_jpeg AND JPEG_FOUND
@@ -1218,6 +1242,7 @@ qt_feature("raster-fp" PRIVATE
     SECTION "Painting"
     LABEL "QPainter - floating point raster"
     PURPOSE "Internal painting support for floating point rasterization."
+    CONDITION NOT VXWORKS # QTBUG-115777
 )
 qt_feature("undocommand" PUBLIC
     SECTION "Utilities"
@@ -1241,7 +1266,7 @@ qt_feature("undogroup" PUBLIC
 qt_feature("graphicsframecapture" PRIVATE
     SECTION "Utilities"
     LABEL "QGraphicsFrameCapture"
-    PURPOSE "Provides a way to capture a graphic's API calls for a rendered frame."
+    PURPOSE "Provides a way to capture 3D graphics API calls for a rendered frame."
     CONDITION TEST_renderdoc OR (MACOS OR IOS)
 )
 qt_feature_definition("undogroup" "QT_NO_UNDOGROUP" NEGATE VALUE "1")
@@ -1250,6 +1275,7 @@ qt_feature("wayland" PUBLIC
     LABEL "Wayland"
     CONDITION TARGET Wayland::Client
 )
+
 qt_configure_add_summary_section(NAME "Qt Gui")
 qt_configure_add_summary_entry(ARGS "accessibility")
 qt_configure_add_summary_entry(ARGS "freetype")
@@ -1287,6 +1313,8 @@ qt_configure_add_summary_entry(ARGS "opengles31")
 qt_configure_add_summary_entry(ARGS "opengles32")
 qt_configure_end_summary_section() # end of "OpenGL" section
 qt_configure_add_summary_entry(ARGS "vulkan")
+qt_configure_add_summary_entry(ARGS "metal")
+qt_configure_add_summary_entry(ARGS "graphicsframecapture")
 qt_configure_add_summary_entry(ARGS "sessionmanager")
 qt_configure_end_summary_section() # end of "Qt Gui" section
 qt_configure_add_summary_section(NAME "Features used by QPA backends")
@@ -1364,7 +1392,7 @@ qt_configure_add_report_entry(
 qt_configure_add_report_entry(
     TYPE ERROR
     MESSAGE "The OpenGL functionality tests failed! You might need to modify the OpenGL package search path by setting the OpenGL_DIR CMake variable to the OpenGL library's installation directory."
-    CONDITION QT_FEATURE_gui AND NOT WATCHOS AND ( NOT INPUT_opengl STREQUAL 'no' ) AND NOT QT_FEATURE_opengl_desktop AND NOT QT_FEATURE_opengles2 AND NOT QT_FEATURE_opengl_dynamic
+    CONDITION QT_FEATURE_gui AND NOT WATCHOS AND NOT VISIONOS AND ( NOT INPUT_opengl STREQUAL 'no' ) AND NOT QT_FEATURE_opengl_desktop AND NOT QT_FEATURE_opengles2 AND NOT QT_FEATURE_opengl_dynamic
 )
 qt_configure_add_report_entry(
     TYPE WARNING

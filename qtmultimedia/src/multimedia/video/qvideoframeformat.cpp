@@ -39,7 +39,8 @@ public:
             && viewport == other.viewport
             && frameRatesEqual(frameRate, other.frameRate)
             && colorSpace == other.colorSpace
-            && mirrored == other.mirrored)
+            && mirrored == other.mirrored
+            && rotation == other.rotation)
             return true;
 
         return false;
@@ -60,6 +61,7 @@ public:
     float frameRate = 0.0;
     float maxLuminance = -1.;
     bool mirrored = false;
+    QtVideo::Rotation rotation = QtVideo::Rotation::None;
 };
 
 QT_DEFINE_QESDP_SPECIALIZATION_DTOR(QVideoFrameFormatPrivate);
@@ -538,10 +540,28 @@ void QVideoFrameFormat::setScanLineDirection(Direction direction)
     d->scanLineDirection = direction;
 }
 
+#if QT_DEPRECATED_SINCE(6, 8)
 /*!
     Returns the frame rate of a video stream in frames per second.
 */
 qreal QVideoFrameFormat::frameRate() const
+{
+    return streamFrameRate();
+}
+
+/*!
+    Sets the frame \a rate of a video stream in frames per second.
+*/
+void QVideoFrameFormat::setFrameRate(qreal rate)
+{
+    setStreamFrameRate(rate);
+}
+#endif
+
+/*!
+    Returns the frame rate of a video stream in frames per second.
+*/
+qreal QVideoFrameFormat::streamFrameRate() const
 {
     return d->frameRate;
 }
@@ -549,7 +569,7 @@ qreal QVideoFrameFormat::frameRate() const
 /*!
     Sets the frame \a rate of a video stream in frames per second.
 */
-void QVideoFrameFormat::setFrameRate(qreal rate)
+void QVideoFrameFormat::setStreamFrameRate(qreal rate)
 {
     detach();
     d->frameRate = rate;
@@ -636,7 +656,13 @@ void QVideoFrameFormat::setColorRange(ColorRange range)
 
 /*!
     Returns \c true if the surface is mirrored around its vertical axis.
-    This is typically needed for video frames coming from a front camera of a mobile device.
+
+    Transformations of \c QVideoFrameFormat, specifically,
+    rotation and mirroring, can be determined by the orientation of
+    the camera sensor, camera settings, or the orientation of
+    the video stream.
+
+    Mirroring is applied after rotation.
 
     \note The mirroring here differs from QImage::mirrored, as a vertically mirrored QImage
     will be mirrored around its x-axis.
@@ -650,8 +676,15 @@ bool QVideoFrameFormat::isMirrored() const
 
 /*!
     Sets if the surface is \a mirrored around its vertical axis.
-    This is typically needed for video frames coming from a front camera of a mobile device.
-    Default value is false.
+
+    Transformations of \c QVideoFrameFormat, specifically,
+    rotation and mirroring, can be determined by the orientation of
+    the camera sensor, camera settings, or the orientation of
+    the video stream.
+
+    Mirroring is applied after rotation.
+
+    Default value is \c false.
 
     \note The mirroring here differs from QImage::mirrored, as a vertically mirrored QImage
     will be mirrored around its x-axis.
@@ -662,6 +695,39 @@ void QVideoFrameFormat::setMirrored(bool mirrored)
 {
     detach();
     d->mirrored = mirrored;
+}
+
+/*!
+    Returns the angle by which the surface is rotated clockwise.
+
+    Transformations of \c QVideoFrameFormat, specifically,
+    rotation and mirroring, can be determined by the orientation of
+    the camera sensor, camera settings, or the orientation of
+    the video stream.
+
+    Rotation is applied before mirroring.
+ */
+QtVideo::Rotation QVideoFrameFormat::rotation() const
+{
+    return d->rotation;
+}
+
+/*!
+    Sets the \a angle by which the surface is rotated clockwise.
+
+    Transformations of \c QVideoFrameFormat, specifically,
+    rotation and mirroring, can be determined by the orientation of
+    the camera sensor, camera settings, or the orientation of
+    the video stream.
+
+    Rotation is applied before mirroring.
+
+    Default value is \c QtVideo::Rotation::None.
+ */
+void QVideoFrameFormat::setRotation(QtVideo::Rotation angle)
+{
+    detach();
+    d->rotation = angle;
 }
 
 /*!
@@ -984,7 +1050,7 @@ QDebug operator<<(QDebug dbg, const QVideoFrameFormat &f)
         << "\n    frame size=" << f.frameSize()
         << "\n    viewport=" << f.viewport()
         << "\n    colorSpace=" << f.colorSpace()
-        << "\n    frameRate=" << f.frameRate()
+        << "\n    frameRate=" << f.streamFrameRate()
         << "\n    mirrored=" << f.isMirrored();
 
     return dbg;

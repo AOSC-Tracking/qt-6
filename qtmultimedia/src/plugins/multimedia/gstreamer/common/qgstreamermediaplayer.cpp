@@ -411,6 +411,8 @@ bool QGstreamerMediaPlayer::hasMedia() const
 
 bool QGstreamerMediaPlayer::processBusMessage(const QGstreamerMessage &message)
 {
+    Q_ASSERT(thread()->isCurrentThread());
+
     constexpr bool traceBusMessages = true;
     if (traceBusMessages)
         qCDebug(qLcMediaPlayer) << "received bus message:" << message;
@@ -858,8 +860,10 @@ void QGstreamerMediaPlayer::disconnectTrackSelectorFromOutput(TrackSelector &ts)
 
 void QGstreamerMediaPlayer::uridecodebinElementAddedCallback(GstElement * /*uridecodebin*/,
                                                              GstElement *child,
-                                                             QGstreamerMediaPlayer * /*self*/)
+                                                             QGstreamerMediaPlayer *self)
 {
+    Q_ASSERT(self->thread()->isCurrentThread());
+
     QGstElement c(child, QGstElement::NeedsRef);
     qCDebug(qLcMediaPlayer) << "New element added to uridecodebin:" << c.name();
 
@@ -877,6 +881,8 @@ void QGstreamerMediaPlayer::uridecodebinElementAddedCallback(GstElement * /*urid
 void QGstreamerMediaPlayer::sourceSetupCallback(GstElement *uridecodebin, GstElement *source,
                                                 QGstreamerMediaPlayer *self)
 {
+    Q_ASSERT(self->thread()->isCurrentThread());
+
     Q_UNUSED(uridecodebin)
     Q_UNUSED(self)
 
@@ -966,6 +972,8 @@ void QGstreamerMediaPlayer::decodebinElementRemovedCallback(GstBin * /*decodebin
                                                             GstBin * /*sub_bin*/, GstElement *child,
                                                             QGstreamerMediaPlayer *self)
 {
+    Q_ASSERT(self->thread()->isCurrentThread());
+
     using namespace Qt::Literals;
     QGstElement c(child, QGstElement::NeedsRef);
     qCDebug(qLcMediaPlayer) << "decodebinElementRemovedCallback:" << c.name() << c.typeName();

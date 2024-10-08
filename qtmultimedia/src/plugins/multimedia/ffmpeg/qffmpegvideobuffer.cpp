@@ -27,7 +27,7 @@ static bool isFrameFlipped(const AVFrame& frame) {
 static Q_LOGGING_CATEGORY(qLcFFmpegVideoBuffer, "qt.multimedia.ffmpeg.videobuffer");
 
 QFFmpegVideoBuffer::QFFmpegVideoBuffer(AVFrameUPtr frame, AVRational pixelAspectRatio)
-    : QAbstractVideoBuffer(QVideoFrame::NoHandle),
+    : QHwVideoBuffer(QVideoFrame::NoHandle),
       m_frame(frame.get()),
       m_size(qCalculateFrameSize({ frame->width, frame->height },
                                  { pixelAspectRatio.num, pixelAspectRatio.den }))
@@ -84,72 +84,17 @@ void QFFmpegVideoBuffer::setTextureConverter(const QFFmpeg::TextureConverter &co
 
 QVideoFrameFormat::ColorSpace QFFmpegVideoBuffer::colorSpace() const
 {
-    switch (m_frame->colorspace) {
-    default:
-    case AVCOL_SPC_UNSPECIFIED:
-    case AVCOL_SPC_RESERVED:
-    case AVCOL_SPC_FCC:
-    case AVCOL_SPC_SMPTE240M:
-    case AVCOL_SPC_YCGCO:
-    case AVCOL_SPC_SMPTE2085:
-    case AVCOL_SPC_CHROMA_DERIVED_NCL:
-    case AVCOL_SPC_CHROMA_DERIVED_CL:
-    case AVCOL_SPC_ICTCP: // BT.2100 ICtCp
-        return QVideoFrameFormat::ColorSpace_Undefined;
-    case AVCOL_SPC_RGB:
-        return QVideoFrameFormat::ColorSpace_AdobeRgb;
-    case AVCOL_SPC_BT709:
-        return QVideoFrameFormat::ColorSpace_BT709;
-    case AVCOL_SPC_BT470BG: // BT601
-    case AVCOL_SPC_SMPTE170M: // Also BT601
-        return QVideoFrameFormat::ColorSpace_BT601;
-    case AVCOL_SPC_BT2020_NCL: // Non constant luminence
-    case AVCOL_SPC_BT2020_CL: // Constant luminence
-        return QVideoFrameFormat::ColorSpace_BT2020;
-    }
+    return QFFmpeg::fromAvColorSpace(m_frame->colorspace);
 }
 
 QVideoFrameFormat::ColorTransfer QFFmpegVideoBuffer::colorTransfer() const
 {
-    switch (m_frame->color_trc) {
-    case AVCOL_TRC_BT709:
-    // The following three cases have transfer characteristics identical to BT709
-    case AVCOL_TRC_BT1361_ECG:
-    case AVCOL_TRC_BT2020_10:
-    case AVCOL_TRC_BT2020_12:
-    case AVCOL_TRC_SMPTE240M: // almost identical to bt709
-        return QVideoFrameFormat::ColorTransfer_BT709;
-    case AVCOL_TRC_GAMMA22:
-    case AVCOL_TRC_SMPTE428 : // No idea, let's hope for the best...
-    case AVCOL_TRC_IEC61966_2_1: // sRGB, close enough to 2.2...
-    case AVCOL_TRC_IEC61966_2_4: // not quite, but probably close enough
-        return QVideoFrameFormat::ColorTransfer_Gamma22;
-    case AVCOL_TRC_GAMMA28:
-        return QVideoFrameFormat::ColorTransfer_Gamma28;
-    case AVCOL_TRC_SMPTE170M:
-        return QVideoFrameFormat::ColorTransfer_BT601;
-    case AVCOL_TRC_LINEAR:
-        return QVideoFrameFormat::ColorTransfer_Linear;
-    case AVCOL_TRC_SMPTE2084:
-        return QVideoFrameFormat::ColorTransfer_ST2084;
-    case AVCOL_TRC_ARIB_STD_B67:
-        return QVideoFrameFormat::ColorTransfer_STD_B67;
-    default:
-        break;
-    }
-    return QVideoFrameFormat::ColorTransfer_Unknown;
+    return QFFmpeg::fromAvColorTransfer(m_frame->color_trc);
 }
 
 QVideoFrameFormat::ColorRange QFFmpegVideoBuffer::colorRange() const
 {
-    switch (m_frame->color_range) {
-    case AVCOL_RANGE_MPEG:
-        return QVideoFrameFormat::ColorRange_Video;
-    case AVCOL_RANGE_JPEG:
-        return QVideoFrameFormat::ColorRange_Full;
-    default:
-        return QVideoFrameFormat::ColorRange_Unknown;
-    }
+    return QFFmpeg::fromAvColorRange(m_frame->color_range);
 }
 
 float QFFmpegVideoBuffer::maxNits()
@@ -186,13 +131,13 @@ QAbstractVideoBuffer::MapData QFFmpegVideoBuffer::map(QVideoFrame::MapMode mode)
 
     MapData mapData;
     auto *desc = QVideoTextureHelper::textureDescription(pixelFormat());
-    mapData.nPlanes = desc->nplanes;
-    for (int i = 0; i < mapData.nPlanes; ++i) {
+    mapData.planeCount = desc->nplanes;
+    for (int i = 0; i < mapData.planeCount; ++i) {
         Q_ASSERT(m_swFrame->linesize[i] >= 0);
 
         mapData.data[i] = m_swFrame->data[i];
         mapData.bytesPerLine[i] = m_swFrame->linesize[i];
-        mapData.size[i] = mapData.bytesPerLine[i]*desc->heightForPlane(m_swFrame->height, i);
+        mapData.dataSize[i] = mapData.bytesPerLine[i]*desc->heightForPlane(m_swFrame->height, i);
     }
 
     if ((mode & QVideoFrame::WriteOnly) != 0 && m_hwFrame) {

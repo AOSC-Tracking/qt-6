@@ -10,25 +10,21 @@
 #  pragma qt_sync_stop_processing
 #endif
 
-#include <QtProtobuf/qabstractprotobufserializer.h>
 
-#define Q_DECLARE_PROTOBUF_SERIALIZERS(Type)\
-    public:\
-        QByteArray serialize(QAbstractProtobufSerializer *serializer) const {\
-            qRegisterProtobufTypes();\
-            Q_ASSERT_X(serializer != nullptr, "QProtobufObject", "Serializer is null");\
-            return serializer->serialize<Type>(this);\
-        }\
-        bool deserialize(QAbstractProtobufSerializer *serializer, QByteArrayView array) {\
-            qRegisterProtobufTypes();\
-            Q_ASSERT_X(serializer != nullptr, "QProtobufObject", "Serializer is null");\
-            return serializer->deserialize<Type>(this, array);\
-        }\
-    private:
+#include <QtProtobuf/qprotobufpropertyordering.h>
+
+#include <QtCore/qtmetamacros.h>
 
 #define Q_PROTOBUF_OBJECT\
+    Q_GADGET\
     public:\
-        static const QtProtobufPrivate::QProtobufPropertyOrdering propertyOrdering;\
+    static const QtProtobufPrivate::QProtobufPropertyOrdering staticPropertyOrdering;\
+    private:
+
+#define Q_PROTOBUF_OBJECT_EXPORT(...)\
+    Q_GADGET_EXPORT(__VA_ARGS__)\
+    public:\
+        __VA_ARGS__ static const QtProtobufPrivate::QProtobufPropertyOrdering staticPropertyOrdering;\
     private:
 
 #endif // QPROTOBUFOBJECT_H

@@ -20,12 +20,13 @@
 #include <private/qplatformmediarecorder_p.h>
 #include <qmediarecorder.h>
 
-#include <queue>
-
 QT_BEGIN_NAMESPACE
 
 class QFFmpegAudioInput;
+class QPlatformAudioBufferInput;
+class QPlatformAudioBufferInputBase;
 class QVideoFrame;
+class QAudioBuffer;
 class QPlatformVideoSource;
 
 namespace QFFmpeg
@@ -38,17 +39,6 @@ class VideoEncoder;
 class VideoFrameEncoder;
 class EncodingInitializer;
 
-template <typename T>
-T dequeueIfPossible(std::queue<T> &queue)
-{
-    if (queue.empty())
-        return T{};
-
-    auto result = std::move(queue.front());
-    queue.pop();
-    return result;
-}
-
 class RecordingEngine : public QObject
 {
     Q_OBJECT
@@ -56,15 +46,21 @@ public:
     RecordingEngine(const QMediaEncoderSettings &settings, std::unique_ptr<EncodingFormatContext> context);
     ~RecordingEngine();
 
-    void initialize(QFFmpegAudioInput *audioInput,
+    void initialize(const std::vector<QPlatformAudioBufferInputBase *> &audioSources,
                     const std::vector<QPlatformVideoSource *> &videoSources);
     void finalize();
 
     void setPaused(bool p);
 
+    void setAutoStop(bool autoStop);
+
+    bool autoStop() const { return m_autoStop; }
+
     void setMetaData(const QMediaMetaData &metaData);
     AVFormatContext *avFormatContext() { return m_formatContext->avFormatContext(); }
     Muxer *getMuxer() { return m_muxer; }
+
+    bool isEndOfSourceStreams() const;
 
 public Q_SLOTS:
     void newTimeStamp(qint64 time);
@@ -74,11 +70,9 @@ Q_SIGNALS:
     void sessionError(QMediaRecorder::Error code, const QString &description);
     void streamInitializationError(QMediaRecorder::Error code, const QString &description);
     void finalizationDone();
+    void autoStopped();
 
 private:
-    template<typename... Args>
-    void addMediaFrameHandler(Args &&...args);
-
     class EncodingFinalizer : public QThread
     {
     public:
@@ -92,9 +86,20 @@ private:
 
     friend class EncodingInitializer;
     void addAudioInput(QFFmpegAudioInput *input);
+    void addAudioBufferInput(QPlatformAudioBufferInput *input, const QAudioBuffer &firstBuffer);
+    AudioEncoder *createAudioEncoder(const QAudioFormat &format);
+
     void addVideoSource(QPlatformVideoSource *source, const QVideoFrame &firstFrame);
+    void handleSourceEndOfStream();
+    void handleEncoderInitialization();
 
     void start();
+
+    template <typename F, typename... Args>
+    void forEachEncoder(F &&f, Args &&...args);
+
+    template <typename F>
+    bool allOfEncoders(F &&f) const;
 
 private:
     QMediaEncoderSettings m_settings;
@@ -102,15 +107,16 @@ private:
     std::unique_ptr<EncodingFormatContext> m_formatContext;
     Muxer *m_muxer = nullptr;
 
-    AudioEncoder *m_audioEncoder = nullptr;
+    QList<AudioEncoder *> m_audioEncoders;
     QList<VideoEncoder *> m_videoEncoders;
-    QList<QMetaObject::Connection> m_connections;
     std::unique_ptr<EncodingInitializer> m_initializer;
 
     QMutex m_timeMutex;
     qint64 m_timeRecorded = 0;
 
     bool m_isHeaderWritten = false;
+    bool m_autoStop = false;
+    qsizetype m_initializedEncodersCount = 0;
 };
 
 }

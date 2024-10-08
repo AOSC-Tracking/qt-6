@@ -25,7 +25,7 @@ Item {
         running: true
         enableCCD: true
         scene: viewport.scene
-        gravity: Qt.vector3d(0, -settingGravity, 0)
+        gravity: Qt.vector3d(0, -item.settingGravity, 0)
         typicalLength: 1
         typicalSpeed: 1000
         minimumTimestep: 15
@@ -34,9 +34,9 @@ Item {
 
     PhysicsMaterial {
         id: physicsMaterial
-        staticFriction: settingsStaticFriction
-        dynamicFriction: settingsDynamicFriction
-        restitution: settingsRestitution
+        staticFriction: item.settingsStaticFriction
+        dynamicFriction: item.settingsDynamicFriction
+        restitution: item.settingsRestitution
     }
 
     OrbitCameraController {
@@ -83,7 +83,12 @@ Item {
                 eulerRotation: Qt.vector3d(-45, 25, 0)
                 castsShadow: true
                 brightness: 1
+                shadowFactor: 100
                 shadowMapQuality: Light.ShadowMapQualityVeryHigh
+                softShadowQuality: Light.PCF4
+                shadowBias: 0.2
+                shadowMapFar: camera.clipFar
+                pcfFactor: 0.05
             }
 
             PhysicalTable {

@@ -28,7 +28,7 @@ namespace Qt3DRender {
 
 /*!
  * \qmltype RenderCapture
- * \instantiates Qt3DRender::QRenderCapture
+ * \nativetype Qt3DRender::QRenderCapture
  * \inherits FrameGraphNode
  * \inqmlmodule Qt3D.Render
  * \since 5.8
@@ -49,7 +49,7 @@ namespace Qt3DRender {
 
 /*!
  * \qmltype RenderCaptureReply
- * \instantiates Qt3DRender::QRenderCaptureReply
+ * \nativetype Qt3DRender::QRenderCaptureReply
  * \inherits QObject
  * \inqmlmodule Qt3D.Render
  * \since 5.8
@@ -133,7 +133,7 @@ QRenderCaptureReply::QRenderCaptureReply(QObject *parent)
 }
 
 /*!
- * \property QRenderCaptureReply::image
+ * \property Qt3DRender::QRenderCaptureReply::image
  *
  * Holds the image, which was produced as a result of render capture.
  */
@@ -144,7 +144,7 @@ QImage QRenderCaptureReply::image() const
 }
 
 /*!
- * \property QRenderCaptureReply::captureId
+ * \property Qt3DRender::QRenderCaptureReply::captureId
  *
  * Holds the captureId, which was passed to the renderCapture.
  */
@@ -155,7 +155,7 @@ int QRenderCaptureReply::captureId() const
 }
 
 /*!
- * \property QRenderCaptureReply::complete
+ * \property Qt3DRender::QRenderCaptureReply::complete
  *
  * Holds the complete state of the render capture.
  */

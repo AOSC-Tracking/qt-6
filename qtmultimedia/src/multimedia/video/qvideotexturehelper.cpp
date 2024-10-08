@@ -1,9 +1,12 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
+#include "qabstractvideobuffer.h"
+
 #include "qvideotexturehelper_p.h"
-#include "qabstractvideobuffer_p.h"
 #include "qvideoframeconverter_p.h"
+#include "qvideoframe_p.h"
+#include "private/qmultimediautils_p.h"
 
 #include <qpainter.h>
 #include <qloggingcategory.h>
@@ -520,7 +523,8 @@ void updateUniformData(QByteArray *dst, const QVideoFrameFormat &format, const Q
         break;
     case QVideoFrameFormat::Format_SamplerExternalOES:
         // get Android specific transform for the externalsampler texture
-        cmat = frame.videoBuffer()->externalTextureMatrix();
+        if (auto hwBuffer = QVideoFramePrivate::hwBuffer(frame))
+            cmat = hwBuffer->externalTextureMatrix();
         break;
     case QVideoFrameFormat::Format_SamplerRect:
     {
@@ -608,7 +612,18 @@ static UpdateTextureWithMapResult updateTextureWithMap(const QVideoFrame &frame,
         QImage image;
 
         // calling QVideoFrame::toImage is not accurate. To be fixed.
-        image = frame.toImage();
+        // frame transformation will be considered later
+        const QVideoFrameFormat surfaceFormat = frame.surfaceFormat();
+
+        const bool hasSurfaceTransform = surfaceFormat.isMirrored()
+                || surfaceFormat.scanLineDirection() == QVideoFrameFormat::BottomToTop
+                || surfaceFormat.rotation() != QtVideo::Rotation::None;
+
+        if (hasSurfaceTransform)
+            image = qImageFromVideoFrame(frame, NormalizedVideoTransformation{});
+        else
+            image = frame.toImage(); // use the frame cache, no surface transforms applied
+
         image.convertTo(QImage::Format_ARGB32);
         subresDesc.setImage(image);
 
@@ -629,6 +644,9 @@ static UpdateTextureWithMapResult updateTextureWithMap(const QVideoFrame &frame,
 
 static std::unique_ptr<QRhiTexture> createTextureFromHandle(const QVideoFrame &frame, QRhi *rhi, int plane)
 {
+    QHwVideoBuffer *hwBuffer = QVideoFramePrivate::hwBuffer(frame);
+    Q_ASSERT(hwBuffer);
+
     QVideoFrameFormat fmt = frame.surfaceFormat();
     QVideoFrameFormat::PixelFormat pixelFormat = fmt.pixelFormat();
     QSize size = fmt.frameSize();
@@ -650,7 +668,7 @@ static std::unique_ptr<QRhiTexture> createTextureFromHandle(const QVideoFrame &f
 #endif
     }
 
-    if (quint64 handle = frame.videoBuffer()->textureHandle(rhi, plane); handle) {
+    if (quint64 handle = hwBuffer->textureHandle(rhi, plane); handle) {
         std::unique_ptr<QRhiTexture> tex(rhi->newTexture(texDesc.textureFormat[plane], planeSize, 1, textureFlags));
         if (tex->createFrom({handle, 0}))
             return tex;
@@ -736,15 +754,16 @@ static std::unique_ptr<QVideoFrameTextures> createTexturesFromMemory(QVideoFrame
 
 std::unique_ptr<QVideoFrameTextures> createTextures(QVideoFrame &frame, QRhi *rhi, QRhiResourceUpdateBatch *rub, std::unique_ptr<QVideoFrameTextures> &&oldTextures)
 {
-    QAbstractVideoBuffer *vf = frame.videoBuffer();
-    if (!vf)
+    if (!frame.isValid())
         return {};
 
-    if (auto vft = vf->mapTextures(rhi))
-        return vft;
+    if (QHwVideoBuffer *hwBuffer = QVideoFramePrivate::hwBuffer(frame)) {
+        if (auto textures = hwBuffer->mapTextures(rhi))
+            return textures;
 
-    if (auto vft = createTexturesFromHandles(frame, rhi))
-        return vft;
+        if (auto textures = createTexturesFromHandles(frame, rhi))
+            return textures;
+    }
 
     return createTexturesFromMemory(frame, rhi, rub, oldTextures.get());
 }

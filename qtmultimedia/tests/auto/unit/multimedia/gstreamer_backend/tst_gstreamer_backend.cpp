@@ -189,6 +189,32 @@ void tst_GStreamer::metadata_taglistToMetaData_extractsLanguage_data()
             << QLocale::Language::Spanish;
 }
 
+void tst_GStreamer::metadata_taglistToMetaData_extractsDate()
+{
+    QFETCH(QByteArray, tagListString);
+    QFETCH(QDateTime, expectedDate);
+
+    QGstTagListHandle tagList = parseTagList(tagListString);
+    QVERIFY(tagList);
+
+    QMediaMetaData parsed = taglistToMetaData(tagList);
+    QCOMPARE(parsed[QMediaMetaData::Date].value<QDateTime>(), expectedDate);
+}
+
+void tst_GStreamer::metadata_taglistToMetaData_extractsDate_data()
+{
+    QTest::addColumn<QByteArray>("tagListString");
+    QTest::addColumn<QDateTime>("expectedDate");
+
+    QTest::newRow("datetime") << R"__(taglist, datetime=(datetime)2024)__"_ba
+                              << QDateTime(QDate(2024, 0, 0), QTime{});
+    QTest::newRow("date") << R"__(taglist, date=(date)2024-01-01)__"_ba
+                          << QDateTime(QDate(2024, 1, 1), QTime{});
+    QTest::newRow("date and datetime")
+            << R"__(taglist, datetime=(datetime)2024, date=(date)2024-01-01)__"_ba
+            << QDateTime(QDate(2024, 1, 1), QTime{});
+}
+
 void tst_GStreamer::metadata_capsToMetaData()
 {
     QFETCH(QByteArray, capsString);
@@ -270,8 +296,8 @@ void tst_GStreamer::QGstElement_createFromPipelineDescription()
 {
     using namespace std::string_view_literals;
     QGstElement element = QGstElement::createFromPipelineDescription("identity name=foo");
-    QCOMPARE_EQ(element.name().constData(), "foo"sv);
-    QCOMPARE_EQ(element.typeName().constData(), "GstIdentity"sv);
+    QCOMPARE_EQ(element.name(), "foo"sv);
+    QCOMPARE_EQ(element.typeName(), "GstIdentity"sv);
 }
 
 void tst_GStreamer::QGstElement_createFromPipelineDescription_multipleElementsCreatesBin()
@@ -281,7 +307,7 @@ void tst_GStreamer::QGstElement_createFromPipelineDescription_multipleElementsCr
             QGstElement::createFromPipelineDescription("identity name=foo ! identity name=bar");
 
     QVERIFY(element);
-    QCOMPARE_EQ(element.typeName().constData(), "GstPipeline"sv);
+    QCOMPARE_EQ(element.typeName(), "GstPipeline"sv);
 
     QGstBin bin{
         qGstSafeCast<GstBin>(element.element()),
@@ -350,6 +376,98 @@ void tst_GStreamer::qDebug_GstStreamStatusType()
     validate(GST_STREAM_STATUS_TYPE_START, u"GST_STREAM_STATUS_TYPE_START "_s);
     validate(GST_STREAM_STATUS_TYPE_PAUSE, u"GST_STREAM_STATUS_TYPE_PAUSE "_s);
     validate(GST_STREAM_STATUS_TYPE_STOP, u"GST_STREAM_STATUS_TYPE_STOP "_s);
+}
+
+void tst_GStreamer::QGstStructureView_parseCameraFormat()
+{
+    auto makeStructure = [](const char *str) {
+        return QUniqueGstStructureHandle{
+            gst_structure_new_from_string(str),
+        };
+    };
+
+    auto compareFraction = [](std::optional<Fraction> lhs, Fraction rhs) {
+        if (!lhs)
+            return false;
+        return std::tie(lhs->numerator, lhs->denominator)
+                == std::tie(rhs.numerator, rhs.denominator);
+    };
+
+    // single frame rate (taken from Logitech Brio 300)
+    {
+        auto structure = makeStructure(
+                R"__(video/x-raw, format=(string)YUY2, width=(int)1920, height=(int)1080, pixel-aspect-ratio=(fraction)1/1, framerate=(fraction)5/1)__");
+
+        Fraction expectedFracion{ 1, 1 };
+        QGRange<float> expectedFramerateRange{ 5, 5 };
+
+        QCOMPARE(QGstStructureView(structure).resolution(), QSize(1920, 1080));
+        QVERIFY(compareFraction(QGstStructureView(structure).pixelAspectRatio(), expectedFracion));
+        QCOMPARE(QGstStructureView(structure).frameRateRange(), expectedFramerateRange);
+        QCOMPARE(QGstStructureView(structure).pixelFormat(),
+                 QVideoFrameFormat::PixelFormat::Format_YUYV);
+    }
+
+    // multiple frame rates (taken from Logitech Brio 300)
+    {
+        auto structure = makeStructure(
+                R"__(video/x-raw, format=(string)YUY2, width=(int)640, height=(int)480, pixel-aspect-ratio=(fraction)1/1, framerate=(fraction){ 30/1, 24/1, 20/1, 15/1, 10/1, 15/2, 5/1 })__");
+
+        Fraction expectedFracion{ 1, 1 };
+        QGRange<float> expectedFramerateRange{ 5, 30 };
+
+        QCOMPARE(QGstStructureView(structure).resolution(), QSize(640, 480));
+        QVERIFY(compareFraction(QGstStructureView(structure).pixelAspectRatio(), expectedFracion));
+        QCOMPARE(QGstStructureView(structure).frameRateRange(), expectedFramerateRange);
+        QCOMPARE(QGstStructureView(structure).pixelFormat(),
+                 QVideoFrameFormat::PixelFormat::Format_YUYV);
+    }
+
+    // jpeg (taken from Logitech Brio 300)
+    {
+        auto structure = makeStructure(
+                R"__(image/jpeg, parsed=(boolean)true, width=(int)1920, height=(int)1080, pixel-aspect-ratio=(fraction)1/1, framerate=(fraction){ 30/1, 24/1, 20/1, 15/1, 10/1, 15/2, 5/1 })__");
+
+        Fraction expectedFracion{ 1, 1 };
+        QGRange<float> expectedFramerateRange{ 5, 30 };
+
+        QCOMPARE(QGstStructureView(structure).resolution(), QSize(1920, 1080));
+        QVERIFY(compareFraction(QGstStructureView(structure).pixelAspectRatio(), expectedFracion));
+        QCOMPARE(QGstStructureView(structure).frameRateRange(), expectedFramerateRange);
+        QCOMPARE(QGstStructureView(structure).pixelFormat(),
+                 QVideoFrameFormat::PixelFormat::Format_Jpeg);
+    }
+
+    // steped frame rate, undefined frame rate (taken from Raspberry Pi 4, Camera Module v2)
+    {
+        QGRange<float> expectedFramerateRange{ 0.0, 2147483647.0 };
+
+        auto cameraFormat = makeStructure(
+                R"__(video/x-raw, format=(string)YUY2, width=(int)[ 64, 16384, 2 ], height=(int)[ 64, 16384, 2 ], framerate=(fraction)[ 0/1, 2147483647/1 ])__");
+
+        QCOMPARE(QGstStructureView(cameraFormat).pixelAspectRatio(), std::nullopt);
+        QCOMPARE(QGstStructureView(cameraFormat).frameRateRange(), expectedFramerateRange);
+        QCOMPARE(QGstStructureView(cameraFormat).pixelFormat(),
+                 QVideoFrameFormat::PixelFormat::Format_YUYV);
+    }
+
+    // steped frame rate, valid rate range (taken from Raspberry Pi 4, Camera Module v2)
+    {
+        auto cameraFormat = makeStructure(
+                R"__(video/x-raw, format=(string)YUY2, width=(int)[ 32, 3280, 2 ], height=(int)[ 32, 2464, 2 ], framerate=(fraction)[ 1/1, 90/1 ])__");
+
+        QGRange<float> expectedFramerateRange{ 1.0, 90.0 };
+        QGRange<QSize> expectedResolutionRange{
+            QSize(32, 32),
+            QSize(3280, 2464),
+        };
+
+        QCOMPARE(QGstStructureView(cameraFormat).resolutionRange(), expectedResolutionRange);
+        QCOMPARE(QGstStructureView(cameraFormat).pixelAspectRatio(), std::nullopt);
+        QCOMPARE(QGstStructureView(cameraFormat).frameRateRange(), expectedFramerateRange);
+        QCOMPARE(QGstStructureView(cameraFormat).pixelFormat(),
+                 QVideoFrameFormat::PixelFormat::Format_YUYV);
+    }
 }
 
 QTEST_GUILESS_MAIN(tst_GStreamer)

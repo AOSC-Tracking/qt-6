@@ -7,7 +7,11 @@ qt6_add_qml_module(CarConfiguratorContent
         App.qml
         CameraReset.qml
         DebugBox.ui.qml
+        DoorButton.qml
+        doorIcon/Door_button.ui.qml
+        doorIcon/Icons.ui.qml
         Headlights.ui.qml
+        InteriorPointLight.qml
         KissButton.qml
         KissButtonSeparator.qml
         MouseRotatorAndWASD.qml
@@ -21,6 +25,7 @@ qt6_add_qml_module(CarConfiguratorContent
         WallEffect3/WallEffect3.qml
     RESOURCES
         images/builtWithQt.png
+        assets/assets_download.json
 )
 
 set(QML_IMPORT_PATH

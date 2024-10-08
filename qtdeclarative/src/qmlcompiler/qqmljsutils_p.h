@@ -14,7 +14,7 @@
 //
 // We mean it.
 
-#include <private/qtqmlcompilerexports_p.h>
+#include <qtqmlcompilerexports.h>
 
 #include "qqmljslogger_p.h"
 #include "qqmljsregistercontent_p.h"
@@ -67,7 +67,7 @@ static auto getQQmlJSScopeFromSmartPtr(const From &p) -> decltype(p.get())
 
 class QQmlJSTypeResolver;
 class QQmlJSScopesById;
-struct Q_QMLCOMPILER_PRIVATE_EXPORT QQmlJSUtils
+struct Q_QMLCOMPILER_EXPORT QQmlJSUtils
 {
     /*! \internal
         Returns escaped version of \a s. This function is mostly useful for code
@@ -367,23 +367,31 @@ struct Q_QMLCOMPILER_PRIVATE_EXPORT QQmlJSUtils
     static std::variant<QString, QQmlJS::DiagnosticMessage>
     sourceDirectoryPath(const QQmlJSImporter *importer, const QString &buildDirectoryPath);
 
+    template <typename Container>
+    static void deduplicate(Container &container)
+    {
+        std::sort(container.begin(), container.end());
+        auto erase = std::unique(container.begin(), container.end());
+        container.erase(erase, container.end());
+    }
+
     static QStringList cleanPaths(QStringList &&paths)
     {
         for (QString &path : paths)
             path = QDir::cleanPath(path);
-        return paths;
+        return std::move(paths);
     }
 };
 
-bool Q_QMLCOMPILER_PRIVATE_EXPORT canStrictlyCompareWithVar(
+bool Q_QMLCOMPILER_EXPORT canStrictlyCompareWithVar(
         const QQmlJSTypeResolver *typeResolver, const QQmlJSScope::ConstPtr &lhsType,
         const QQmlJSScope::ConstPtr &rhsType);
 
-bool Q_QMLCOMPILER_PRIVATE_EXPORT canCompareWithQObject(
+bool Q_QMLCOMPILER_EXPORT canCompareWithQObject(
         const QQmlJSTypeResolver *typeResolver, const QQmlJSScope::ConstPtr &lhsType,
         const QQmlJSScope::ConstPtr &rhsType);
 
-bool Q_QMLCOMPILER_PRIVATE_EXPORT canCompareWithQUrl(
+bool Q_QMLCOMPILER_EXPORT canCompareWithQUrl(
         const QQmlJSTypeResolver *typeResolver, const QQmlJSScope::ConstPtr &lhsType,
         const QQmlJSScope::ConstPtr &rhsType);
 

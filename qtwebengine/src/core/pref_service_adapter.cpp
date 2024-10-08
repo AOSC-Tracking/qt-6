@@ -6,7 +6,9 @@
 #include "profile_adapter.h"
 #include "type_conversion.h"
 #include "web_engine_context.h"
+#include "web_engine_library_info.h"
 
+#include "base/base_paths.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/prefs/chrome_command_line_pref_store.h"
 #include "content/public/browser/browser_thread.h"
@@ -150,6 +152,8 @@ void PrefServiceAdapter::setup(const ProfileAdapter &profileAdapter)
     m_prefService->ClearPref(spellcheck::prefs::kSpellCheckEnable);
     m_prefService->ClearPref(spellcheck::prefs::kSpellCheckDictionaries);
 #endif // QT_CONFIG(webengine_spellchecker)
+
+    m_prefService->SchedulePendingLossyWrites();
 }
 
 void PrefServiceAdapter::commit()
@@ -185,6 +189,7 @@ void PrefServiceAdapter::setSpellCheckLanguages(const QStringList &languages)
     for (const auto &language : languages)
         dictionaries.push_back(language.toStdString());
     dictionaries_pref.SetValue(dictionaries);
+    m_prefService->SchedulePendingLossyWrites();
 }
 
 QStringList PrefServiceAdapter::spellCheckLanguages() const
@@ -200,7 +205,10 @@ QStringList PrefServiceAdapter::spellCheckLanguages() const
 
 void PrefServiceAdapter::setSpellCheckEnabled(bool enabled)
 {
-    m_prefService->SetBoolean(spellcheck::prefs::kSpellCheckEnable, enabled);
+    if (!WebEngineLibraryInfo::getPath(base::DIR_APP_DICTIONARIES, true).empty()) {
+        m_prefService->SetBoolean(spellcheck::prefs::kSpellCheckEnable, enabled);
+        m_prefService->SchedulePendingLossyWrites();
+    }
 }
 
 bool PrefServiceAdapter::isSpellCheckEnabled() const

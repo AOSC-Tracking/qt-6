@@ -2,14 +2,13 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qsgvideonode_p.h"
-#include "private/qmultimediautils_p.h"
 #include <QtQuick/qsgmaterial.h>
 #include "qsgvideotexture_p.h"
 #include <QtMultimedia/private/qvideotexturehelper_p.h>
 #include <private/qsginternaltextnode_p.h>
 #include <private/qquickitem_p.h>
 #include <private/qquickvideooutput_p.h>
-#include <private/qabstractvideobuffer_p.h>
+#include <private/qhwvideobuffer_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -72,8 +71,9 @@ public:
     QSGVideoMaterial(const QVideoFrameFormat &videoFormat);
 
     [[nodiscard]] QSGMaterialType *type() const override {
-        static QSGMaterialType type[QVideoFrameFormat::NPixelFormats];
-        return &type[m_videoFormat.pixelFormat()];
+        static constexpr int NFormats = QRhiSwapChain::HDRExtendedDisplayP3Linear + 1;
+        static QSGMaterialType type[QVideoFrameFormat::NPixelFormats][NFormats];
+        return &type[m_videoFormat.pixelFormat()][m_surfaceFormat];
     }
 
     [[nodiscard]] QSGMaterialShader *createShader(QSGRendererInterface::RenderMode) const override {
@@ -292,26 +292,17 @@ void QSGVideoNode::setSubtitleGeometry()
 /* Update the vertices and texture coordinates.  Orientation must be in {0,90,180,270} */
 void QSGVideoNode::setTexturedRectGeometry(const QRectF &rect, const QRectF &textureRect, int orientation)
 {
-    const auto currentFrameOrientation = m_material ? static_cast<int>(m_material->m_currentFrame.rotation()) : 0;
-    bool frameChanged = false;
-    if (m_material) {
-        if (currentFrameOrientation != m_frameOrientation
-            || m_material->m_currentFrame.mirrored() != m_frameMirrored) {
-            frameChanged = true;
-        }
-    }
+    const NormalizedVideoTransformation currentFrameTransformation =
+            qNormalizedFrameTransformation(m_material ? m_material->m_currentFrame : QVideoFrame{});
+
     if (rect == m_rect && textureRect == m_textureRect && orientation == m_orientation
-        && !frameChanged)
+        && currentFrameTransformation == m_frameTransformation)
         return;
 
     m_rect = rect;
     m_textureRect = textureRect;
     m_orientation = orientation;
-    if (m_material) {
-        m_frameOrientation = currentFrameOrientation;
-        m_frameMirrored = m_material->m_currentFrame.mirrored();
-    }
-    const int videoRotation = (orientation + currentFrameOrientation) % 360;
+    m_frameTransformation = currentFrameTransformation;
 
     QSGGeometry *g = geometry();
 
@@ -320,6 +311,11 @@ void QSGVideoNode::setTexturedRectGeometry(const QRectF &rect, const QRectF &tex
 
     QSGGeometry::TexturedPoint2D *v = g->vertexDataAsTexturedPoint2D();
 
+    // Vertexes:
+    // 0   2
+    //
+    // 1   3
+
     // Set geometry first
     qSetGeom(v + 0, rect.topLeft());
     qSetGeom(v + 1, rect.bottomLeft());
@@ -327,7 +323,7 @@ void QSGVideoNode::setTexturedRectGeometry(const QRectF &rect, const QRectF &tex
     qSetGeom(v + 3, rect.bottomRight());
 
     // and then texture coordinates
-    switch (videoRotation) {
+    switch (currentFrameTransformation.rotation) {
     default:
         // tl, bl, tr, br
         qSetTex(v + 0, textureRect.topLeft());
@@ -336,7 +332,7 @@ void QSGVideoNode::setTexturedRectGeometry(const QRectF &rect, const QRectF &tex
         qSetTex(v + 3, textureRect.bottomRight());
         break;
 
-    case 90:
+    case QtVideo::Rotation::Clockwise90:
         // bl, br, tl, tr
         qSetTex(v + 0, textureRect.bottomLeft());
         qSetTex(v + 1, textureRect.bottomRight());
@@ -344,7 +340,7 @@ void QSGVideoNode::setTexturedRectGeometry(const QRectF &rect, const QRectF &tex
         qSetTex(v + 3, textureRect.topRight());
         break;
 
-    case 180:
+    case QtVideo::Rotation::Clockwise180:
         // br, tr, bl, tl
         qSetTex(v + 0, textureRect.bottomRight());
         qSetTex(v + 1, textureRect.topRight());
@@ -352,7 +348,7 @@ void QSGVideoNode::setTexturedRectGeometry(const QRectF &rect, const QRectF &tex
         qSetTex(v + 3, textureRect.topLeft());
         break;
 
-    case 270:
+    case QtVideo::Rotation::Clockwise270:
         // tr, tl, br, bl
         qSetTex(v + 0, textureRect.topRight());
         qSetTex(v + 1, textureRect.topLeft());
@@ -361,7 +357,7 @@ void QSGVideoNode::setTexturedRectGeometry(const QRectF &rect, const QRectF &tex
         break;
     }
 
-    if (m_material && m_material->m_currentFrame.mirrored()) {
+    if (m_frameTransformation.xMirrorredAfterRotation) {
         qSwapTex(v + 0, v + 2);
         qSwapTex(v + 1, v + 3);
     }

@@ -54,7 +54,7 @@ Item {
 
         baseColor: "blue"
         baseGradient: gradient1
-        colorStyle: Theme3D.ColorStyle.ObjectGradient
+        colorStyle: GraphsTheme.ColorStyle.ObjectGradient
         itemLabelFormat: "%f"
         itemLabelVisible: false
         mesh: Abstract3DSeries.Mesh.Minimal
@@ -83,6 +83,7 @@ Item {
 
     Scatter3DSeries {
         id: change
+        dataProxy: proxy1
     }
 
     Scatter3DSeries {
@@ -102,8 +103,8 @@ Item {
         function test_2_initial_common() {
             // Common properties
             compare(initial.baseColor, "#000000")
-            compare(initial.baseGradient, 0)
-            compare(initial.colorStyle, Theme3D.ColorStyle.Uniform)
+            verify(!initial.baseGradient)
+            compare(initial.colorStyle, GraphsTheme.ColorStyle.Uniform)
             compare(initial.itemLabel, "")
             compare(initial.itemLabelFormat, "@xLabel, @yLabel, @zLabel")
             compare(initial.itemLabelVisible, true)
@@ -111,10 +112,10 @@ Item {
             compare(initial.meshRotation, Qt.quaternion(1, 0, 0, 0))
             compare(initial.meshSmooth, false)
             compare(initial.multiHighlightColor, "#000000")
-            compare(initial.multiHighlightGradient, 0)
+            verify(!initial.multiHighlightGradient)
             compare(initial.name, "")
             compare(initial.singleHighlightColor, "#000000")
-            compare(initial.singleHighlightGradient, 0)
+            verify(!initial.singleHighlightGradient)
             compare(initial.type, Abstract3DSeries.SeriesType.Scatter)
             compare(initial.userDefinedMesh, "")
             compare(initial.visible, true)
@@ -134,7 +135,7 @@ Item {
             // Common properties
             compare(initialized.baseColor, "#0000ff")
             compare(initialized.baseGradient, gradient1)
-            compare(initialized.colorStyle, Theme3D.ColorStyle.ObjectGradient)
+            compare(initialized.colorStyle, GraphsTheme.ColorStyle.ObjectGradient)
             compare(initialized.itemLabelFormat, "%f")
             compare(initialized.itemLabelVisible, false)
             compare(initialized.mesh, Abstract3DSeries.Mesh.Minimal)
@@ -154,7 +155,6 @@ Item {
         name: "Scatter3DSeries Change"
 
         function test_1_change() {
-            change.dataProxy = proxy1
             change.itemSize = 0.5
             change.selectedItem = 0
         }
@@ -169,7 +169,7 @@ Item {
         function test_3_change_common() {
             change.baseColor = "blue"
             change.baseGradient = gradient1
-            change.colorStyle = Theme3D.ColorStyle.ObjectGradient
+            change.colorStyle = GraphsTheme.ColorStyle.ObjectGradient
             change.itemLabelFormat = "%f"
             change.itemLabelVisible = false
             change.mesh = Abstract3DSeries.Mesh.Minimal
@@ -185,7 +185,7 @@ Item {
 
             compare(change.baseColor, "#0000ff")
             compare(change.baseGradient, gradient1)
-            compare(change.colorStyle, Theme3D.ColorStyle.ObjectGradient)
+            compare(change.colorStyle, GraphsTheme.ColorStyle.ObjectGradient)
             compare(change.itemLabelFormat, "%f")
             compare(change.itemLabelVisible, false)
             compare(change.mesh, Abstract3DSeries.Mesh.Minimal)

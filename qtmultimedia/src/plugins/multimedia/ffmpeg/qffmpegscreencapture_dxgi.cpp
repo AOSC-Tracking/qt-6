@@ -3,9 +3,10 @@
 
 #include "qffmpegscreencapture_dxgi_p.h"
 #include "qffmpegsurfacecapturegrabber_p.h"
-#include <private/qabstractvideobuffer_p.h>
+#include "qabstractvideobuffer.h"
 #include <private/qmultimediautils_p.h>
 #include <private/qwindowsmultimediautils_p.h>
+#include <private/qvideoframe_p.h>
 #include <qtgui/qscreen_platform.h>
 #include "qvideoframe.h"
 
@@ -71,17 +72,10 @@ class QD3D11TextureVideoBuffer : public QAbstractVideoBuffer
 public:
     QD3D11TextureVideoBuffer(const ComPtr<ID3D11Device> &device, std::shared_ptr<QMutex> &mutex,
                              const ComPtr<ID3D11Texture2D> &texture, QSize size)
-        : QAbstractVideoBuffer(QVideoFrame::NoHandle)
-        , m_device(device)
-        , m_texture(texture)
-        , m_ctxMutex(mutex)
-        , m_size(size)
+        : m_device(device), m_texture(texture), m_ctxMutex(mutex), m_size(size)
     {}
 
-    ~QD3D11TextureVideoBuffer()
-    {
-        QD3D11TextureVideoBuffer::unmap();
-    }
+    ~QD3D11TextureVideoBuffer() { Q_ASSERT(m_mapMode == QVideoFrame::NotMapped); }
 
     MapData map(QVideoFrame::MapMode mode) override
     {
@@ -116,10 +110,10 @@ public:
             }
 
             m_mapMode = mode;
-            mapData.nPlanes = 1;
+            mapData.planeCount = 1;
             mapData.bytesPerLine[0] = int(resource.RowPitch);
             mapData.data[0] = reinterpret_cast<uchar*>(resource.pData);
-            mapData.size[0] = m_size.height() * int(resource.RowPitch);
+            mapData.dataSize[0] = m_size.height() * int(resource.RowPitch);
         }
 
         return mapData;
@@ -138,6 +132,8 @@ public:
         m_cpuTexture.Reset();
         m_mapMode = QVideoFrame::NotMapped;
     }
+
+    QVideoFrameFormat format() const override { return {}; }
 
     QSize getSize() const
     {
@@ -339,7 +335,7 @@ QVideoFrameFormat getFrameFormat(QScreen* screen)
     const QSize screenSize = getPhysicalSizePixels(screen);
 
     QVideoFrameFormat format = { screenSize, QVideoFrameFormat::Format_BGRA8888 };
-    format.setFrameRate(static_cast<int>(screen->refreshRate()));
+    format.setStreamFrameRate(static_cast<int>(screen->refreshRate()));
 
     return format;
 }
@@ -403,7 +399,7 @@ public:
             if (bufSize != m_format.frameSize())
                 m_format.setFrameSize(bufSize);
 
-            frame = { buffer.release(), format() };
+            frame = QVideoFramePrivate::createFrame(std::move(buffer), format());
         }
 
         return frame;

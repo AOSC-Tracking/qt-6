@@ -140,8 +140,8 @@ bool GenShaders::process(const MaterialParser::SceneData &sceneData,
         nodes.append(node);
     }
 
-    bool shadowCubePass = false;
-    bool shadowMapPass = false;
+    bool shadowPerspectivePass = false;
+    bool shadowOrthoPass = false;
 
     // Lights
     const auto &lights = sceneData.lights;
@@ -150,10 +150,10 @@ bool GenShaders::process(const MaterialParser::SceneData &sceneData,
             nodes.append(node);
             layer.addChild(static_cast<QSSGRenderNode &>(*node));
             const auto &lightNode = static_cast<const QSSGRenderLight &>(*node);
-            if (lightNode.type == QSSGRenderLight::Type::PointLight)
-                shadowCubePass |= true;
+            if (lightNode.type == QSSGRenderLight::Type::DirectionalLight)
+                shadowOrthoPass |= true;
             else
-                shadowMapPass |= true;
+                shadowPerspectivePass |= true;
         }
     }
 
@@ -206,8 +206,8 @@ bool GenShaders::process(const MaterialParser::SceneData &sceneData,
 
         const auto &propertyTable = layerData.getDefaultMaterialPropertyTable();
 
-        const auto &opaqueObjects = layerData.getSortedOpaqueRenderableObjects(*layerData.camera);
-        const auto &transparentObjects = layerData.getSortedTransparentRenderableObjects(*layerData.camera);
+        const auto &opaqueObjects = layerData.getSortedOpaqueRenderableObjects(*layerData.renderedCameras[0]);
+        const auto &transparentObjects = layerData.getSortedTransparentRenderableObjects(*layerData.renderedCameras[0]);
 
         QSSGRenderableObject *renderable = nullptr;
         if (!opaqueObjects.isEmpty())
@@ -231,7 +231,7 @@ bool GenShaders::process(const MaterialParser::SceneData &sceneData,
                     }
                 }
             } else if ((renderable->type == QSSGSubsetRenderable::Type::CustomMaterialMeshSubset)) {
-                Q_ASSERT(layerData.camera);
+                Q_ASSERT(!layerData.renderedCameras.isEmpty());
                 QSSGSubsetRenderable &cmr(static_cast<QSSGSubsetRenderable &>(*renderable));
                 auto pipelineState = layerData.getPipelineState();
                 const auto &cms = renderContext->customMaterialSystem();
@@ -243,7 +243,7 @@ bool GenShaders::process(const MaterialParser::SceneData &sceneData,
                                                                     features);
 
                 if (shaderPipeline) {
-                    shaderString = material.m_shaderPathKey;
+                    shaderString = material.m_shaderPathKey[QSSGRenderCustomMaterial::RegularShaderPathKeyIndex];
                     const auto qsbcFeatureList = QQsbCollection::toFeatureSet(features);
                     const QByteArray qsbcKey = QQsbCollection::EntryDesc::generateSha(shaderString, qsbcFeatureList);
                     const auto vertexStage = shaderPipeline->vertexStage();
@@ -265,13 +265,13 @@ bool GenShaders::process(const MaterialParser::SceneData &sceneData,
             depthPassFeatures.set(QSSGShaderFeatures::Feature::DepthPass, true);
             generateShader(depthPassFeatures);
 
-            if (shadowCubePass) {
+            if (shadowPerspectivePass) {
                 QSSGShaderFeatures shadowPassFeatures;
-                shadowPassFeatures.set(QSSGShaderFeatures::Feature::CubeShadowPass, true);
+                shadowPassFeatures.set(QSSGShaderFeatures::Feature::PerspectiveShadowPass, true);
                 generateShader(shadowPassFeatures);
             }
 
-            if (shadowMapPass) {
+            if (shadowOrthoPass) {
                 QSSGShaderFeatures shadowPassFeatures;
                 shadowPassFeatures.set(QSSGShaderFeatures::Feature::OrthoShadowPass, true);
                 generateShader(shadowPassFeatures);
@@ -313,7 +313,8 @@ bool GenShaders::process(const MaterialParser::SceneData &sceneData,
                                                                                           *shaderProgramGenerator,
                                                                                           *shaderLibraryManager,
                                                                                           *shaderCache,
-                                                                                          isYUpInFramebuffer);
+                                                                                          isYUpInFramebuffer,
+                                                                                          1); // no multiview support here yet
                     if (shaderPipeline) {
                         const auto &key = bindShaderCommand.m_shaderPathKey;
                         const QSSGShaderFeatures features = shaderLibraryManager->getShaderMetaData(key, QSSGShaderCache::ShaderType::Fragment).features;

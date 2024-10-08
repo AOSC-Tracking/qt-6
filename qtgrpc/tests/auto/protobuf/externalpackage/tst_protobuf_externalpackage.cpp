@@ -14,16 +14,16 @@
 class QtProtobufExternalPackageGenerationTest : public QObject
 {
     Q_OBJECT
-private slots:
-    void RepeatedExternalComplexMessageTest();
-    void ExternalEnumMessageTest();
-    void ExternalComplexMessageTest();
-    void NestedMessageTest();
+private Q_SLOTS:
+    void repeatedExternalComplexMessageTest();
+    void externalEnumMessageTest();
+    void externalComplexMessageTest();
+    void nestedMessageTest();
 };
 
 using namespace qtprotobufnamespace::tests;
 
-void QtProtobufExternalPackageGenerationTest::RepeatedExternalComplexMessageTest()
+void QtProtobufExternalPackageGenerationTest::repeatedExternalComplexMessageTest()
 {
     const char *propertyName = "testExternalComplexData";
     qProtobufAssertMessagePropertyRegistered<RepeatedExternalComplexMessage, qtprotobufnamespace1::externaltests::ExternalComplexMessageRepeated>(
@@ -44,7 +44,7 @@ void QtProtobufExternalPackageGenerationTest::RepeatedExternalComplexMessageTest
     QCOMPARE(test.testExternalComplex(), complexMessageList);
 }
 
-void QtProtobufExternalPackageGenerationTest::ExternalEnumMessageTest()
+void QtProtobufExternalPackageGenerationTest::externalEnumMessageTest()
 {
     const char *propertyName = "externalEnum";
     qProtobufAssertMessagePropertyRegistered<
@@ -54,23 +54,22 @@ void QtProtobufExternalPackageGenerationTest::ExternalEnumMessageTest()
             propertyName);
 
     SimpleExternalEnumMessage test;
-    QVERIFY(test.setProperty(
-            propertyName,
-            QVariant::fromValue<
-                    qtprotobufnamespace1::externaltests::ExternalTestEnumGadget::ExternalTestEnum>(
-                    qtprotobufnamespace1::externaltests::ExternalTestEnumGadget::
-                            EXTERNAL_TEST_ENUM_VALUE4)));
-    QCOMPARE(
-            test.property(propertyName)
-                    .value<qtprotobufnamespace1::externaltests::ExternalTestEnumGadget::
-                                   ExternalTestEnum>(),
-            qtprotobufnamespace1::externaltests::ExternalTestEnumGadget::EXTERNAL_TEST_ENUM_VALUE4);
-    QCOMPARE(
-            test.externalEnum(),
-            qtprotobufnamespace1::externaltests::ExternalTestEnumGadget::EXTERNAL_TEST_ENUM_VALUE4);
+    QVERIFY(test.setProperty(propertyName,
+                             QVariant::fromValue<qtprotobufnamespace1::externaltests::
+                                                     ExternalTestEnumGadget::ExternalTestEnum>(
+                                 qtprotobufnamespace1::externaltests::ExternalTestEnumGadget::
+                                     ExternalTestEnum::EXTERNAL_TEST_ENUM_VALUE4)));
+    QCOMPARE(test.property(propertyName)
+                 .value<qtprotobufnamespace1::externaltests::ExternalTestEnumGadget::
+                            ExternalTestEnum>(),
+             qtprotobufnamespace1::externaltests::ExternalTestEnumGadget::ExternalTestEnum::
+                 EXTERNAL_TEST_ENUM_VALUE4);
+    QCOMPARE(test.externalEnum(),
+             qtprotobufnamespace1::externaltests::ExternalTestEnumGadget::ExternalTestEnum::
+                 EXTERNAL_TEST_ENUM_VALUE4);
 }
 
-void QtProtobufExternalPackageGenerationTest::ExternalComplexMessageTest()
+void QtProtobufExternalPackageGenerationTest::externalComplexMessageTest()
 {
     const char *propertyName = "localList";
     qProtobufAssertMessagePropertyRegistered<qtprotobufnamespace1::externaltests::ExternalInt32Message, QtProtobuf::int32List>(
@@ -82,7 +81,7 @@ void QtProtobufExternalPackageGenerationTest::ExternalComplexMessageTest()
     QCOMPARE(test.localList(), QtProtobuf::int32List({1, 2, 3, 4, 5}));
 }
 
-void QtProtobufExternalPackageGenerationTest::NestedMessageTest()
+void QtProtobufExternalPackageGenerationTest::nestedMessageTest()
 {
     qProtobufAssertMessagePropertyRegistered<NestedExternal, qtprotobufnamespace1::externaltests::NestedFieldMessage::NestedMessage*>(1, "qtprotobufnamespace1::externaltests::NestedFieldMessage::NestedMessage*", "externalNested_p");
 

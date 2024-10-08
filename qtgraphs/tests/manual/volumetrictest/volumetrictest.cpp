@@ -5,7 +5,7 @@
 #include <QtGraphs/qbar3dseries.h>
 #include <QtGraphs/qvalue3daxis.h>
 #include <QtGraphs/q3dscene.h>
-#include <QtGraphs/q3dtheme.h>
+#include <QtGraphs/qgraphstheme.h>
 #include <QtGraphs/qcustom3dlabel.h>
 #include <QtCore/qmath.h>
 #include <QtGui/QRgb>
@@ -21,7 +21,7 @@ const float xRange = 40.0f;
 const float yRange = 7.5f;
 const float zRange = 20.0f;
 
-VolumetricModifier::VolumetricModifier(QAbstract3DGraph *scatter)
+VolumetricModifier::VolumetricModifier(Q3DGraphsWidgetItem *scatter)
     : m_graph(scatter),
       m_volumeItem(0),
       m_volumeItem2(0),
@@ -30,15 +30,15 @@ VolumetricModifier::VolumetricModifier(QAbstract3DGraph *scatter)
       m_sliceIndexY(0),
       m_sliceIndexZ(0)
 {
-    m_graph->activeTheme()->setType(Q3DTheme::Theme::Qt);
+    m_graph->activeTheme()->setTheme(QGraphsTheme::Theme::QtGreen);
     //m_graph->activeTheme()->setType(Q3DTheme::Theme::Isabelle);
-    m_graph->setShadowQuality(QAbstract3DGraph::ShadowQuality::None);
-    m_graph->setCameraPreset(QAbstract3DGraph::CameraPreset::Front);
+    m_graph->setShadowQuality(QtGraphs3D::ShadowQuality::None);
+    m_graph->setCameraPreset(QtGraphs3D::CameraPreset::Front);
     m_graph->setOrthoProjection(true);
     //m_graph->scene()->activeCamera()->setTarget(QVector3D(-2.0f, 1.0f, 2.0f));
-    m_scatterGraph = qobject_cast<Q3DScatter *>(m_graph);
-    m_surfaceGraph = qobject_cast<Q3DSurface *>(m_graph);
-    m_barGraph = qobject_cast<Q3DBars *>(m_graph);
+    m_scatterGraph = qobject_cast<Q3DScatterWidgetItem *>(m_graph);
+    m_surfaceGraph = qobject_cast<Q3DSurfaceWidgetItem *>(m_graph);
+    m_barGraph = qobject_cast<Q3DBarsWidgetItem *>(m_graph);
     if (m_scatterGraph) {
         m_scatterGraph->axisX()->setRange(xMiddle - xRange, xMiddle + xRange);
         m_scatterGraph->axisX()->setSegmentCount(8);
@@ -82,7 +82,7 @@ VolumetricModifier::VolumetricModifier(QAbstract3DGraph *scatter)
         m_barGraph->valueAxis()->setRange(yMiddle - yRange, yMiddle + yRange);
         m_barGraph->rowAxis()->setRange(zMiddle - zRange, zMiddle + zRange);
     }
-    m_graph->activeTheme()->setBackgroundEnabled(false);
+    m_graph->activeTheme()->setBackgroundVisible(false);
 
     createVolume();
     createAnotherVolume();
@@ -130,7 +130,7 @@ VolumetricModifier::VolumetricModifier(QAbstract3DGraph *scatter)
 
     m_graph->addCustomItem(label);
 
-    QObject::connect(m_graph, &QAbstract3DGraph::currentFpsChanged, this,
+    QObject::connect(m_graph, &Q3DGraphsWidgetItem::currentFpsChanged, this,
                      &VolumetricModifier::handleFpsChange);
 //    QObject::connect(m_graph->scene(), &Q3DScene::viewportChanged, this,
 //                     &VolumetricModifier::handleFpsChange);

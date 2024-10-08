@@ -72,8 +72,11 @@ constexpr uint32_t kFlagCorrupt = 1 << 0;
 constexpr uint32_t kFlagFull = 1 << 1;
 
 // Errors that are logged in "errors" histogram.
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
 enum AllocatorError : int {
   kMemoryIsCorrupt = 1,
+  kMaxValue = kMemoryIsCorrupt,
 };
 
 bool CheckFlag(const volatile std::atomic<uint32_t>* flags, uint32_t flag) {
@@ -499,8 +502,9 @@ void PersistentMemoryAllocator::CreateTrackingHistograms(
       HistogramBase::kUmaTargetedHistogramFlag);
 
   DCHECK(!errors_histogram_);
-  errors_histogram_ = SparseHistogram::FactoryGet(
-      "UMA.PersistentAllocator." + name_string + ".Errors",
+  errors_histogram_ = LinearHistogram::FactoryGet(
+      "UMA.PersistentAllocator." + name_string + ".Errors", 1,
+      AllocatorError::kMaxValue + 1, AllocatorError::kMaxValue + 2,
       HistogramBase::kUmaTargetedHistogramFlag);
 }
 
@@ -1310,13 +1314,13 @@ void* DelayedPersistentAllocation::Get() const {
       SCOPED_CRASH_KEY_NUMBER(
           "PersistentMemoryAllocator", "ref_after",
           (reference_ + 1)->load(std::memory_order_relaxed));
-      NOTREACHED();
+      DUMP_WILL_BE_NOTREACHED_NORETURN();
       return nullptr;
     }
 #endif  // !BUILDFLAG(IS_NACL)
     // This should never happen but be tolerant if it does as corruption from
     // the outside is something to guard against.
-    NOTREACHED();
+    DUMP_WILL_BE_NOTREACHED_NORETURN();
     return nullptr;
   }
   return mem + offset_;

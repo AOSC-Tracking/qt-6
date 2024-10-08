@@ -1,16 +1,17 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
-import QtQuick3D
 import QtQuick3D.Physics
 import QtMultimedia
 import QtQml
 
 DynamicRigidBody {
+    id: root
     property real diceWidth: 1.9 // cm
     property bool atRest: true
+    property bool isClose: position.length() < 100
     receiveContactReports: true
     sendContactReports: true
-    onBodyContact: {
+    onBodyContact: (body, positions, impulses, normals) => {
         motionTimeout.start()
         atRest = false
         let volume = 0
@@ -28,7 +29,7 @@ DynamicRigidBody {
         repeat: false
         onRunningChanged: {
             if (!running)
-                atRest = true
+                root.atRest = true
         }
     }
 
@@ -36,10 +37,11 @@ DynamicRigidBody {
     density: 1.13
     collisionShapes: BoxShape {
         id: box
-        extents: Qt.vector3d(1, 1, 1).times(diceWidth)
+        extents: Qt.vector3d(1, 1, 1).times(root.diceWidth)
     }
     Dice_low {
-        scale: Qt.vector3d(2.65, 2.65, 2.65).times(diceWidth)
+        receivesShadows: root.isClose
+        scale: Qt.vector3d(2.65, 2.65, 2.65).times(root.diceWidth)
     }
     SoundEffect {
         id: diceSound

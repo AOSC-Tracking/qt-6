@@ -1,6 +1,5 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
-
 import QtQuick 2.0
 import QtGraphs
 import QtTest 1.0
@@ -15,26 +14,44 @@ Item {
     }
 
     Gradient {
-        id: gradient1;
+        id: gradient1
         stops: [
-            GradientStop { color: "red"; position: 0 },
-            GradientStop { color: "blue"; position: 1 }
+            GradientStop {
+                color: "red"
+                position: 0
+            },
+            GradientStop {
+                color: "blue"
+                position: 1
+            }
         ]
     }
 
     Gradient {
-        id: gradient2;
+        id: gradient2
         stops: [
-            GradientStop { color: "green"; position: 0 },
-            GradientStop { color: "red"; position: 1 }
+            GradientStop {
+                color: "green"
+                position: 0
+            },
+            GradientStop {
+                color: "red"
+                position: 1
+            }
         ]
     }
 
     Gradient {
-        id: gradient3;
+        id: gradient3
         stops: [
-            GradientStop { color: "gray"; position: 0 },
-            GradientStop { color: "darkgray"; position: 1 }
+            GradientStop {
+                color: "gray"
+                position: 0
+            },
+            GradientStop {
+                color: "darkgray"
+                position: 1
+            }
         ]
     }
 
@@ -56,8 +73,16 @@ Item {
         id: initialized
         dataProxy: ItemModelBarDataProxy {
             itemModel: ListModel {
-                ListElement{ year: "2012"; city: "Oulu"; expenses: "4200"; }
-                ListElement{ year: "2012"; city: "Rauma"; expenses: "2100"; }
+                ListElement {
+                    year: "2012"
+                    city: "Oulu"
+                    expenses: "4200"
+                }
+                ListElement {
+                    year: "2012"
+                    city: "Rauma"
+                    expenses: "2100"
+                }
             }
             rowRole: "city"
             columnRole: "year"
@@ -68,7 +93,7 @@ Item {
 
         baseColor: "blue"
         baseGradient: gradient1
-        colorStyle: Theme3D.ColorStyle.ObjectGradient
+        colorStyle: GraphsTheme.ColorStyle.ObjectGradient
         itemLabelFormat: "%f"
         itemLabelVisible: false
         mesh: Abstract3DSeries.Mesh.Cone
@@ -80,15 +105,27 @@ Item {
         singleHighlightGradient: gradient3
         userDefinedMesh: ":/customitem.obj"
         visible: false
-        rowColors: [ rowColor1, rowColor2, rowColor3 ]
+        rowColors: [rowColor1, rowColor2, rowColor3]
     }
 
     ItemModelBarDataProxy {
         id: proxy1
         itemModel: ListModel {
-            ListElement{ year: "2012"; city: "Oulu"; expenses: "4200"; }
-            ListElement{ year: "2012"; city: "Rauma"; expenses: "2100"; }
-            ListElement{ year: "2012"; city: "Helsinki"; expenses: "7040"; }
+            ListElement {
+                year: "2012"
+                city: "Oulu"
+                expenses: "4200"
+            }
+            ListElement {
+                year: "2012"
+                city: "Rauma"
+                expenses: "2100"
+            }
+            ListElement {
+                year: "2012"
+                city: "Helsinki"
+                expenses: "7040"
+            }
         }
         rowRole: "city"
         columnRole: "year"
@@ -97,6 +134,7 @@ Item {
 
     Bar3DSeries {
         id: change
+        dataProxy: proxy1
     }
 
     TestCase {
@@ -113,8 +151,8 @@ Item {
         function test_2_initial_common() {
             // Common properties
             compare(initial.baseColor, "#000000")
-            compare(initial.baseGradient, 0)
-            compare(initial.colorStyle, Theme3D.ColorStyle.Uniform)
+            verify(!initial.baseGradient)
+            compare(initial.colorStyle, GraphsTheme.ColorStyle.Uniform)
             compare(initial.itemLabel, "")
             compare(initial.itemLabelFormat, "@valueLabel")
             compare(initial.itemLabelVisible, true)
@@ -122,10 +160,10 @@ Item {
             compare(initial.meshRotation, Qt.quaternion(1, 0, 0, 0))
             compare(initial.meshSmooth, false)
             compare(initial.multiHighlightColor, "#000000")
-            compare(initial.multiHighlightGradient, 0)
+            verify(!initial.multiHighlightGradient)
             compare(initial.name, "")
             compare(initial.singleHighlightColor, "#000000")
-            compare(initial.singleHighlightGradient, 0)
+            verify(!initial.singleHighlightGradient)
             compare(initial.type, Abstract3DSeries.SeriesType.Bar)
             compare(initial.userDefinedMesh, "")
             compare(initial.visible, true)
@@ -146,7 +184,8 @@ Item {
             // Common properties
             compare(initialized.baseColor, "#0000ff")
             compare(initialized.baseGradient, gradient1)
-            compare(initialized.colorStyle, Theme3D.ColorStyle.ObjectGradient)
+            compare(initialized.colorStyle,
+                    GraphsTheme.ColorStyle.ObjectGradient)
             compare(initialized.itemLabelFormat, "%f")
             compare(initialized.itemLabelVisible, false)
             compare(initialized.mesh, Abstract3DSeries.Mesh.Cone)
@@ -165,7 +204,6 @@ Item {
         name: "Bar3DSeries Change"
 
         function test_1_change() {
-            change.dataProxy = proxy1
             change.meshAngle = 15.0
             change.selectedBar = Qt.point(0, 0)
             change.rowColors = [rowColor1, rowColor2, rowColor3]
@@ -181,7 +219,7 @@ Item {
         function test_3_change_common() {
             change.baseColor = "blue"
             change.baseGradient = gradient1
-            change.colorStyle = Theme3D.ColorStyle.ObjectGradient
+            change.colorStyle = GraphsTheme.ColorStyle.ObjectGradient
             change.itemLabelFormat = "%f"
             change.itemLabelVisible = false
             change.mesh = Abstract3DSeries.Mesh.Cone
@@ -196,7 +234,7 @@ Item {
 
             compare(change.baseColor, "#0000ff")
             compare(change.baseGradient, gradient1)
-            compare(change.colorStyle, Theme3D.ColorStyle.ObjectGradient)
+            compare(change.colorStyle, GraphsTheme.ColorStyle.ObjectGradient)
             compare(change.itemLabelFormat, "%f")
             compare(change.itemLabelVisible, false)
             compare(change.mesh, Abstract3DSeries.Mesh.Cone)

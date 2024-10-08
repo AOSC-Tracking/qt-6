@@ -75,23 +75,6 @@ void GLContextHelper::destroy()
     contextHelper = nullptr;
 }
 
-bool GLContextHelper::initializeContextOnBrowserThread(gl::GLContext* context, gl::GLSurface* surface, gl::GLContextAttribs attribs)
-{
-    return context->Initialize(surface, attribs);
-}
-
-bool GLContextHelper::initializeContext(gl::GLContext* context, gl::GLSurface* surface, gl::GLContextAttribs attribs)
-{
-    bool ret = false;
-    Qt::ConnectionType connType = (QThread::currentThread() == qApp->thread()) ? Qt::DirectConnection : Qt::BlockingQueuedConnection;
-    QMetaObject::invokeMethod(contextHelper, "initializeContextOnBrowserThread", connType,
-            Q_RETURN_ARG(bool, ret),
-            Q_ARG(gl::GLContext*, context),
-            Q_ARG(gl::GLSurface*, surface),
-            Q_ARG(gl::GLContextAttribs, attribs));
-    return ret;
-}
-
 void* GLContextHelper::getEGLConfig()
 {
     QByteArray resource = QByteArrayLiteral("eglconfig");
@@ -175,15 +158,20 @@ bool GLContextHelper::isCreateContextRobustnessSupported()
     return contextHelper->m_robustness;
 }
 
-#if QT_CONFIG(opengl) && defined(USE_OZONE)
+#if QT_CONFIG(opengl) && QT_CONFIG(egl) && defined(USE_OZONE)
 class ScopedGLContext
 {
 public:
-    ScopedGLContext(QOffscreenSurface *surface)
-        : m_context(new QOpenGLContext())
-        , m_previousContext(gl::GLContext::GetCurrent())
-        , m_previousSurface(gl::GLSurface::GetCurrent())
+    ScopedGLContext(QOffscreenSurface *surface) : m_context(new QOpenGLContext())
     {
+        if (gl::GLContext::GetCurrent()) {
+            auto eglFun = EGLHelper::instance()->functions();
+            m_previousEGLContext = eglFun->eglGetCurrentContext();
+            m_previousEGLDrawSurface = eglFun->eglGetCurrentSurface(EGL_DRAW);
+            m_previousEGLReadSurface = eglFun->eglGetCurrentSurface(EGL_READ);
+            m_previousEGLDisplay = eglFun->eglGetCurrentDisplay();
+        }
+
         if (!m_context->create()) {
             qWarning("Failed to create OpenGL context.");
             return;
@@ -203,8 +191,18 @@ public:
             glFun->glDeleteTextures(m_textures.size(), m_textures.data());
         }
 
-        if (m_previousContext)
-            m_previousContext->MakeCurrent(m_previousSurface);
+        if (m_previousEGLContext) {
+            // Make sure the scoped context is not current when restoring the previous
+            // EGL context otherwise the QOpenGLContext destructor resets the restored
+            // current context.
+            m_context->doneCurrent();
+
+            auto eglFun = EGLHelper::instance()->functions();
+            eglFun->eglMakeCurrent(m_previousEGLDisplay, m_previousEGLDrawSurface,
+                                   m_previousEGLReadSurface, m_previousEGLContext);
+            if (eglFun->eglGetError() != EGL_SUCCESS)
+                qWarning("Failed to restore EGL context.");
+        }
     }
 
     bool isValid() const { return m_context->isValid() && (m_context->surface() != nullptr); }
@@ -240,11 +238,15 @@ public:
 
 private:
     QScopedPointer<QOpenGLContext> m_context;
-    gl::GLContext *m_previousContext;
-    gl::GLSurface *m_previousSurface;
+    EGLContext m_previousEGLContext = nullptr;
+    EGLSurface m_previousEGLDrawSurface = nullptr;
+    EGLSurface m_previousEGLReadSurface = nullptr;
+    EGLDisplay m_previousEGLDisplay = nullptr;
     std::vector<uint> m_textures;
 };
+#endif // QT_CONFIG(opengl) && QT_COFNIG(egl) && defined(USE_OZONE)
 
+#if QT_CONFIG(opengl) && defined(USE_OZONE)
 EGLHelper::EGLFunctions::EGLFunctions()
 {
     const static auto getProcAddress =
@@ -252,11 +254,18 @@ EGLHelper::EGLFunctions::EGLFunctions()
 
     eglCreateImage = reinterpret_cast<PFNEGLCREATEIMAGEPROC>(getProcAddress("eglCreateImage"));
     eglDestroyImage = reinterpret_cast<PFNEGLDESTROYIMAGEPROC>(getProcAddress("eglDestroyImage"));
-    eglGetError = reinterpret_cast<PFNEGLGETERRORPROC>(getProcAddress("eglGetError"));
     eglExportDMABUFImageMESA = reinterpret_cast<PFNEGLEXPORTDMABUFIMAGEMESAPROC>(
             getProcAddress("eglExportDMABUFImageMESA"));
     eglExportDMABUFImageQueryMESA = reinterpret_cast<PFNEGLEXPORTDMABUFIMAGEQUERYMESAPROC>(
             getProcAddress("eglExportDMABUFImageQueryMESA"));
+    eglGetCurrentContext =
+            reinterpret_cast<PFNEGLGETCURRENTCONTEXTPROC>(getProcAddress("eglGetCurrentContext"));
+    eglGetCurrentDisplay =
+            reinterpret_cast<PFNEGLGETCURRENTDISPLAYPROC>(getProcAddress("eglGetCurrentDisplay"));
+    eglGetCurrentSurface =
+            reinterpret_cast<PFNEGLGETCURRENTSURFACEPROC>(getProcAddress("eglGetCurrentSurface"));
+    eglGetError = reinterpret_cast<PFNEGLGETERRORPROC>(getProcAddress("eglGetError"));
+    eglMakeCurrent = reinterpret_cast<PFNEGLMAKECURRENTPROC>(getProcAddress("eglMakeCurrent"));
     eglQueryString = reinterpret_cast<PFNEGLQUERYSTRINGPROC>(getProcAddress("eglQueryString"));
 }
 
@@ -322,6 +331,7 @@ EGLHelper::EGLHelper()
 void EGLHelper::queryDmaBuf(const int width, const int height, int *fd, int *stride, int *offset,
                             uint64_t *modifiers)
 {
+#if QT_CONFIG(egl)
     if (!m_isDmaBufSupported)
         return;
 
@@ -357,6 +367,7 @@ void EGLHelper::queryDmaBuf(const int width, const int height, int *fd, int *str
                    << ui::GetEGLErrorString(m_functions->eglGetError());
 
     m_functions->eglDestroyImage(eglDisplay, eglImage);
+#endif // QT_CONFIG(egl)
 }
 
 bool EGLHelper::isDmaBufSupported()
@@ -384,7 +395,10 @@ scoped_refptr<GLContext> CreateGLContext(GLShareGroup *share_group,
         return context;
     }
     case kGLImplementationEGLANGLE:
-    case kGLImplementationEGLGLES2:
+        if (Q_UNLIKELY(!compatible_surface)) {
+            qWarning("EGL: no compatible surface.");
+            return nullptr;
+        }
         return InitializeGLContext(new GLContextEGL(share_group),
                                    compatible_surface, attribs);
     case kGLImplementationDisabled:

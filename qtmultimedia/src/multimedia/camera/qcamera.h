@@ -14,8 +14,6 @@
 
 #include <QtMultimedia/qcameradevice.h>
 
-#include <QtMultimedia/qmediaenumdebug.h>
-
 QT_BEGIN_NAMESPACE
 
 
@@ -131,6 +129,7 @@ public:
         FocusDistance = 0x20
     };
     Q_DECLARE_FLAGS(Features, Feature)
+    Q_FLAG(Features)
 
     explicit QCamera(QObject *parent = nullptr);
     explicit QCamera(const QCameraDevice& cameraDevice, QObject *parent = nullptr);
@@ -267,7 +266,5 @@ private:
 Q_DECLARE_OPERATORS_FOR_FLAGS(QCamera::Features)
 
 QT_END_NAMESPACE
-
-Q_MEDIA_ENUM_DEBUG(QCamera, Error)
 
 #endif  // QCAMERA_H

@@ -34,14 +34,35 @@ QT_BEGIN_NAMESPACE
 
     \brief The QMediaRecorder class is used for encoding and recording a capture session.
 
-    The QMediaRecorder class is a class for encoding and recording media generated in a
-    QMediaCaptureSession.
+    Use the QMediaRecorder class to encode and record media generated in
+    \l QMediaCaptureSession. You can generate:
+    \list
+        \li Audio. Use \l QAudioInput or \l QAudioBufferInput.
+        \li Video. Use \l QCamera, \l QScreenCapture, \l QWindowCapture, or \l QVideoFrameInput.
+    \endlist
+
+    To record media, connect a generator to a corresponding media capture session.
+
+    Performance of video encoding and recording is limited by the hardware,
+    the operating system, the installed graphic drivers, and the input video format.
+    If \c QCamera, \c QScreenCapture, or \c QWindowCapture produces video frames
+    faster than \c QMediaRecorder can encode and record them, the recorder
+    may drop some frames. This is likely to occur if the input frame resolution
+    is high, 4K for example, and hardware-accelerated encoding is unavailable.
+    If you generate input video via \c QVideoFrameInput, the method
+    \c QVideoFrameInput::sendVideoFrame will do nothing and return \c false
+    whenever this limitation is reached and the internal frame queue is full.
+    Rely on the signal \c QVideoFrameInput::readyToSendVideoFrame to know
+    when the recorder is ready to receive new frames again.
+    If you cannot change the rate of video frame generation and dropping frames
+    is undesirable, we recommend implementing your own frame queue on top of
+    \c QVideoFrameInput, considering the memory limitations of the hardware.
 
     \snippet multimedia-snippets/media.cpp Media recorder
 */
 /*!
     \qmltype MediaRecorder
-    \instantiates QMediaRecorder
+    \nativetype QMediaRecorder
     \brief For encoding and recording media generated in a CaptureSession.
 
     \inqmlmodule QtMultimedia
@@ -49,8 +70,18 @@ QT_BEGIN_NAMESPACE
     \ingroup multimedia_audio_qml
     \ingroup multimedia_video_qml
 
-    The MediaRecorder element can be used within a CaptureSession to record and encode audio and
-    video captured from a microphone and camera
+    Use the MediaRecorder element within a CaptureSession to encode and record:
+    \list
+        \li Audio captured from an audio interface (like microphone or line input).
+        \li Video captured from camera, screen, or an application window.
+    \endlist
+
+    Performance of video encoding and recording is limited by the hardware,
+    the operating system, the installed graphic drivers, and the input video format.
+    If \c Camera, \c ScreenCapture, or \c WindowCapture produces video frames
+    faster than \c MediaRecorder can encode and record them, the recorder
+    may drop some frames. This is likely to occur if the input frame resolution
+    is high, 4K for example, and hardware-accelerated encoding is unavailable.
 
     \since 6.2
     The code below shows a simple capture session containing a MediaRecorder using the default
@@ -86,7 +117,7 @@ QT_BEGIN_NAMESPACE
     }
 \endqml
 
-    \sa CaptureSession, Camera, AudioInput, ImageCapture
+    \sa CaptureSession, Camera, ScreenCapture, WindowCapture, AudioInput, ImageCapture
 */
 QMediaRecorderPrivate::QMediaRecorderPrivate()
 {
@@ -101,7 +132,7 @@ QString QMediaRecorderPrivate::msgFailedStartRecording()
 }
 
 /*!
-    Constructs a media recorder which records the media produced by a microphone and camera.
+    Constructs a media recorder.
     The media recorder is a child of \a{parent}.
 */
 
@@ -222,6 +253,35 @@ void QMediaRecorder::setOutputLocation(const QUrl &location)
     d->control->clearActualLocation();
     if (!location.isEmpty() && !d->control->isLocationWritable(location))
             emit errorOccurred(QMediaRecorder::LocationNotWritable, tr("Output location not writable"));
+}
+
+/*!
+    Set the output IO device for media content.
+
+    The \a device must have been opened in the \l{QIODevice::WriteOnly}{WriteOnly} or
+    \l{QIODevice::ReadWrite}{ReadWrite} modes before the recording starts.
+
+    The media recorder doesn't take ownership of the specified \a device.
+    If the recording has been started, the device must be kept alive and open until
+    the signal \c recorderStateChanged(StoppedState) is emitted.
+
+    \sa outputDevice()
+*/
+void QMediaRecorder::setOutputDevice(QIODevice *device)
+{
+    Q_D(QMediaRecorder);
+    d->control->setOutputDevice(device);
+}
+
+/*!
+    Returns the output IO device for media content.
+
+    \sa setOutputDevice()
+*/
+QIODevice *QMediaRecorder::outputDevice() const
+{
+    Q_D(const QMediaRecorder);
+    return d->control->outputDevice();
 }
 
 QUrl QMediaRecorder::actualLocation() const
@@ -544,10 +604,47 @@ void QMediaRecorder::addMetaData(const QMediaMetaData &metaData)
 {
     auto data = this->metaData();
     // merge data
-    for (const auto &k : metaData.keys())
-        data.insert(k, metaData.value(k));
+    for (auto &&[key, value] : metaData.asKeyValueRange())
+        data.insert(key, value);
     setMetaData(data);
 }
+
+/*!
+    \property QMediaRecorder::autoStop
+
+    This property controls whether the media recorder stops automatically when
+    all media inputs have reported the end of the stream or have been deactivated.
+
+    The end of the stream is reported by sending an empty media frame,
+    which you can send explicitly via \l QVideoFrameInput or \l QAudioBufferInput.
+
+    Video inputs, specificly, \l QCamera, \l QScreenCapture and \l QWindowCapture,
+    can be deactivated via the function \c setActive.
+
+    Defaults to \c false.
+
+    \sa QCamera, QScreenCapture, QWindowCapture
+*/
+
+bool QMediaRecorder::autoStop() const
+{
+    Q_D(const QMediaRecorder);
+
+    return d->autoStop;
+}
+
+void QMediaRecorder::setAutoStop(bool autoStop)
+{
+    Q_D(QMediaRecorder);
+
+    if (d->autoStop == autoStop)
+        return;
+
+    d->autoStop = autoStop;
+    d->control->updateAutoStop();
+    emit autoStopChanged();
+}
+
 /*!
     \qmlsignal QtMultimedia::MediaRecorder::metaDataChanged()
 

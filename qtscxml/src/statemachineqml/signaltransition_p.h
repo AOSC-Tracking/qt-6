@@ -30,7 +30,7 @@
 
 QT_BEGIN_NAMESPACE
 
-class Q_STATEMACHINEQML_PRIVATE_EXPORT SignalTransition : public QSignalTransition, public QQmlParserStatus
+class Q_STATEMACHINEQML_EXPORT SignalTransition : public QSignalTransition, public QQmlParserStatus
 {
     Q_OBJECT
     Q_INTERFACES(QQmlParserStatus)

@@ -14,7 +14,6 @@
 #endif
 
 #include <cassert>
-#include <algorithm>
 #include <string_view>
 
 using namespace ::google::protobuf;
@@ -77,6 +76,18 @@ std::string common::getFullNamespace(std::string_view fullDescriptorName,
     return output;
 }
 
+std::string common::buildExportMacro(bool addTrailingSpace)
+{
+    static const std::string &macroOption = Options::instance().exportMacro();
+    if (macroOption.empty())
+        return macroOption;
+
+    static std::string macro = "QPB_" + macroOption + "_EXPORT";
+    std::string resultingMacro = macro;
+    if (addTrailingSpace)
+        resultingMacro += ' ';
+    return resultingMacro;
+}
 /*
     Constructs a C++ namespace for wrapping nested message types.
     E.g. for the message descriptor with name "test.protobuf.MessageType.NestedMessageType" the
@@ -215,8 +226,7 @@ TypeMap common::produceMessageTypeMap(const Descriptor *type, const Descriptor *
     std::string scopeListName =
             scopeNamespaces.empty() ? listName : (scopeNamespaces + "::" + listName);
 
-    std::string exportMacro = Options::instance().exportMacro();
-    exportMacro = common::buildExportMacro(exportMacro);
+    std::string exportMacro = common::buildExportMacro();
 
     const std::string initializer = "nullptr";
     return { { "classname", name },
@@ -269,8 +279,7 @@ TypeMap common::produceEnumTypeMap(const EnumDescriptor *type, const Descriptor 
     // Note: For local enum classes it's impossible to use class name space in Q_PROPERTY
     // declaration. So please avoid addition of namespaces in line bellow
     std::string propertyType = visibility == LOCAL_ENUM ? name : fullName;
-    std::string exportMacro = Options::instance().exportMacro();
-    exportMacro = common::buildExportMacro(exportMacro);
+    std::string exportMacro =  common::buildExportMacro();
 
     std::string initializer = scopeName + "::" + common::qualifiedCppName(type->value(0)->name());
     return { { "classname", name },
@@ -343,24 +352,43 @@ MethodMap common::produceMethodMap(const MethodDescriptor *method, const std::st
     inputTypeName = utils::replace(inputTypeName, ".", "::");
     outputTypeName = utils::replace(outputTypeName, ".", "::");
 
+    std::string senderName = methodNameUpper;
+    senderName += "Sender";
+
+    std::string serviceName = method->service()->name();
+
+    //Make sure that we don't clash the same stream names from different services
+    std::string senderQmlName = serviceName;
+    senderQmlName += senderName;
+
     std::string streamType;
     if (method->client_streaming() && method->server_streaming()) {
-        streamType = "QGrpcBidirStream";
+        streamType = "Bidi";
     } else if (method->server_streaming()) {
-        streamType = "QGrpcServerStream";
+        streamType = "Server";
     } else if (method->client_streaming()) {
-        streamType = "QGrpcClientStream";
+        streamType = "Client";
     }
 
-    return { { "classname", scope },
-             { "return_type", outputTypeName },
-             { "classname_low_case", utils::deCapitalizeAsciiName(scope) },
-             { "method_name", methodName },
-             { "method_name_upper", methodNameUpper },
-             { "param_type", inputTypeName },
-             { "param_name", "arg" },
-             { "stream_type", streamType },
-             { "return_name", "ret" } };
+    std::string streamTypeLower = utils::deCapitalizeAsciiName(streamType);
+
+    static const std::string exportMacro = common::buildExportMacro();
+
+    return {
+        {"classname",           scope                              },
+        { "sender_class_name",  senderName                         },
+        { "sender_qml_name",    senderQmlName                      },
+        { "return_type",        outputTypeName                     },
+        { "classname_low_case", utils::deCapitalizeAsciiName(scope)},
+        { "method_name",        methodName                         },
+        { "param_type",         inputTypeName                      },
+        { "param_name",         "arg"                              },
+        { "stream_type",        streamType                         },
+        { "stream_type_lower",  streamTypeLower                    },
+        { "return_name",        "ret"                              },
+        { "export_macro",       exportMacro                        },
+        { "service_name",       serviceName                        },
+    };
 }
 
 TypeMap common::produceServiceTypeMap(const ServiceDescriptor *service, const Descriptor *scope)
@@ -368,7 +396,7 @@ TypeMap common::produceServiceTypeMap(const ServiceDescriptor *service, const De
     const std::string name = "Service";
     const std::string fullName = "Service";
     const std::string scopeName = service->name();
-    const std::string exportMacro = common::buildExportMacro(Options::instance().exportMacro());
+    static const std::string exportMacro = common::buildExportMacro();
 
     const std::string namespaces = getFullNamespace(service, "::");
     const std::string scopeNamespaces = getScopeNamespace(namespaces,
@@ -388,18 +416,20 @@ TypeMap common::produceClientTypeMap(const ServiceDescriptor *service, const Des
     const std::string name = "Client";
     const std::string fullName = "Client";
     const std::string scopeName = service->name();
-    const std::string exportMacro = common::buildExportMacro(Options::instance().exportMacro());
+    static const std::string exportMacro = common::buildExportMacro();
 
     const std::string namespaces = getFullNamespace(service, "::");
     const std::string scopeNamespaces = getScopeNamespace(namespaces,
                                                           getFullNamespace(scope, "::"));
 
+    const std::string serviceName =  service->full_name();
     return { { "classname", name },
              { "classname_low_case", utils::deCapitalizeAsciiName(name) },
              { "full_type", fullName },
              { "scope_type", scopeName },
              { "scope_namespaces", scopeNamespaces },
-             { "parent_class", "QAbstractGrpcClient" },
+             { "parent_class", "QGrpcClientBase" },
+             { "service_name", serviceName },
              { "export_macro", exportMacro } };
 }
 
@@ -408,7 +438,7 @@ TypeMap common::produceQmlClientTypeMap(const ServiceDescriptor *service, const 
     const std::string name = "QmlClient";
     const std::string fullName = "QmlClient";
     const std::string serviceName = service->name();
-    const std::string exportMacro = common::buildExportMacro(Options::instance().exportMacro());
+    static const std::string exportMacro = common::buildExportMacro();
 
     const std::string namespaces = getFullNamespace(service, "::");
     const std::string scopeNamespaces = getScopeNamespace(namespaces,
@@ -510,6 +540,7 @@ PropertyMap common::producePropertyMap(const OneofDescriptor *oneof, const Descr
     propertyMap["classname"] = scope != nullptr ? scopeTypeMap["classname"] : "";
     propertyMap["dataclassname"] = propertyMap["classname"] + CommonTemplates::DataClassName();
     propertyMap["type"] = propertyMap["optional_property_name_cap"] + "Fields";
+    propertyMap["export_macro"] = common::buildExportMacro();
 
     return propertyMap;
 }
@@ -536,6 +567,7 @@ PropertyMap common::producePropertyMap(const FieldDescriptor *field, const Descr
     propertyMap["property_name"] = propertyName;
     propertyMap["property_name_cap"] = propertyNameCap;
     propertyMap["scriptable"] = scriptable;
+    propertyMap["export_macro"] = common::buildExportMacro();
 
     auto scopeTypeMap = produceMessageTypeMap(scope, nullptr);
     propertyMap["key_type"] = "";
@@ -591,6 +623,14 @@ bool common::isOneofField(const FieldDescriptor *field)
 #else
     return field->containing_oneof() != nullptr;
 #endif
+}
+
+bool common::isTriviallyCopyable(const FieldDescriptor *field)
+{
+    return !field->is_repeated() &&
+        field->type() != FieldDescriptor::TYPE_MESSAGE &&
+        field->type() != FieldDescriptor::FieldDescriptor::TYPE_STRING &&
+        field->type() != FieldDescriptor::FieldDescriptor::TYPE_BYTES;
 }
 
 bool common::isOptionalField(const FieldDescriptor *field)
@@ -714,13 +754,14 @@ const Descriptor *common::findHighestMessage(const Descriptor *message)
 
 std::string common::collectFieldFlags(const FieldDescriptor *field)
 {
+    constexpr std::string_view flagsConstuctor = "uint(";
     std::string_view separator = " | ";
     std::string_view active_separator;
-    std::string flags;
+    std::string flags(flagsConstuctor);
 
     auto writeFlag = [&](const char *flag) {
         flags += active_separator;
-        flags += "QtProtobufPrivate::";
+        flags += "QtProtobufPrivate::FieldFlag::";
         flags += flag;
         active_separator = separator;
     };
@@ -739,9 +780,26 @@ std::string common::collectFieldFlags(const FieldDescriptor *field)
     if (common::isOptionalField(field))
         writeFlag("Optional");
 
-    if (flags.empty())
-        writeFlag("NoFlags");
+    if (common::isOneofField(field) || common::isOptionalField(field)
+        || common::isPureMessage(field)) {
+        writeFlag("ExplicitPresence");
+    }
 
+    if (field->is_map())
+        writeFlag("Map");
+
+    if (field->is_repeated() && !field->is_map())
+        writeFlag("Repeated");
+
+    if (field->type() == FieldDescriptor::TYPE_ENUM)
+        writeFlag("Enum");
+
+    if (field->type() == FieldDescriptor::TYPE_MESSAGE)
+        writeFlag("Message");
+
+    if (flags == flagsConstuctor)
+        writeFlag("NoFlags");
+    flags += ")";
     return flags;
 }
 
@@ -755,3 +813,25 @@ void common::setExtraNamespacedFiles(const std::set<std::string> &files)
     if (!files.empty() && files != m_extraNamespacedFiles)
         m_extraNamespacedFiles = files;
 }
+
+std::string common::headerGuardFromFilename(std::string fileName)
+{
+    utils::asciiToUpper(fileName);
+    return utils::replace(fileName, ".", "_");
+}
+
+std::string common::generateRelativeFilePath(const FileDescriptor *file, const std::string &name)
+{
+    std::string outFileBasename;
+    if (Options::instance().isFolder()) {
+        outFileBasename = file->package();
+        if (!outFileBasename.empty()) {
+            outFileBasename = utils::replace(outFileBasename, ".", "/");
+            outFileBasename += '/';
+        }
+    }
+    outFileBasename += name;
+
+    return outFileBasename;
+}
+
