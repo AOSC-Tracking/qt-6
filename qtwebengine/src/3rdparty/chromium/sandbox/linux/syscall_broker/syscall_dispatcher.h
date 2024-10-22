@@ -49,6 +49,9 @@ class SANDBOX_EXPORT SyscallDispatcher {
   virtual int Stat64(const char* pathname,
                      bool follow_links,
                      struct kernel_stat64* sb) const = 0;
+  virtual int Statx(const char* pathname,
+                     bool follow_links,
+                     struct kernel_statx* sb) const = 0;
 
   // Emulates unlink()/unlinkat().
   virtual int Unlink(const char* unlink) const = 0;

@@ -135,6 +135,9 @@ void MinidumpSystemInfoWriter::InitializeFromSnapshot(
     case kCPUArchitectureRISCV64:
       cpu_architecture = kMinidumpCPUArchitectureRISCV64Breakpad;
       break;
+    case kCPUArchitectureLOONG64:
+      cpu_architecture = kMinidumpCPUArchitectureLOONG64Breakpad;
+      break;
     default:
       NOTREACHED();
       cpu_architecture = kMinidumpCPUArchitectureUnknown;

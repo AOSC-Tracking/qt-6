@@ -239,6 +239,8 @@ std::string UserAgent() {
 #endif
 #elif defined (ARCH_CPU_RISCV64)
     static constexpr char arch[] = "riscv64";
+#elif defined(ARCH_CPU_LOONGARCH64)
+    static constexpr char arch[] = "loong64";
 #else
 #error Port
 #endif

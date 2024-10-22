@@ -122,6 +122,11 @@ void CaptureMemory::PointedToByContext(const CPUContext& context,
   for (size_t i = 0; i < std::size(context.riscv64->regs); ++i) {
     MaybeCaptureMemoryAround(delegate, context.riscv64->regs[i]);
   }
+#elif defined(ARCH_CPU_LOONGARCH64)
+  MaybeCaptureMemoryAround(delegate, context.loong64->csr_era);
+  for (size_t i = 0; i < std::size(context.loong64->regs); ++i) {
+    MaybeCaptureMemoryAround(delegate, context.loong64->regs[i]);
+  }
 #else
 #error Port.
 #endif

@@ -85,6 +85,7 @@ ResultExpr AudioProcessPolicy::EvaluateSyscall(int system_call_number) const {
       return Switch(op & ~(FUTEX_PRIVATE_FLAG | FUTEX_CLOCK_REALTIME))
           .Cases({FUTEX_CMP_REQUEUE,
                   FUTEX_LOCK_PI,
+                  FUTEX_LOCK_PI2,
                   FUTEX_UNLOCK_PI,
                   FUTEX_WAIT,
                   FUTEX_WAIT_BITSET,

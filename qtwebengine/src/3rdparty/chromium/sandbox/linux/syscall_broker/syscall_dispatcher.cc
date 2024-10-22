@@ -169,6 +169,19 @@ int SyscallDispatcher::DispatchSyscall(const arch_seccomp_data& args) {
       return Stat64(reinterpret_cast<const char*>(args.args[0]), true,
                     reinterpret_cast<struct kernel_stat64*>(args.args[1]));
 #endif
+#if defined(__NR_statx)
+    case __NR_statx:
+      // we have ensured that the statx does not have AT_EMPTY_PATH in HandleViaBroker()
+      // so this is stat/lstat instead of fstat
+      // see PerformStatat
+      if (static_cast<int>(args.args[0]) != AT_FDCWD) {
+        return -EPERM;
+      }
+
+      return Statx(reinterpret_cast<const char*>(args.args[1]),
+		   !(static_cast<int>(args.args[2]) & AT_SYMLINK_NOFOLLOW),
+                   reinterpret_cast<struct kernel_statx*>(args.args[4]));
+#endif
 #if defined(__NR_lstat)
     case __NR_lstat:
       // See https://crbug.com/847096
