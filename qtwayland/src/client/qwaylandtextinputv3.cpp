@@ -69,6 +69,7 @@ void QWaylandTextInputv3::zwp_text_input_v3_leave(struct ::wl_surface *surface)
     m_surface = nullptr;
 
     disable();
+    commit();
     qCDebug(qLcQpaWaylandTextInput) << Q_FUNC_INFO << "Done";
 }
 
@@ -129,6 +130,14 @@ void QWaylandTextInputv3::zwp_text_input_v3_done(uint32_t serial)
         return;
     }
 
+    if ((m_pendingPreeditString == m_currentPreeditString)
+           && (m_pendingCommitString.isEmpty() && m_pendingDeleteBeforeText == 0
+                                               && m_pendingDeleteAfterText == 0)) {
+        // Current done doesn't need additional updates
+        m_pendingPreeditString.clear();
+        return;
+    }
+
     qCDebug(qLcQpaWaylandTextInput) << Q_FUNC_INFO << "PREEDIT" << m_pendingPreeditString.text << m_pendingPreeditString.cursorBegin;
 
     QList<QInputMethodEvent::Attribute> attributes;
@@ -138,7 +147,7 @@ void QWaylandTextInputv3::zwp_text_input_v3_done(uint32_t serial)
             // Current supported cursor shape is just line.
             // It means, cursorEnd and cursorBegin are the same.
             QInputMethodEvent::Attribute attribute1(QInputMethodEvent::Cursor,
-                                                    m_pendingPreeditString.text.length(),
+                                                    m_pendingPreeditString.cursorBegin,
                                                     1);
             attributes.append(attribute1);
         }
@@ -238,6 +247,7 @@ void QWaylandTextInputv3::updateState(Qt::InputMethodQueries queries, uint32_t f
         if (surfaceRect != m_cursorRect) {
             set_cursor_rectangle(surfaceRect.x(), surfaceRect.y(), surfaceRect.width(), surfaceRect.height());
             m_cursorRect = surfaceRect;
+            needsCommit = true;
         }
     }
 
@@ -335,8 +345,8 @@ void QWaylandTextInputv3::updateState(Qt::InputMethodQueries queries, uint32_t f
         }
     }
 
-    if (needsCommit
-            && (flags == update_state_change || flags == update_state_enter))
+    if (flags == update_state_enter
+            || (flags == update_state_change && needsCommit))
         commit();
 }
 

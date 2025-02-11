@@ -81,6 +81,7 @@ QXYSeries::QXYSeries(QXYSeriesPrivate &dd, QObject *parent)
     QObject::connect(this, &QXYSeries::selectedPointsChanged, this, &QAbstractSeries::update);
     QObject::connect(this, &QXYSeries::pointAdded, this, &QAbstractSeries::update);
     QObject::connect(this, &QXYSeries::pointReplaced, this, &QAbstractSeries::update);
+    QObject::connect(this, &QXYSeries::pointsReplaced, this, &QAbstractSeries::update);
     QObject::connect(this, &QXYSeries::pointRemoved, this, &QAbstractSeries::update);
     QObject::connect(this, &QXYSeries::pointsRemoved, this, &QAbstractSeries::update);
 }
@@ -107,7 +108,6 @@ void QXYSeries::append(qreal x, qreal y)
 void QXYSeries::append(QPointF point)
 {
     Q_D(QXYSeries);
-
     if (isValidValue(point)) {
         if (d->m_graphTransition && d->m_graphTransition->initialized()
             && d->m_graphTransition->contains(QGraphAnimation::GraphAnimationType::GraphPoint)) {
@@ -198,6 +198,10 @@ void QXYSeries::replace(qsizetype index, qreal newX, qreal newY)
 void QXYSeries::replace(qsizetype index, QPointF newPoint)
 {
     Q_D(QXYSeries);
+
+    if (index < 0 || index >= d->m_points.size())
+        return;
+
     if (isValidValue(newPoint)) {
         if (d->m_graphTransition && d->m_graphTransition->initialized()
             && d->m_graphTransition->contains(QGraphAnimation::GraphAnimationType::GraphPoint)) {
@@ -313,6 +317,10 @@ void QXYSeries::removeMultiple(qsizetype index, qsizetype count)
     // This function doesn't overload remove as there is chance for it to get mixed up with
     // remove(qreal, qreal) overload in some implicit casting cases.
     Q_D(QXYSeries);
+
+    if (index < 0 || count < 1 || index + count > d->m_points.size())
+        return;
+
     if (count > 0) {
         d->m_points.remove(index, count);
 
@@ -382,6 +390,7 @@ bool QXYSeries::take(QPointF point)
 void QXYSeries::insert(qsizetype index, QPointF point)
 {
     Q_D(QXYSeries);
+
     if (isValidValue(point)) {
         index = qMax(0, qMin(index, d->m_points.size()));
 
@@ -715,13 +724,11 @@ QColor QXYSeries::color() const
 
 /*!
     \property QXYSeries::selectedColor
-    \brief The main color of the selected series. For QLineSeries this means the line color and
-    for QScatterSeries the color of the point.
+    \brief The color of selected points.
 */
 /*!
     \qmlproperty color XYSeries::selectedColor
-    The main color of the selected series. For LineSeries this means the line color and
-    for ScatterSeries the color of the point
+    The color of selected points.
 */
 void QXYSeries::setSelectedColor(QColor color)
 {
@@ -909,6 +916,29 @@ void QXYSeriesPrivate::setPointSelected(qsizetype index, bool selected, bool &ca
 bool QXYSeriesPrivate::isPointSelected(qsizetype index) const
 {
     return m_selectedPoints.contains(index);
+}
+
+void QXYSeriesPrivate::append(const QList<QPointF> &points)
+{
+    bool anim = m_graphTransition && m_graphTransition->initialized()
+                && m_graphTransition->contains(QGraphAnimation::GraphAnimationType::GraphPoint);
+
+    if (anim) {
+        m_graphTransition->stop();
+        qsizetype index = m_points.size();
+
+        for (auto point : points) {
+            if (isValidValue(point)) {
+                m_graphTransition->stop();
+                m_graphTransition->onPointChanged(QGraphTransition::TransitionType::PointAdded,
+                                                  index,
+                                                  point);
+                index++;
+            }
+        }
+    } else {
+        m_points.append(points);
+    }
 }
 
 QT_END_NAMESPACE

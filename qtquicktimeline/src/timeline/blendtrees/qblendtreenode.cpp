@@ -7,7 +7,6 @@ QT_BEGIN_NAMESPACE
 
 /*!
     \qmltype BlendTreeNode
-    \inherits QObject
     \nativetype QBlendTreeNode
     \inqmlmodule QtQuick.Timeline.BlendTrees
     \ingroup qtqmltypes

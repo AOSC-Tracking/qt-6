@@ -194,6 +194,9 @@ function(_qt_internal_ensure_ts_file)
 
     set(content
         [[<?xml version="1.0" encoding="utf-8"?>
+<!--
+Run the update_translations CMake target to populate the source strings in this file.
+-->
 <!DOCTYPE TS>
 <TS version="2.1"]])
 
@@ -364,7 +367,7 @@ set(lupdate_subproject${n}_autogen_dir \"${autogen_dir}\")
 endfunction()
 
 function(_qt_internal_store_languages_from_ts_files_in_targets targets ts_files)
-    if(NOT APPLE)
+    if(NOT APPLE OR QT_SKIP_STORE_LANGUAGES_FROM_TS_FILES)
         return()
     endif()
     set(supported_languages "")
@@ -456,9 +459,6 @@ function(qt6_add_lrelease)
     set(qm_files "")
     foreach(ts_file ${ts_files})
         if(NOT EXISTS "${ts_file}")
-            message(WARNING "Translation file '${ts_file}' does not exist. "
-                "Consider building the target 'update_translations' to create an initial "
-                "version of that file.")
             _qt_internal_ensure_ts_file(TS_FILE "${ts_file}")
         endif()
 

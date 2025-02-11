@@ -10,11 +10,12 @@
 #include "private/qplatformmediaintegration_p.h"
 #include "private/qimagevideobuffer_p.h"
 #include "private/qvideoframe_p.h"
+#include <private/qfileutil_p.h>
 #include <QtGui/QColorSpace>
 #include <QtGui/QImage>
 #include <QtCore/QPointer>
 
-#include "../../../integration/shared/mediabackendutils.h"
+#include <private/mediabackendutils_p.h>
 
 QT_USE_NAMESPACE
 
@@ -37,7 +38,7 @@ QString toString(QVideoFrameFormat::ColorRange r)
     case QVideoFrameFormat::ColorRange_Full:
         return "Full";
     default:
-        Q_ASSERT(false);
+        QTEST_ASSERT(false);
         return "";
     }
 }
@@ -114,6 +115,7 @@ bool isSupportedPixelFormat(QVideoFrameFormat::PixelFormat pixelFormat)
         return true;
     }
 #else
+    Q_UNUSED(pixelFormat);
     return true;
 #endif
 }
@@ -131,7 +133,7 @@ QString toString(QVideoFrameFormat::ColorSpace s)
     case QVideoFrameFormat::ColorSpace_BT2020:
         return "BT2020";
     default:
-        Q_ASSERT(false);
+        QTEST_ASSERT(false);
         return "";
     }
 }
@@ -207,7 +209,7 @@ QRgb pixelDiff(QRgb lhs, QRgb rhs)
 std::optional<ImageDiffReport> compareImagesRgb32(const QImage &computed, const QImage &baseline,
                                              int channelThreshold)
 {
-    Q_ASSERT(baseline.format() == QImage::Format_RGB32);
+    QTEST_ASSERT(baseline.format() == QImage::Format_RGB32);
 
     if (computed.size() != baseline.size())
         return {};
@@ -249,23 +251,6 @@ std::optional<ImageDiffReport> compareImagesRgb32(const QImage &computed, const 
         }
     }
     return report;
-}
-
-bool copyAllFiles(const QDir &source, const QDir &dest)
-{
-    if (!source.exists() || !dest.exists())
-        return false;
-
-    QDirIterator it(source);
-    while (it.hasNext()) {
-        QFileInfo file{ it.next() };
-        if (file.isFile()) {
-            const QString destination = dest.absolutePath() + "/" + file.fileName();
-            QFile::copy(file.absoluteFilePath(), destination);
-        }
-    }
-
-    return true;
 }
 
 class ReferenceData
@@ -315,7 +300,7 @@ public:
         const QString filename = path(*m_testdataDir, params);
         if (!reference.save(filename)) {
             qDebug() << "Failed to save reference file";
-            Q_ASSERT(false);
+            QTEST_ASSERT(false);
         }
 
         m_testdataDir->setAutoRemove(false);
@@ -325,7 +310,7 @@ public:
     {
         if (!image.save(path(*m_testdataDir, params, suffix))) {
             qDebug() << "Unexpectedly failed to save actual image to file";
-            Q_ASSERT(false);
+            QTEST_ASSERT(false);
             return false;
         }
         m_testdataDir->setAutoRemove(false);
@@ -386,8 +371,7 @@ class tst_qvideoframecolormanagement : public QObject
 private slots:
     void initTestCase()
     {
-        if (!isFFMPEGPlatform())
-            QSKIP("This test requires the ffmpeg backend to create test frames");
+        QSKIP_IF_NOT_FFMPEG("This test requires the FFmpeg backend to create test frames");
     }
 
     void qImageFromVideoFrame_returnsQImageWithCorrectColors_data()

@@ -38,7 +38,7 @@ void QtProtobufEnumTypesDeserializationTest::repeatedEnumMessageTest()
     QVERIFY(msg.localEnumList().isEmpty());
 
     msg.deserialize(m_serializer.get(), QByteArray::fromHex("0a06000102010203"));
-    const auto expected = RepeatedEnumMessage::LocalEnumRepeated{
+    const auto expected = QList<RepeatedEnumMessage::LocalEnum>{
         RepeatedEnumMessage::LocalEnum::LOCAL_ENUM_VALUE0,
         RepeatedEnumMessage::LocalEnum::LOCAL_ENUM_VALUE1,
         RepeatedEnumMessage::LocalEnum::LOCAL_ENUM_VALUE2,

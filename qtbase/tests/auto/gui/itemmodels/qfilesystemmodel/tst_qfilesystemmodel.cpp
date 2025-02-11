@@ -24,6 +24,7 @@
 #if defined(Q_OS_WIN)
 # include <qt_windows.h> // for SetFileAttributes
 #endif
+#include <private/qfileinfo_p.h>
 #include <private/qfilesystemengine_p.h>
 
 #include <algorithm>
@@ -112,6 +113,9 @@ private slots:
     void specialFiles();
 
     void fileInfo();
+
+    void pathWithTrailingSpace_data();
+    void pathWithTrailingSpace();
 
 protected:
     bool createFiles(QFileSystemModel *model, const QString &test_path,
@@ -1052,11 +1056,18 @@ void tst_QFileSystemModel::caseSensitivity()
         indexes.append(index);
     }
 
-    if (!QFileSystemEngine::isCaseSensitive()) {
-        // QTBUG-31103, QTBUG-64147: Verify that files can be accessed by paths with fLipPeD case.
+    QFileInfo tmpInfo(tmp);
+    auto *tmpInfoPriv = QFileInfoPrivate::get(&tmpInfo);
+    if (!qt_isCaseSensitive(tmpInfoPriv->fileEntry, tmpInfoPriv->metaData)) {
+        // Verify that files can be accessed by paths with fLipPeD case.
         for (int i = 0; i < paths.size(); ++i) {
+            const QModelIndex normalCaseIndex = indexes.at(i);
             const QModelIndex flippedCaseIndex = model->index(flipCase(paths.at(i)));
-            QCOMPARE(indexes.at(i), flippedCaseIndex);
+#if !defined(Q_OS_WIN)
+            QEXPECT_FAIL("", "QFileSystemModelNodePathKey is hard-coded to be case"
+                " sensitive on non-Windows and case-insensitive on Windows (QTBUG-31103)", Abort);
+#endif
+            QCOMPARE(normalCaseIndex, flippedCaseIndex);
         }
     }
 }
@@ -1287,6 +1298,78 @@ void tst_QFileSystemModel::fileInfo()
     idx = model.setRootPath(dirPath);
     QCOMPARE(model.fileInfo(idx), QFileInfo(dirPath));
 }
+
+void tst_QFileSystemModel::pathWithTrailingSpace_data()
+{
+    QTest::addColumn<QString>("input");
+    QTest::addColumn<QString>("foundAs");
+
+    static constexpr bool windows =
+#ifdef Q_OS_WIN
+        true;
+#else
+        false;
+#endif
+    // Cover the various cases as documented at
+    // https://learn.microsoft.com/en-us/troubleshoot/windows-client/shell-experience/file-folder-name-whitespace-characters
+
+    QTest::addRow("trailing space") << "space "
+        << (windows ? "space" : "space ");
+    QTest::addRow("leading space") << " leadingspace"
+        << (windows ? "leadingspace" : " leadingspace");
+    QTest::addRow("trailing dot") << "dot."
+        << (windows ? "dot" : "dot.");
+    QTest::addRow("leading dot") << ".dot" << ".dot";
+
+    QTest::addRow("spacedot .") << "spacedot ."
+        << (windows ? "spacedot" : "spacedot .");
+    QTest::addRow("dotspace. ") << "dotspace. "
+        << (windows ? "dotspace" : "dotspace. ");
+    QTest::addRow("invisible") << "      "
+        << (windows ? "" : "      ");
+
+    QTest::addRow("leading 0x3000") << "\u3000-x3000" << "\u3000-x3000";
+    QTest::addRow("trailing 0x3000") << "x3000-\u3000" << "x3000-\u3000";
+}
+
+void tst_QFileSystemModel::pathWithTrailingSpace()
+{
+    QFETCH(const QString, input);
+    QFETCH(const QString, foundAs);
+
+    const bool validInput = !foundAs.isEmpty();
+
+    QTemporaryDir temp;
+
+    QFileSystemModel model;
+    model.setReadOnly(false);
+    const QModelIndex rootIndex = model.setRootPath(temp.path());
+    const QDir rootDir = model.rootDirectory();
+    const QString absoluteInput = rootDir.absoluteFilePath(input);
+    const QString absoluteFoundAs = validInput ? rootDir.absoluteFilePath(foundAs)
+                                               : rootDir.absolutePath();
+
+    const QModelIndex createdIndex = model.mkdir(rootIndex, input);
+    QCOMPARE(createdIndex.isValid(), validInput);
+    if (createdIndex.isValid())
+        QCOMPARE(model.filePath(createdIndex), absoluteFoundAs);
+    const QModelIndex foundIndex = model.index(absoluteInput);
+    QVERIFY(foundIndex.isValid());
+    QCOMPARE(model.filePath(foundIndex), absoluteFoundAs);
+
+    if (createdIndex.isValid())
+        QVERIFY(model.rmdir(createdIndex));
+
+    const QPersistentModelIndex newFolder = model.mkdir(rootIndex, "New Folder");
+    QVERIFY(newFolder.isValid());
+    QVERIFY(model.flags(newFolder) & Qt::ItemIsEditable);
+    QCOMPARE(model.setData(newFolder, input, Qt::EditRole), validInput);
+    if (validInput) {
+        const QModelIndex renamedIndex = model.index(absoluteInput);
+        QVERIFY(renamedIndex.isValid());
+    }
+}
+
 
 QTEST_MAIN(tst_QFileSystemModel)
 #include "tst_qfilesystemmodel.moc"

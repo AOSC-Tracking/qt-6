@@ -18,13 +18,13 @@ namespace Qt3DExtras {
  */
 
 /*!
- * \qmlproperty QString Qt3D.Extras::ExtrudedTextMesh::text
+ * \qmlproperty string Qt3D.Extras::ExtrudedTextMesh::text
  *
  * Holds the text used for the mesh.
  */
 
 /*!
- * \qmlproperty QFont Qt3D.Extras::ExtrudedTextMesh::font
+ * \qmlproperty font Qt3D.Extras::ExtrudedTextMesh::font
  *
  * Holds the font of the text.
 

@@ -32,11 +32,6 @@ QQmlRefPointer<QQmlScriptData> QQmlScriptBlob::scriptData() const
     return m_scriptData;
 }
 
-bool QQmlScriptBlob::isNative() const
-{
-    return m_scriptData && !m_scriptData->m_value.isEmpty();
-}
-
 void QQmlScriptBlob::dataReceived(const SourceCodeData &data)
 {
     if (readCacheFile()) {
@@ -216,12 +211,10 @@ void QQmlScriptBlob::initializeFromCompilationUnit(
 
     const QStringList moduleRequests = unit->moduleRequests();
     for (const QString &request: moduleRequests) {
-        const QUrl relativeRequest = QUrl(request);
-        if (m_typeLoader->injectedScript(relativeRequest))
-            continue;
-
+        const QUrl relativeRequest(request);
         const QUrl absoluteRequest = unit->finalUrl().resolved(relativeRequest);
-        QQmlRefPointer<QQmlScriptBlob> absoluteBlob = typeLoader()->getScript(absoluteRequest);
+        QQmlRefPointer<QQmlScriptBlob> absoluteBlob
+                = typeLoader()->getScript(absoluteRequest, relativeRequest);
         if (absoluteBlob->m_scriptData && absoluteBlob->m_scriptData->m_precompiledScript)
             continue;
 
@@ -230,26 +223,6 @@ void QQmlScriptBlob::initializeFromCompilationUnit(
                 absoluteBlob, /* ### */QV4::CompiledData::Location(), /*qualifier*/QString(),
                 /*namespace*/QString());
     }
-}
-
-
-/*!
-    \internal
-
-    This initializes a dummy script blob from a "native" ECMAScript module.
-    Native modules are just JavaScript values, possibly objects with members.
-
-    \sa QJSEngine::registerModule()
- */
-void QQmlScriptBlob::initializeFromNative(const QV4::Value &value)
-{
-    Q_ASSERT(!m_scriptData);
-    m_scriptData.adopt(new QQmlScriptData());
-    m_scriptData->url = finalUrl();
-    m_scriptData->urlString = finalUrlString();
-    m_scriptData->m_loaded = true;
-    m_scriptData->m_value.set(QQmlEnginePrivate::getV4Engine(typeLoader()->engine()), value);
-    m_importCache->setBaseUrl(finalUrl(), finalUrlString());
 }
 
 QT_END_NAMESPACE

@@ -182,7 +182,8 @@ public:
     }
 
     void processMessages(const QList<QQmlJS::DiagnosticMessage> &messages,
-                         const QQmlJS::LoggerWarningId id);
+                         const QQmlJS::LoggerWarningId id,
+                         const QQmlJS::SourceLocation &sourceLocation = QQmlJS::SourceLocation{});
 
     void ignoreWarnings(uint32_t line, const QSet<QString> &categories)
     {
@@ -195,8 +196,8 @@ public:
     void setCode(const QString &code) { m_code = code; }
     QString code() const { return m_code; }
 
-    void setFileName(const QString &fileName) { m_fileName =  fileName; }
-    QString fileName() const { return m_fileName; }
+    void setFilePath(const QString &filePath) { m_filePath =  filePath; }
+    QString filePath() const { return m_filePath; }
 
 private:
     QMap<QString, QQmlJS::LoggerCategory> m_categories;
@@ -209,7 +210,7 @@ private:
              bool showFileName, const std::optional<QQmlJSFixSuggestion> &suggestion,
              const QString overrideFileName);
 
-    QString m_fileName;
+    QString m_filePath;
     QString m_code;
 
     QColorOutput m_output;

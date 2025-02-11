@@ -135,7 +135,7 @@ Item {
 
             onWheel: (wheel)=> {
                 // Adjust zoom level based on what zoom range we're in.
-                var zoomLevel = scatterGraph.zoomLevel;
+                var zoomLevel = scatterGraph.cameraZoomLevel;
                 if (zoomLevel > 100)
                     zoomLevel += wheel.angleDelta.y / 12.0;
                 else if (zoomLevel > 50)
@@ -147,7 +147,7 @@ Item {
                 else if (zoomLevel < 10)
                     zoomLevel = 10;
 
-                scatterGraph.zoomLevel = zoomLevel;
+                scatterGraph.cameraZoomLevel = zoomLevel;
             }
         }
 

@@ -111,11 +111,16 @@ Rectangle {
                 myTheme.labelBackgroundColor = Qt.rgba(Math.random(),
                                                    Math.random(),
                                                    Math.random(), 1.0)
+                myTheme.axisYLabelFont.family = customFont.font.family
+                graphsView.axisYSmoothing = 2 * Math.random()
+                // Generic label color, should affect titles and axes
+                myTheme.labelTextColor = Qt.rgba(Math.random(),
+                                                 Math.random(),
+                                                 Math.random(), 1.0)
+                // Override one axis, but not its title
                 myTheme.axisX.labelTextColor = Qt.rgba(Math.random(),
                                                    Math.random(),
                                                    Math.random(), 1.0)
-                graphsView.axisYSmoothing = 2 * Math.random()
-                myTheme.axisYLabelFont.family = customFont.font.family
             }
         }
     }
@@ -198,10 +203,14 @@ Rectangle {
         marginLeft: 100 // Space for legend
         axisX: BarCategoryAxis {
             categories: ["2007", "2008", "2009", "2010", "2011", "2012"]
+            titleVisible: true
+            titleText: "Year"
         }
         axisY: ValueAxis {
             subTickCount: 4
             max: 20
+            titleVisible: true
+            titleText: "Value"
         }
         theme: myTheme
         GraphsTheme {
@@ -227,15 +236,15 @@ Rectangle {
             grid.subWidth: 0.6
             axisX.mainColor: "#405060"
             axisX.subColor: "#606060"
-            axisX.labelTextColor: "#d0d090"
+            // axisX.labelTextColor: "#50d090"
             axisX.mainWidth: 1.6
             axisX.subWidth: 0.6
             axisY.mainColor: "#405060"
             axisY.subColor: "#606060"
-            axisY.labelTextColor: "#d0d090"
+            // axisY.labelTextColor: "#00d090"
             axisY.mainWidth: 1.6
             axisY.subWidth: 0.6
-            labelTextColor: "#d0d090"
+            labelTextColor: "#d0d090" // this should affect all axes
         }
         BarSeries {
             id: mySeries

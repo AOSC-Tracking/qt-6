@@ -2,6 +2,7 @@
 // Copyright (C) 2020 Alexey Edelev <semlanik@gmail.com>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
+#include "qtcoretypesnested.qpb.h"
 #include "qtcoretypes.qpb.h"
 
 #include <qtprotobuftestscommon.h>
@@ -39,6 +40,8 @@ private Q_SLOTS:
     void qRect();
     void qRectF();
     void qVersionNumber();
+
+    void nestedQUrlMessageDefined();
 
 private:
     QProtobufSerializer serializer;
@@ -570,6 +573,13 @@ void QtProtobufQtTypesQtCoreTest::qVersionNumber()
     msg.setTestField(version);
     msg.deserialize(&serializer, QByteArray::fromHex(emptyValue));
     QVERIFY(msg.testField().isNull());
+}
+
+void QtProtobufQtTypesQtCoreTest::nestedQUrlMessageDefined()
+{
+    NestedQUrlMessage::QUrlMessage msg;
+    msg.setTestField({"http://qt.io"});
+    QCOMPARE(msg.testField(), QUrl{"http://qt.io"});
 }
 
 QTEST_MAIN(QtProtobufQtTypesQtCoreTest)

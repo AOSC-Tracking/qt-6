@@ -44,6 +44,9 @@ private slots:
     void weakValuesAssignedAfterThePhaseThatShouldHandleWeakValues();
     void mapAndSetKeepValuesAlive();
     void jittedStoreLocalMarksValue();
+    void forInOnProxyMarksTarget();
+    void allocWithMemberDataMidwayDrain();
+    void markObjectWrappersAfterMarkWeakValues();
 };
 
 tst_qv4mm::tst_qv4mm()
@@ -71,7 +74,8 @@ void tst_qv4mm::arrayDataWriteBarrierInteraction()
     QV4::ScopedArrayObject array(scope, engine.newArrayObject());
     constexpr int initialCapacity = 8; // compare qv4arraydata.cpp
     for (int i = 0; i < initialCapacity; ++i) {
-        array->push_back(unprotectedObject->asReturnedValue());
+        // fromReturnedValue would generally be unsafe, but the gc is blocked here anyway
+        array->push_back(QV4::Value::fromReturnedValue(unprotectedObject->asReturnedValue()));
     }
     QVERIFY(!unprotectedObject->isMarked());
     engine.memoryManager->gcBlocked = QV4::MemoryManager::Unblocked;
@@ -518,7 +522,7 @@ void tst_qv4mm::mapAndSetKeepValuesAlive()
         QV4::Scope scope(&engine);
         auto map = jsEngine.evaluate("new Map()");
         QV4::ScopedFunctionObject afunction(scope, engine.memoryManager->alloc<QV4::FunctionObject>()); // hack, we just need about any function object
-        QV4::Value thisObject = QJSValuePrivate::asReturnedValue(&map);
+        QV4::Value thisObject = QV4::Value::fromReturnedValue(QJSValuePrivate::asReturnedValue(&map));
 
         QVERIFY(!engine.memoryManager->gcBlocked);
         // no scoped classes, as that would defeat the point of the test
@@ -562,7 +566,7 @@ void tst_qv4mm::mapAndSetKeepValuesAlive()
         QV4::Scope scope(&engine);
         auto map = jsEngine.evaluate("new WeakMap()");
         QV4::ScopedFunctionObject afunction(scope, engine.memoryManager->alloc<QV4::FunctionObject>()); // hack, we just need about any function object
-        QV4::Value thisObject = QJSValuePrivate::asReturnedValue(&map);
+        QV4::Value thisObject = QV4::Value::fromReturnedValue(QJSValuePrivate::asReturnedValue(&map));
 
         QVERIFY(!engine.memoryManager->gcBlocked);
         // no scoped classes, as that would defeat the point of the test
@@ -599,7 +603,7 @@ void tst_qv4mm::mapAndSetKeepValuesAlive()
         QV4::Scope scope(&engine);
         auto map = jsEngine.evaluate("new Set()");
         QV4::ScopedFunctionObject afunction(scope, engine.memoryManager->alloc<QV4::FunctionObject>()); // hack, we just need about any function object
-        QV4::Value thisObject = QJSValuePrivate::asReturnedValue(&map);
+        QV4::Value thisObject = QV4::Value::fromReturnedValue(QJSValuePrivate::asReturnedValue(&map));
 
         QVERIFY(!engine.memoryManager->gcBlocked);
         // no scoped classes, as that would defeat the point of the test
@@ -634,7 +638,7 @@ void tst_qv4mm::mapAndSetKeepValuesAlive()
         QV4::Scope scope(&engine);
         auto map = jsEngine.evaluate("new WeakSet()");
         QV4::ScopedFunctionObject afunction(scope, engine.memoryManager->alloc<QV4::FunctionObject>()); // hack, we just need about any function object
-        QV4::Value thisObject = QJSValuePrivate::asReturnedValue(&map);
+        QV4::Value thisObject = QV4::Value::fromReturnedValue(QJSValuePrivate::asReturnedValue(&map));
 
         QVERIFY(!engine.memoryManager->gcBlocked);
         // no scoped classes, as that would defeat the point of the test
@@ -728,6 +732,104 @@ void tst_qv4mm::jittedStoreLocalMarksValue()
     if (result == -1)
         QSKIP("Could not run JIT");
     QCOMPARE(result, 0);
+}
+
+QV4::ReturnedValue method_in_use(const QV4::FunctionObject *, const QV4::Value *, const QV4::Value *argv, int argc) {
+    static QV4::Value::HeapBasePtr target = nullptr;
+
+    if (argc == 1) {
+        target = argv[0].heapObject();
+    }
+
+    Q_ASSERT(target);
+    return QV4::Encode(target->inUse());
+}
+
+void tst_qv4mm::forInOnProxyMarksTarget() {
+    QQmlEngine engine;
+    auto *v4 = engine.handle();
+    auto globalObject = v4->globalObject;
+    globalObject->defineDefaultProperty(QStringLiteral("__inUse"), method_in_use);
+
+    QQmlComponent comp(&engine, testFileUrl("forInOnProxyMarksTarget.qml"));
+    QVERIFY(comp.isReady());
+    std::unique_ptr<QObject> root {comp.create()};
+
+    QVERIFY(root);
+    QVERIFY(root->property("wasInUseBeforeRevoke").toBool());
+    QVERIFY(root->property("wasInUseAfterRevoke").toBool());
+}
+
+
+struct DebugMemoryManager : QV4::MemoryManager
+{
+public:
+     QV4::Heap::Object *allocObjectWithMemberData(const QV4::VTable *vtable, uint nMembers)
+    {
+        return  QV4::MemoryManager::allocObjectWithMemberData(vtable, nMembers);
+    }
+};
+
+void tst_qv4mm::allocWithMemberDataMidwayDrain()
+{
+    QV4::ExecutionEngine v4 {};
+
+
+    QCOMPARE(v4.memoryManager->gcBlocked, QV4::MemoryManager::Unblocked);
+
+    auto sm = v4.memoryManager->gcStateMachine.get();
+    sm->reset();
+    v4.memoryManager->gcBlocked = QV4::MemoryManager::NormalBlocked;
+    while (sm->state != QV4::GCState::InitCallDestroyObjects) {
+        QV4::GCStateInfo& stateInfo = sm->stateInfoMap[int(sm->state)];
+        sm->state = stateInfo.execute(sm, sm->stateData);
+    }
+    QCOMPARE(sm->state, QV4::GCState::InitCallDestroyObjects);
+
+    v4.memoryManager->markStack()->setSoftLimit(0);
+    // UB cast, but works in practice
+    auto *debugMM =  static_cast<DebugMemoryManager *>(v4.memoryManager);
+    // should not trigger an assertion!
+    auto *o = debugMM->allocObjectWithMemberData(QV4::Object::staticVTable(), 1024);
+    // need to set the IC of the object itself, otherwise it will cause issues during
+    // engine shutdown
+    o->internalClass.set(&v4, QV4::Object::defaultInternalClass(&v4));
+    QVERIFY(o); // dummy check
+}
+
+void tst_qv4mm::markObjectWrappersAfterMarkWeakValues()
+{
+    // Advance gc to just after MarkWeakValues
+    const auto setupGC = [](QV4::ExecutionEngine *v4) {
+        QCOMPARE(v4->memoryManager->gcBlocked, QV4::MemoryManager::Unblocked);
+        auto sm = v4->memoryManager->gcStateMachine.get();
+        sm->reset();
+        v4->memoryManager->gcBlocked = QV4::MemoryManager::NormalBlocked;
+        const QV4::GCState targetState = QV4::GCState(QV4::GCState::MarkWeakValues + 1);
+        while (sm->state != targetState) {
+            QV4::GCStateInfo& stateInfo = sm->stateInfoMap[int(sm->state)];
+            sm->state = stateInfo.execute(sm, sm->stateData);
+        }
+        QCOMPARE(sm->state,  targetState);
+    };
+
+    QQmlEngine engine;
+    QV4::ExecutionEngine *v4 = engine.handle();
+    setupGC(v4);
+
+    QObject *object = new QObject;
+    object->setObjectName("yep");
+    QJSEngine::setObjectOwnership(object, QJSEngine::JavaScriptOwnership);
+    engine.rootContext()->setContextProperty("prop", object);
+    (void) QV4::QObjectWrapper::wrap(v4, object);
+    QVERIFY(v4->memoryManager->tryForceGCCompletion());
+
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QCoreApplication::processEvents();
+
+    const QVariant retrieved = engine.rootContext()->contextProperty("prop");
+    QVERIFY(qvariant_cast<QObject *>(retrieved));
+    QCOMPARE(qvariant_cast<QObject *>(retrieved)->objectName(), "yep");
 }
 
 QTEST_MAIN(tst_qv4mm)

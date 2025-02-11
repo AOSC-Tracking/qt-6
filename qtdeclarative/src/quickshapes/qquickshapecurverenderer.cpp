@@ -310,7 +310,7 @@ void QQuickShapeCurveRenderer::setAsyncCallback(void (*callback)(void *), void *
 
 void QQuickShapeCurveRenderer::endSync(bool async)
 {
-    bool didKickOffAsync = false;
+    bool asyncThreadsRunning = false;
 
     for (PathData &pathData : m_paths) {
         if (!pathData.m_dirty)
@@ -324,16 +324,18 @@ void QQuickShapeCurveRenderer::endSync(bool async)
         if (pathData.currentRunner) {
             // Already performing async computing. New dirty flags will be handled in the next sync
             // after the current computation is done and the item is updated
+            asyncThreadsRunning = true;
             continue;
         }
 
-        createRunner(&pathData);
+        pathData.currentRunner = new QQuickShapeCurveRunnable;
+        setUpRunner(&pathData);
 
 #if QT_CONFIG(thread)
         if (async) {
             pathData.currentRunner->isAsync = true;
             QThreadPool::globalInstance()->start(pathData.currentRunner);
-            didKickOffAsync = true;
+            asyncThreadsRunning = true;
         } else
 #endif
         {
@@ -341,31 +343,33 @@ void QQuickShapeCurveRenderer::endSync(bool async)
         }
     }
 
-    if (async && !didKickOffAsync && m_asyncCallback)
+    if (async && !asyncThreadsRunning && m_asyncCallback)
         m_asyncCallback(m_asyncCallbackData);
 }
 
-void QQuickShapeCurveRenderer::createRunner(PathData *pathData)
+void QQuickShapeCurveRenderer::setUpRunner(PathData *pathData)
 {
-    Q_ASSERT(!pathData->currentRunner);
-    QQuickShapeCurveRunnable *runner = new QQuickShapeCurveRunnable;
-    runner->setAutoDelete(false);
+    Q_ASSERT(pathData->currentRunner);
+    QQuickShapeCurveRunnable *runner = pathData->currentRunner;
+    runner->isDone = false;
     runner->pathData = *pathData;
     runner->pathData.fillNodes.clear();
     runner->pathData.strokeNodes.clear();
     runner->pathData.currentRunner = nullptr;
-
-    pathData->currentRunner = runner;
     pathData->m_dirty = 0;
-    QObject::connect(runner, &QQuickShapeCurveRunnable::done, qApp,
-                     [this](QQuickShapeCurveRunnable *r) {
-                         r->isDone = true;
-                         if (r->orphaned) {
-                             delete r; // Renderer was destroyed
-                         } else if (r->isAsync) {
-                             maybeUpdateAsyncItem();
-                         }
-                     });
+    if (!runner->isInitialized) {
+        runner->isInitialized = true;
+        runner->setAutoDelete(false);
+        QObject::connect(runner, &QQuickShapeCurveRunnable::done, qApp,
+                         [this](QQuickShapeCurveRunnable *r) {
+                             r->isDone = true;
+                             if (r->orphaned) {
+                                 delete r; // Renderer was destroyed
+                             } else if (r->isAsync) {
+                                 maybeUpdateAsyncItem();
+                             }
+                         });
+    }
 }
 
 void QQuickShapeCurveRenderer::maybeUpdateAsyncItem()
@@ -442,7 +446,6 @@ void QQuickShapeCurveRenderer::updateNode()
                 }
                 toBeDeleted += pathData.fillNodes;
                 pathData.fillNodes = newData.fillNodes;
-                newData.fillNodes.clear();
             }
             if (newData.m_dirty & StrokeDirty) {
                 for (auto *node : std::as_const(newData.strokeNodes)) {
@@ -453,20 +456,28 @@ void QQuickShapeCurveRenderer::updateNode()
                 }
                 toBeDeleted += pathData.strokeNodes;
                 pathData.strokeNodes = newData.strokeNodes;
-                newData.strokeNodes.clear();
             }
-
             if (newData.m_dirty & UniformsDirty)
-                updateUniforms(pathData);
+                updateUniforms(newData);
 
-            // if (pathData.m_dirty && pathData.m_dirty != UniformsDirty && currentRunner.isAsync)
-            //     qDebug("### should enqueue a new sync?");
+            // Ownership of new nodes have been transferred to root node
+            newData.fillNodes.clear();
+            newData.strokeNodes.clear();
 
-            pathData.currentRunner->deleteLater();
-            pathData.currentRunner = nullptr;
+#if QT_CONFIG(thread)
+            if (pathData.currentRunner->isAsync && (pathData.m_dirty & ~UniformsDirty)) {
+                // New changes have arrived while runner was computing; restart it to handle them
+                setUpRunner(&pathData);
+                QThreadPool::globalInstance()->start(pathData.currentRunner);
+            } else
+#endif
+            {
+                pathData.currentRunner->deleteLater();
+                pathData.currentRunner = nullptr;
+            }
         }
 
-        if (pathData.m_dirty == UniformsDirty) {
+        if (pathData.m_dirty == UniformsDirty && !pathData.currentRunner) {
             // Simple case so no runner was created in endSync(); handle it directly here
             updateUniforms(pathData);
             pathData.m_dirty = 0;
@@ -512,15 +523,15 @@ void QQuickShapeCurveRenderer::processPath(PathData *pathData)
     if (dirtyFlags & StrokeDirty) {
         if (pathData->isStrokeVisible()) {
             const QPen &pen = pathData->pen;
-            if (pen.style() == Qt::SolidLine)
-                pathData->strokePath = pathData->path;
-            else
-                pathData->strokePath = pathData->path.dashed(pen.widthF(), pen.dashPattern(), pen.dashOffset());
-
+            const bool solid = (pen.style() == Qt::SolidLine);
+            const QQuadPath &strokePath = solid ? pathData->path
+                                                : pathData->path.dashed(pen.widthF(),
+                                                                        pen.dashPattern(),
+                                                                        pen.dashOffset());
             if (useTriangulatingStroker)
-                pathData->strokeNodes = addTriangulatingStrokerNodes(*pathData);
+                pathData->strokeNodes = addTriangulatingStrokerNodes(strokePath, pen);
             else
-                pathData->strokeNodes = addCurveStrokeNodes(*pathData);
+                pathData->strokeNodes = addCurveStrokeNodes(strokePath, pen);
         }
     }
 }
@@ -592,21 +603,19 @@ QQuickShapeCurveRenderer::NodeList QQuickShapeCurveRenderer::addFillNodes(const 
     return ret;
 }
 
-QQuickShapeCurveRenderer::NodeList QQuickShapeCurveRenderer::addTriangulatingStrokerNodes(const PathData &pathData)
+QQuickShapeCurveRenderer::NodeList QQuickShapeCurveRenderer::addTriangulatingStrokerNodes(const QQuadPath &path, const QPen &pen)
 {
     NodeList ret;
-    const QColor &color = pathData.pen.color();
+    const QColor &color = pen.color();
 
     QVector<QQuickShapeWireFrameNode::WireFrameVertex> wfVertices;
 
     QTriangulatingStroker stroker;
-    const auto painterPath = pathData.strokePath.toPainterPath();
+    const auto painterPath = path.toPainterPath();
     const QVectorPath &vp = qtVectorPathForPath(painterPath);
-    QPen pen = pathData.pen;
     stroker.process(vp, pen, {}, {});
 
     auto *node = new QSGCurveFillNode;
-    node->setGradientType(pathData.gradientType);
 
     auto uvForPoint = [](QVector2D v1, QVector2D v2, QVector2D p)
     {
@@ -682,7 +691,6 @@ QQuickShapeCurveRenderer::NodeList QQuickShapeCurveRenderer::addTriangulatingStr
     QVector<quint32> indices = node->uncookedIndexes();
     if (indices.size() > 0) {
         node->setColor(color);
-        node->setFillGradient(pathData.gradient);
 
         node->cookGeometry();
         ret.append(node);
@@ -739,26 +747,24 @@ void QQuickShapeCurveRenderer::setDebugVisualization(int options)
     debugVisualizationFlags = options;
 }
 
-QQuickShapeCurveRenderer::NodeList QQuickShapeCurveRenderer::addCurveStrokeNodes(const PathData &pathData)
+QQuickShapeCurveRenderer::NodeList QQuickShapeCurveRenderer::addCurveStrokeNodes(const QQuadPath &path, const QPen &pen)
 {
     NodeList ret;
-    const QColor &color = pathData.pen.color();
 
     const bool debug = debugVisualization() & DebugCurves;
     auto *node = new QSGCurveStrokeNode;
     node->setDebug(0.2f * debug);
     QVector<QQuickShapeWireFrameNode::WireFrameVertex> wfVertices;
 
-    const float miterLimit = pathData.pen.miterLimit();
-    const float penWidth = pathData.pen.widthF();
+    const float penWidth = pen.widthF();
 
     static const int subdivisions = qEnvironmentVariable("QT_QUICKSHAPES_STROKE_SUBDIVISIONS", QStringLiteral("3")).toInt();
 
-    QSGCurveProcessor::processStroke(pathData.strokePath,
-                                     miterLimit,
+    QSGCurveProcessor::processStroke(path,
+                                     pen.miterLimit(),
                                      penWidth,
-                                     pathData.pen.joinStyle(),
-                                     pathData.pen.capStyle(),
+                                     pen.joinStyle(),
+                                     pen.capStyle(),
                                      [&wfVertices, &node](const std::array<QVector2D, 3> &s,
                                                           const std::array<QVector2D, 3> &p,
                                                           const std::array<QVector2D, 3> &n,
@@ -780,7 +786,7 @@ QQuickShapeCurveRenderer::NodeList QQuickShapeCurveRenderer::addCurveStrokeNodes
 
     auto indexCopy = node->uncookedIndexes(); // uncookedIndexes get delete on cooking
 
-    node->setColor(color);
+    node->setColor(pen.color());
     node->setStrokeWidth(penWidth);
     node->cookGeometry();
     ret.append(node);

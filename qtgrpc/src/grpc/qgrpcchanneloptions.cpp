@@ -18,10 +18,17 @@ using namespace QtGrpc;
     \class QGrpcChannelOptions
     \inmodule QtGrpc
     \since 6.6
-    \brief The QGrpcChannelOptions is an storage class used to set additional channel options.
+    \brief The QGrpcChannelOptions class offers various options for fine-tuning
+    a gRPC channel.
 
-    QGrpcChannelOptions provides a set of functions to set and access the channel and default call
-    options that are used by gRPC channels to communicate with the services.
+    QGrpcChannelOptions lets you customize a \gRPC channel. Some options apply
+    to all remote procedure calls (RPCs) that operate on the associated
+    channel, which is used to communicate with services.
+
+    Override options for specific RPCs with QGrcCallOptions.
+
+    \note It is up to the channel's implementation to determine the specifics
+    of these options.
 */
 
 class QGrpcChannelOptionsPrivate : public QSharedData
@@ -38,56 +45,55 @@ public:
 QT_DEFINE_QESDP_SPECIALIZATION_DTOR(QGrpcChannelOptionsPrivate)
 
 /*!
-    Constructs a QGrpcChannelOptions.
+    Default-constructs an empty QGrpcChannelOptions.
 */
 QGrpcChannelOptions::QGrpcChannelOptions() : d_ptr(new QGrpcChannelOptionsPrivate())
 {
 }
 
 /*!
-    Construct a copy of QGrpcChannelOptions with \a other object.
+    Copy-constructs a QGrpcChannelOptions from \a other.
 */
 QGrpcChannelOptions::QGrpcChannelOptions(const QGrpcChannelOptions &other) = default;
 
 /*!
-    Assigns \a other to this QGrpcChannelOptions and returns a reference to this
-    QGrpcChannelOptions.
+    Assigns \a other to this QGrpcChannelOptions and returns a reference to the
+    updated object.
 */
 QGrpcChannelOptions &QGrpcChannelOptions::operator=(const QGrpcChannelOptions &other) = default;
 
 /*!
-    \fn QGrpcChannelOptions::QGrpcChannelOptions(QGrpcChannelOptions &&other) noexcept
+    \fn QGrpcChannelOptions::QGrpcChannelOptions(QGrpcChannelOptions &&other)
+
     Move-constructs a new QGrpcChannelOptions from \a other.
 
-    \note The moved-from object \a other is placed in a partially-formed state,
-    in which the only valid operations are destruction and assignment of a new
-    value.
+    \include qtgrpc-shared.qdocinc move-note-desc
 */
 
 /*!
-    \fn QGrpcChannelOptions &QGrpcChannelOptions::operator=(QGrpcChannelOptions &&other) noexcept
-    Move-assigns \a other to this QGrpcChannelOptions instance and returns a
-    reference to it.
+    \fn QGrpcChannelOptions &QGrpcChannelOptions::operator=(QGrpcChannelOptions &&other)
 
-    \note The moved-from object \a other is placed in a partially-formed state,
-    in which the only valid operations are destruction and assignment of a new
-    value.
+    Move-assigns \a other to this QGrpcChannelOptions and returns a reference
+    to the updated object.
+
+    \include qtgrpc-shared.qdocinc move-note-desc
 */
 
 /*!
     \since 6.8
-    \fn void QGrpcChannelOptions::swap(QGrpcChannelOptions &other) noexcept
-    Swaps this instance with \a other. This operation is very fast and never fails.
+    \fn void QGrpcChannelOptions::swap(QGrpcChannelOptions &other)
+
+    \include qtgrpc-shared.qdocinc swap-desc
 */
 
 /*!
-    Destroys the QGrpcChannelOptions object.
+    Destroys the QGrpcChannelOptions.
 */
 QGrpcChannelOptions::~QGrpcChannelOptions() = default;
 
 /*!
     \since 6.8
-    Constructs a new QVariant object from this QGrpcChannelOptions.
+    \include qtgrpc-shared.qdocinc qvariant-desc
 */
 QGrpcChannelOptions::operator QVariant() const
 {
@@ -95,7 +101,14 @@ QGrpcChannelOptions::operator QVariant() const
 }
 
 /*!
-    Sets deadline value with \a timeout and returns updated QGrpcChannelOptions object.
+    Sets the \a timeout for the channel and returns a reference to the updated
+    object.
+
+    \include qgrpccalloptions.cpp set-deadline-desc
+
+    \note The deadline set via the channel options applies to all RPCs that
+    operate on the channel, except those overridden by
+    QGrpcCallOptions::setDeadline().
 */
 QGrpcChannelOptions &QGrpcChannelOptions::setDeadlineTimeout(std::chrono::milliseconds timeout)
 {
@@ -111,10 +124,14 @@ QGrpcChannelOptions &QGrpcChannelOptions::setDeadlineTimeout(std::chrono::millis
     \fn QGrpcChannelOptions &QGrpcChannelOptions::setMetadata(const QHash<QByteArray, QByteArray> &metadata)
     \fn QGrpcChannelOptions &QGrpcChannelOptions::setMetadata(QHash<QByteArray, QByteArray> &&metadata)
 
-    Sets \a metadata for all calls and returns updated QGrpcChannelOptions object.
+    Sets the client \a metadata for the channel and returns a reference to the
+    updated object.
 
-    For HTTP2-based channels, \a metadata is converted into HTTP/2 headers, that
-    added to each HTTP/2 request.
+    \include qgrpccalloptions.cpp set-metadata-desc
+
+    \note The metadata set via the channel options applies to all RPCs that
+    operate on the channel, except those overridden by
+    QGrpcCallOptions::setMetadata().
 */
 QGrpcChannelOptions &QGrpcChannelOptions::setMetadata(const QHash<QByteArray, QByteArray> &metadata)
 {
@@ -138,11 +155,9 @@ QGrpcChannelOptions &QGrpcChannelOptions::setMetadata(QHash<QByteArray, QByteArr
 
 /*!
     \since 6.8
-    Sets the serialization \a format in the channel and returns updated
-    QGrpcChannelOptions object.
 
-    The serialization \a format should be considered in \l QAbstractGrpcChannel
-    implementations.
+    Sets the serialization \a format for the channel and returns a reference to
+    the updated object.
 */
 QGrpcChannelOptions &
 QGrpcChannelOptions::setSerializationFormat(const QGrpcSerializationFormat &format)
@@ -156,12 +171,10 @@ QGrpcChannelOptions::setSerializationFormat(const QGrpcSerializationFormat &form
 }
 
 /*!
-    Returns deadline value for setting up the channel.
+    Returns the timeout duration that is used to calculate the deadline for the
+    channel.
 
-    Deadline value controls the maximum execution time of any call or stream
-    executed on the channel.
-
-    If value was not set returns empty std::optional.
+    If this field is unset, returns an empty \c {std::optional}.
 */
 std::optional<std::chrono::milliseconds> QGrpcChannelOptions::deadlineTimeout() const noexcept
 {
@@ -170,12 +183,12 @@ std::optional<std::chrono::milliseconds> QGrpcChannelOptions::deadlineTimeout() 
 }
 
 /*!
-    \fn const QHash<QByteArray, QByteArray> &QGrpcChannelOptions::metadata() const & noexcept
-    \fn QHash<QByteArray, QByteArray> QGrpcChannelOptions::metadata() && noexcept
+    \fn const QHash<QByteArray, QByteArray> &QGrpcChannelOptions::metadata() const &
+    \fn QHash<QByteArray, QByteArray> QGrpcChannelOptions::metadata() &&
 
-    Returns metadata used for every call on the channel.
+    Returns the client metadata for the channel.
 
-    If value was not set returns empty QHash<QByteArray, QByteArray>.
+    If this field is unset, returns empty metadata.
 */
 const QHash<QByteArray, QByteArray> &QGrpcChannelOptions::metadata() const & noexcept
 {
@@ -193,7 +206,11 @@ QHash<QByteArray, QByteArray> QGrpcChannelOptions::metadata() &&
 
 /*!
     \since 6.8
-    Returns the serialization format used in \l QAbstractGrpcChannel implementations.
+
+    Returns the serialization format used by the channel.
+
+    If this field is unset, returns a \l {QtGrpc::SerializationFormat::}
+    {Default} constructed serialization format.
  */
 QGrpcSerializationFormat QGrpcChannelOptions::serializationFormat() const
 {
@@ -203,7 +220,8 @@ QGrpcSerializationFormat QGrpcChannelOptions::serializationFormat() const
 
 #if QT_CONFIG(ssl)
 /*!
-    Sets SSL configuration with \a sslConfiguration and returns updated QGrpcChannelOptions object.
+    Sets the \a sslConfiguration for the channel and returns a reference to the
+    updated object.
 */
 QGrpcChannelOptions &
 QGrpcChannelOptions::setSslConfiguration(const QSslConfiguration &sslConfiguration)
@@ -217,9 +235,9 @@ QGrpcChannelOptions::setSslConfiguration(const QSslConfiguration &sslConfigurati
 }
 
 /*!
-    Returns SSL configuration for the channel.
+    Returns the SSL configuration for the channel.
 
-    If value was not set returns empty std::optional.
+    If this field is unset, returns an empty \c {std::optional}.
 */
 std::optional<QSslConfiguration> QGrpcChannelOptions::sslConfiguration() const
 {
@@ -232,6 +250,7 @@ std::optional<QSslConfiguration> QGrpcChannelOptions::sslConfiguration() const
 /*!
     \since 6.8
     \fn QDebug QGrpcChannelOptions::operator<<(QDebug debug, const QGrpcChannelOptions &chOpts)
+
     Writes \a chOpts to the specified stream \a debug.
 */
 QDebug operator<<(QDebug debug, const QGrpcChannelOptions &chOpts)

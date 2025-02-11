@@ -296,7 +296,7 @@ QObject *QQuickDragAttached::target() const
 }
 
 /*!
-    \qmlattachedproperty QPointF QtQuick::Drag::hotSpot
+    \qmlattachedproperty point QtQuick::Drag::hotSpot
 
     This property holds the drag position relative to the top left of the item.
 
@@ -325,7 +325,7 @@ void QQuickDragAttached::setHotSpot(const QPointF &hotSpot)
 }
 
 /*!
-    \qmlattachedproperty QUrl QtQuick::Drag::imageSource
+    \qmlattachedproperty url QtQuick::Drag::imageSource
     \since 5.8
 
     This property holds the URL of the image which will be used to represent
@@ -386,8 +386,19 @@ QSize QQuickDragAttached::imageSourceSize() const
     Q_D(const QQuickDragAttached);
     int width = d->imageSourceSize.width();
     int height = d->imageSourceSize.height();
-    return QSize(width != -1 ? width : d->pixmapLoader.width(),
-                 height != -1 ? height : d->pixmapLoader.height());
+    // If width or height is invalid, check whether the size is valid from the loaded image.
+    // If it ends up 0x0 though, leave it as an invalid QSize instead (-1 x -1).
+    if (width == -1) {
+        width = d->pixmapLoader.width();
+        if (!width)
+            width = -1;
+    }
+    if (height == -1) {
+        height = d->pixmapLoader.height();
+        if (!height)
+            height = -1;
+    }
+    return QSize(width, height);
 }
 
 void QQuickDragAttached::setImageSourceSize(const QSize &size)

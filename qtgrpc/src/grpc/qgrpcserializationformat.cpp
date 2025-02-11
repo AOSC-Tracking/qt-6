@@ -18,17 +18,47 @@ QT_BEGIN_NAMESPACE
     \class QGrpcSerializationFormat
     \inmodule QtGrpc
     \compares equality
-    \brief The QGrpcSerializationFormat class holds the protobuf message
-           serializer and the related content type suffix.
     \since 6.8
+    \brief The QGrpcSerializationFormat class holds the protobuf message
+    serializer and the associated content-type suffix.
 
-    Provides a serializer and the content type assigned to it to
-    \l QAbstractGrpcChannel implementations.
+    The QGrpcSerializationFormat class contains the \l{serializer} used for
+    serializing and deserializing protobuf messages, as well as the associated
+    content-type \l{suffix}, which indicates the message encoding in transport.
+    For HTTP/2 specific details see the \l{Content-Type} section.
 
-    To set serializer format, use either one of the existing presets or the user
-    serializer.
+    \note The content-type is transport, and therefore implementation specific.
 
-    \sa QAbstractGrpcChannel
+    The class can be constructed using one of the
+    \l{QtGrpc::}{SerializationFormat} presets or a custom suffix and
+    serializer:
+
+    \code
+        QGrpcSerializationFormat jsonFormat(QtGrpc::SerializationFormat::Json);
+    \endcode
+
+    This creates a QProtobufJsonSerializer with the \c{json} suffix. For HTTP/2
+    transportation this results in the \c{application/grpc+json} content-type.
+
+//! [custom-serializer-code]
+    \code
+        class DummySerializer : public QAbstractProtobufSerializer
+        {
+            ...
+        };
+        QGrpcSerializationFormat dummyFormat("dummy", std::make_shared<DummySerializer>());
+    \endcode
+//! [custom-serializer-code]
+
+//! [custom-serializer-desc]
+    This uses \c{DummySerializer} for encoding and decoding messages with the
+    \c{dummy} suffix. For HTTP/2 transportation this results in the
+    \c{application/grpc+dummy} content-type.
+
+    \note Custom serializers require server support for the specified format.
+//! [custom-serializer-desc]
+
+    \sa QGrpcChannelOptions::serializationFormat
 */
 
 class QGrpcSerializationFormatPrivate : public QSharedData
@@ -47,10 +77,10 @@ public:
 QT_DEFINE_QESDP_SPECIALIZATION_DTOR(QGrpcSerializationFormatPrivate)
 
 /*!
-    Creates a new QGrpcSerializationFormat object with the given preset
-    \a format.
+    Constructs a new QGrpcSerializationFormat with the specified preset \a
+    format.
 
-    A \l QtGrpc::SerializationFormat::Default format is used by default.
+    The default format used is \l {QtGrpc::} {SerializationFormat::Default}.
 */
 QGrpcSerializationFormat::QGrpcSerializationFormat(SerializationFormat format)
     : d_ptr(format == SerializationFormat::Json
@@ -64,13 +94,13 @@ QGrpcSerializationFormat::QGrpcSerializationFormat(SerializationFormat format)
 }
 
 /*!
-    Destroys the QGrpcSerializationFormat object.
+    Destroys the QGrpcSerializationFormat.
 */
 QGrpcSerializationFormat::~QGrpcSerializationFormat() = default;
 
 /*!
-    Creates a new QGrpcSerializationFormat object with the custom content type
-    \a suffix and \a serializer.
+    Constructs a new QGrpcSerializationFormat with a custom content type
+    specified by \a suffix and a protobuf message \a serializer.
 */
 QGrpcSerializationFormat::QGrpcSerializationFormat(QByteArrayView suffix,
                                                    std::shared_ptr<QAbstractProtobufSerializer>
@@ -94,9 +124,7 @@ QGrpcSerializationFormat::operator=(const QGrpcSerializationFormat &other) = def
     \fn QGrpcSerializationFormat::QGrpcSerializationFormat(QGrpcSerializationFormat &&other) noexcept
     Move-constructs a new QGrpcSerializationFormat from \a other.
 
-    \note The moved-from object \a other is placed in a partially-formed state,
-    in which the only valid operations are destruction and assignment of a new
-    value.
+    \include qtgrpc-shared.qdocinc move-note-desc
 */
 
 /*!
@@ -104,20 +132,20 @@ QGrpcSerializationFormat::operator=(const QGrpcSerializationFormat &other) = def
     Move-assigns \a other to this QGrpcSerializationFormat instance and returns
     a reference to it.
 
-    \note The moved-from object \a other is placed in a partially-formed state,
-    in which the only valid operations are destruction and assignment of a new
-    value.
+    \include qtgrpc-shared.qdocinc move-note-desc
 */
 
 /*!
     \since 6.8
     \fn void QGrpcSerializationFormat::swap(QGrpcSerializationFormat &other) noexcept
-    Swaps this instance with \a other. This operation is very fast and never fails.
+
+    \include qtgrpc-shared.qdocinc swap-desc
 */
 
 /*!
     \since 6.8
-    Constructs a new QVariant object from this QGrpcSerializationFormat.
+
+    \include qtgrpc-shared.qdocinc qvariant-desc
 */
 QGrpcSerializationFormat::operator QVariant() const
 {

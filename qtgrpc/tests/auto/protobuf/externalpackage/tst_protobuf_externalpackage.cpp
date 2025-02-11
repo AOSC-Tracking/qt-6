@@ -26,8 +26,8 @@ using namespace qtprotobufnamespace::tests;
 void QtProtobufExternalPackageGenerationTest::repeatedExternalComplexMessageTest()
 {
     const char *propertyName = "testExternalComplexData";
-    qProtobufAssertMessagePropertyRegistered<RepeatedExternalComplexMessage, qtprotobufnamespace1::externaltests::ExternalComplexMessageRepeated>(
-                1, "qtprotobufnamespace1::externaltests::ExternalComplexMessageRepeated", propertyName);
+    qProtobufAssertMessagePropertyRegistered<RepeatedExternalComplexMessage, QList<qtprotobufnamespace1::externaltests::ExternalComplexMessage>>(
+                1, "QList<qtprotobufnamespace1::externaltests::ExternalComplexMessage>", propertyName);
 
     qtprotobufnamespace1::externaltests::ExternalInt32Message complexMessage;
     complexMessage.setLocalList({1, 2, 3, 4, 5});
@@ -35,12 +35,12 @@ void QtProtobufExternalPackageGenerationTest::repeatedExternalComplexMessageTest
     qtprotobufnamespace1::externaltests::ExternalComplexMessage externalMessage;
     externalMessage.setTestFieldInt(complexMessage);
 
-    qtprotobufnamespace1::externaltests::ExternalComplexMessageRepeated complexMessageList;
+    QList<qtprotobufnamespace1::externaltests::ExternalComplexMessage>complexMessageList;
     complexMessageList << externalMessage;
 
     RepeatedExternalComplexMessage test;
     QVERIFY(test.setProperty(propertyName, QVariant::fromValue(complexMessageList)));
-    QCOMPARE(test.property(propertyName).value<qtprotobufnamespace1::externaltests::ExternalComplexMessageRepeated>(), complexMessageList);
+    QCOMPARE(test.property(propertyName).value<QList<qtprotobufnamespace1::externaltests::ExternalComplexMessage>>(), complexMessageList);
     QCOMPARE(test.testExternalComplex(), complexMessageList);
 }
 

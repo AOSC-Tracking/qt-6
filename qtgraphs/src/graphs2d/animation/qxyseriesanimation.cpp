@@ -3,6 +3,21 @@
 
 #include "qxyseriesanimation_p.h"
 
+/*!
+    \qmltype XYSeriesAnimation
+    \qmlabstract
+    \inqmlmodule QtGraphs
+    \ingroup graphs_qml_2D
+    \inherits GraphAnimation
+    \brief An animation type which signifies the animation for points.
+
+    XYSeriesAnimation is based on GraphAnimation and encapsulates all animations available to XYSeries graphs.
+    This type initializes the state for its derived animations, but, as it is absract, can not be directly used
+    for animations. See the child types GraphPointAnimation and SplineControlAnimation.
+
+    \sa GraphAnimation, GraphPointAnimation, SplineControlAnimation
+*/
+
 QXYSeriesAnimation::QXYSeriesAnimation(QObject *parent)
     : QGraphAnimation(parent)
 {}

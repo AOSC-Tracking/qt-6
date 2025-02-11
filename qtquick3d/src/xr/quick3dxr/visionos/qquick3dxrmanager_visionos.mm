@@ -22,25 +22,82 @@
 #include <QtGui/qguiapplication_platform.h>
 
 #include <QtCore/qoperatingsystemversion.h>
+#include <QtCore/qloggingcategory.h>
 
 QT_BEGIN_NAMESPACE
+
+Q_DECLARE_LOGGING_CATEGORY(lcQuick3DXr);
+
+static const char s_renderThreadName[] = "QQuick3DXrRenderThread";
 
 class CompositorLayer : public QObject, public QNativeInterface::QVisionOSApplication::ImmersiveSpaceCompositorLayer
 {
     Q_OBJECT
 public:
+    CompositorLayer() = default;
+    ~CompositorLayer() final
+    {
+        m_xrManager = nullptr;
+        m_layerRenderer = nullptr;
+        m_worldTrackingProvider = nullptr;
+        m_arSession = nullptr;
+        m_initialized = false;
+    }
+
+    using EventT = std::underlying_type_t<QEvent::Type>;
+    enum Event : EventT
+    {
+        Render = QEvent::User + 1,
+        Pause,
+        Stop,
+        Pulse
+    };
+
+    static constexpr QEvent::Type asQEvent(CompositorLayer::Event event) { return static_cast<QEvent::Type>(event); }
+
+    static bool supportsLayoutType(cp_layer_renderer_capabilities_t capabilities, cp_layer_renderer_layout layout)
+    {
+        const size_t layoutCount = cp_layer_renderer_capabilities_supported_layouts_count(capabilities, cp_supported_layouts_options_none);
+        bool found = false;
+        for (size_t i = 0; i < layoutCount && !found; ++i)
+            found = (layout == cp_layer_renderer_capabilities_supported_layout(capabilities, cp_supported_layouts_options_none, i));
+
+        return found;
+    }
+
     void configure(cp_layer_renderer_capabilities_t capabilities, cp_layer_renderer_configuration_t configuration) const override
     {
         // NOTE: foveation is disabled for now
         const bool supportsFoveation = false && cp_layer_renderer_capabilities_supports_foveation(capabilities);
 
-        cp_layer_renderer_configuration_set_layout(configuration, cp_layer_renderer_layout_dedicated);
+        QMutexLocker locker(&m_compositorLayerMtx);
+
+        m_multiviewEnabled = !QQuick3DXrManager::isMultiviewRenderingDisabled();
+
+        // If multiview isn't disabled we need to check if the target supports it.
+        // NOTE: We're only doing layered or dedicated rendering, so shared is not supported (untested).
+        m_multiviewSupported = supportsLayoutType(capabilities, cp_layer_renderer_layout_layered);
+        m_multiviewEnabled = m_multiviewEnabled && m_multiviewSupported;
+
+        // NOTE: We're only doing layered or dedicated rendering, so shared is not supported, even though we technically
+        // could support it. Since the only target we currently have (visionOS on the Vision Pro) support all these
+        // modes anyways we only need to care about these two (dedicated is required for the emulator).
+        cp_layer_renderer_layout textureLayout = m_multiviewEnabled ? cp_layer_renderer_layout_layered
+                                                                    : cp_layer_renderer_layout_dedicated;
+
+        cp_layer_renderer_configuration_set_layout(configuration, textureLayout);
         cp_layer_renderer_configuration_set_foveation_enabled(configuration, supportsFoveation);
         cp_layer_renderer_configuration_set_color_format(configuration, MTLPixelFormatRGBA16Float);
         simd_float2 depthRange = cp_layer_renderer_configuration_get_default_depth_range(configuration);
         // NOTE: The depth range is inverted for VisionOS (x = far, y = near)
         m_depthRange[0] = depthRange.y;
         m_depthRange[1] = depthRange.x;
+
+        qCDebug(lcQuick3DXr) << "Configuring with the following settings:"
+                             << "\n\tMultiview supported: " << m_multiviewSupported
+                             << "\n\tMultiview enabled: " << m_multiviewEnabled
+                             << "\n\tFoveation: " << supportsFoveation
+                             << "\n\tDepth Range: " << m_depthRange[0] << " to: " << m_depthRange[1];
     }
 
     void render(cp_layer_renderer_t renderer) override
@@ -50,16 +107,24 @@ public:
             emit layerRendererChanged();
         }
 
-        emit renderingRequested();
+        if (m_layerRenderer) {
+            QMutexLocker locker(&m_mutex);
+            checkRenderState();
+            emit layerRendererReady();
+        }
     }
 
+    // Listen for spatial events (these are native gestures like pinch click/drag coming from SwiftUI)
     void handleSpatialEvents(const QJsonObject &events) override
     {
-        emit handleSpatialEventsRequested(events);
+        if (m_xrManager)
+            m_xrManager->processSpatialEvents(events);
     }
 
-    void setActive() { m_active = true; };
-    bool isActive() const { return m_active; }
+    bool isInitialized() const { return m_initialized; }
+
+    bool isMultiviewSupported() const { return m_multiviewSupported; }
+    bool isMultiviewEnabled() const { return m_multiviewEnabled; }
 
     cp_layer_renderer_t layerRenderer() const
     {
@@ -72,18 +137,353 @@ public:
         far = m_depthRange[1];
     }
 
+    // Must be called from the GUI thread
+    void init(QQuick3DXrManagerPrivate *xrManager)
+    {
+        Q_ASSERT(qApp->thread() == QThread::currentThread());
+        QSSG_ASSERT(!m_initialized, return);
+
+        m_xrManager = xrManager;
+        runWorldTrackingARSession();
+        m_initialized = true;
+    }
+
+    // Called from the gui thread while holding the render lock.
+    // For now we only let the thread know that it should stop rendering,
+    // as we're going to tear down the compositor layer on the render thread.
+    void teardown() { m_teardown = true; }
+
+    void stopArSession()
+    {
+        Q_ASSERT(qApp->thread() == QThread::currentThread());
+
+        QMutexLocker locker(&m_arSessionMtx);
+
+        if (m_arSession) {
+            qCDebug(lcQuick3DXr, "Stopping AR session");
+            ar_session_stop(m_arSession);
+            m_arSession = nullptr;
+            m_arTrackingState = QQuick3DXrManagerPrivate::ArTrackingState::Uninitialized;
+        }
+    }
+
+    QMutex &renderLock() { return m_mutex; }
+    bool waitForSyncToComplete()
+    {
+        return m_waitCondition.wait(&m_mutex);
+    }
+
+    Q_INVOKABLE static void destroy(QQuickWindow *window, CompositorLayer *compositorLayer)
+    {
+        QSSG_ASSERT(window != nullptr, return);
+
+        qCDebug(lcQuick3DXr) << "Destroying compositor layer";
+
+        if (auto *visionOSApplicaton = qGuiApp->nativeInterface<QNativeInterface::QVisionOSApplication>())
+            visionOSApplicaton->setImmersiveSpaceCompositorLayer(nullptr);
+
+        // NOTE: This is a bit of a hack, but we need to cleanup the nodes
+        // on the render thread while the GUI thread is blocked (as documented.)
+        // Since we cannot destruct the window on the render thread, and we cannot
+        // cleanup all nodes on the GUI thread due to dependencies on the render
+        // thread and resources created on it. Instead we just invalidate the render
+        // control and cleanup the nodes on the render thread. This is not ideal,
+        // but it's what we have for now...
+        auto *d = QQuickWindowPrivate::get(window);
+        d->cleanupNodesOnShutdown();
+        if (auto *rc = d->renderControl)
+            rc->invalidate();
+
+        delete compositorLayer;
+    }
+
 Q_SIGNALS:
-    void renderingRequested();
+    void layerRendererReady();
     void layerRendererChanged();
-    void handleSpatialEventsRequested(const QJsonObject &jsonString);
+    void renderStateChanged(QQuick3DXrManagerPrivate::RenderState);
+    void arStateChanged(QQuick3DXrManagerPrivate::ArTrackingState);
+
+protected:
+    bool event(QEvent *event) override
+    {
+        {
+            // NOTE: Intentionally scoped to avoid locking the mutex for events we're not handling
+            // and that has side-effects (e.g. cleanup due to a deferred delete).
+            QMutexLocker locker(&m_mutex);
+
+            if (m_teardown) {
+                qCDebug(lcQuick3DXr) << "Teardown in progress, skipping event handling";
+                return QObject::event(event);
+            }
+
+            switch (static_cast<Event>(event->type())) {
+            case Event::Render:
+            {
+                const bool success = renderFrame(locker);
+                // Check if we successfully rendered the frame, if not the GUI thread
+                // is likely waiting for the render thread to complete rendering, so we
+                // need to wake it up.
+                if (!success) {
+                    qCDebug(lcQuick3DXr) << "Waking up the GUI thread, rendering returned early...";
+                    m_xrManager->m_syncDone = false;
+                    m_waitCondition.wakeOne();
+                }
+            }
+                return true;
+            case Event::Stop:
+                cleanup();
+                return true;
+            case Event::Pause:
+                pause();
+                return true;
+            case Event::Pulse:
+                checkRenderState();
+                return true;
+            }
+        }
+
+        return QObject::event(event);
+    }
 
 private:
+    friend bool QQuick3DXrManagerPrivate::renderFrameImpl(QMutexLocker<QMutex> &locker, QWaitCondition &waitCondition);
+    friend void QQuick3DXrManagerPrivate::update();
+
+    static void onArStateChanged(void *context,
+                                 ar_data_providers_t data_providers,
+                                 ar_data_provider_state_t new_state,
+                                 ar_error_t error,
+                                 ar_data_provider_t failed_data_provider)
+    {
+        Q_UNUSED(context);
+        Q_UNUSED(data_providers);
+        Q_UNUSED(error);
+        Q_UNUSED(failed_data_provider);
+
+        auto *that = reinterpret_cast<CompositorLayer *>(context);
+
+        QMutexLocker lock(&that->m_arSessionMtx);
+
+        const auto oldState = that->m_arTrackingState;
+        switch (new_state) {
+        case ar_data_provider_state_initialized:
+            that->m_arTrackingState = QQuick3DXrManagerPrivate::ArTrackingState::Initialized;
+            break;
+        case ar_data_provider_state_running:
+            that->m_arTrackingState = QQuick3DXrManagerPrivate::ArTrackingState::Running;
+            break;
+        case ar_data_provider_state_paused:
+            that->m_arTrackingState = QQuick3DXrManagerPrivate::ArTrackingState::Paused;
+            break;
+        case ar_data_provider_state_stopped:
+            that->m_arTrackingState = QQuick3DXrManagerPrivate::ArTrackingState::Stopped;
+            break;
+        }
+
+
+        if (oldState != that->m_arTrackingState) {
+            QMutexLocker renderLocker(&that->m_mutex);
+            emit that->arStateChanged(that->m_arTrackingState);
+        }
+    }
+
+    enum class RenderStateAction
+    {
+        CheckOnly,
+        WaitUntilRunning,
+    };
+
+    template<RenderStateAction Action = RenderStateAction::WaitUntilRunning>
+    void checkRenderState()
+    {
+        QSSG_ASSERT(m_layerRenderer != nullptr, return);
+
+        const auto oldState = m_renderState;
+        switch (cp_layer_renderer_get_state(m_layerRenderer)) {
+        case cp_layer_renderer_state_paused:
+            m_renderState = QQuick3DXrManagerPrivate::RenderState::Paused;
+            break;
+        case cp_layer_renderer_state_running:
+            m_renderState = QQuick3DXrManagerPrivate::RenderState::Running;
+            break;
+        case cp_layer_renderer_state_invalidated:
+            m_renderState = QQuick3DXrManagerPrivate::RenderState::Invalidated;
+            break;
+        }
+
+        if (oldState != m_renderState)
+            emit renderStateChanged(m_renderState);
+
+        if (m_renderState == QQuick3DXrManagerPrivate::RenderState::Paused) {
+            if constexpr (Action == RenderStateAction::WaitUntilRunning) {
+                qCDebug(lcQuick3DXr) << "Waiting for rendering to resume...";
+                cp_layer_renderer_wait_until_running(m_layerRenderer);
+                QCoreApplication::postEvent(this, new QEvent(asQEvent(CompositorLayer::Event::Pulse)));
+            }
+        }
+    }
+
+    ar_device_anchor_t createPoseForTiming(cp_frame_timing_t timing)
+    {
+        QSSG_ASSERT(m_worldTrackingProvider != nullptr, return nullptr);
+
+        ar_device_anchor_t outAnchor = ar_device_anchor_create();
+        cp_time_t presentationTime = cp_frame_timing_get_presentation_time(timing);
+        CFTimeInterval queryTime = cp_time_to_cf_time_interval(presentationTime);
+        ar_device_anchor_query_status_t status = ar_world_tracking_provider_query_device_anchor_at_timestamp(m_worldTrackingProvider, queryTime, outAnchor);
+        if (status != ar_device_anchor_query_status_success) {
+            NSLog(@"Failed to get estimated pose from world tracking provider for presentation timestamp %0.3f", queryTime);
+        }
+        return outAnchor;
+    }
+
+    void runWorldTrackingARSession()
+    {
+        QMutexLocker locker(&m_arSessionMtx);
+
+        ar_world_tracking_configuration_t worldTrackingConfiguration = ar_world_tracking_configuration_create();
+        m_worldTrackingProvider = ar_world_tracking_provider_create(worldTrackingConfiguration);
+
+        ar_data_providers_t dataProviders = ar_data_providers_create();
+        ar_data_providers_add_data_provider(dataProviders, m_worldTrackingProvider);
+
+        QQuick3DXrInputManager *inputManager = QQuick3DXrInputManager::instance();
+        QQuick3DXrAnchorManager *anchorManager = QQuick3DXrAnchorManager::instance();
+
+        // 1. prepare
+        QQuick3DXrInputManagerPrivate *pim = nullptr;
+        if (QSSG_GUARD_X(inputManager != nullptr, "No InputManager available!")) {
+            pim = QQuick3DXrInputManagerPrivate::get(inputManager);
+            if (QSSG_GUARD(pim != nullptr))
+                pim->prepareHandtracking(dataProviders);
+        }
+
+        if (QSSG_GUARD_X(anchorManager != nullptr, "No AnchorManager available!"))
+            QQuick3DXrManagerPrivate::prepareAnchorManager(anchorManager, dataProviders);
+
+        m_arSession = ar_session_create();
+        ar_session_set_data_provider_state_change_handler_f(m_arSession, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), this, &onArStateChanged);
+        ar_session_run(m_arSession, dataProviders);
+
+        // 2. initialize
+        QQuick3DXrManagerPrivate::initInputManager(inputManager);
+        QQuick3DXrManagerPrivate::initAnchorManager(anchorManager);
+    }
+
+    void pause()
+    {
+        qCDebug(lcQuick3DXr, "Pausing rendering");
+    }
+
+    void cleanup()
+    {
+        qCDebug(lcQuick3DXr, "Cleaning up");
+    }
+
+    [[nodiscard]] bool renderFrame(QMutexLocker<QMutex> &locker)
+    {
+        Q_ASSERT(locker.isLocked());
+        checkRenderState();
+
+        if (m_renderState != QQuick3DXrManagerPrivate::RenderState::Running) {
+            qCDebug(lcQuick3DXr, "Rendering is not running, skipping frame rendering!");
+            return false;
+        }
+
+        // Lock the AR session mutex and render the frame. We hold onto the lock until we're done rendering
+        // to ensure that the AR session isn't stopped while we're rendering (this can happen!)
+        QMutexLocker arLocker(&m_arSessionMtx);
+        if (m_arTrackingState != QQuick3DXrManagerPrivate::ArTrackingState::Running) {
+            qCDebug(lcQuick3DXr, "AR tracking is not running, skipping frame rendering!");
+            return false;
+        }
+
+        // Lock the compositor layer mutex and render the frame. We hold onto the lock until we're done rendering
+        // as the configure call comes from the GUI thread and we need to ensure that the configuration is not
+        // changed while we're rendering.
+        QMutexLocker compositorLayer(&m_compositorLayerMtx);
+        return m_xrManager->renderFrameImpl(locker, m_waitCondition);
+    }
+
+    ar_world_tracking_provider_t worldTrackingProvider() const
+    {
+        return m_worldTrackingProvider;
+    }
+
+    // Rendering
+    mutable QMutex m_mutex;
+    QWaitCondition m_waitCondition;
+
+    mutable QMutex m_compositorLayerMtx;
+
+    // AR Session
+    mutable QMutex m_arSessionMtx;
+
+    QQuick3DXrManagerPrivate *m_xrManager = nullptr;
+
     cp_layer_renderer_t m_layerRenderer = nullptr;
+    ar_world_tracking_provider_t m_worldTrackingProvider = nullptr;
+    ar_session_t m_arSession = nullptr;
     mutable float m_depthRange[2] {1.0f, 10000.0f}; // NOTE: Near, Far
-    bool m_active = false;
+    QQuick3DXrManagerPrivate::RenderState m_renderState = QQuick3DXrManagerPrivate::RenderState::Uninitialized;
+    QQuick3DXrManagerPrivate::ArTrackingState m_arTrackingState = QQuick3DXrManagerPrivate::ArTrackingState::Uninitialized;
+    bool m_initialized = false;
+    bool m_teardown = false;
+    mutable bool m_multiviewSupported = true;
+    mutable bool m_multiviewEnabled = true;
 };
 
-Q_GLOBAL_STATIC(CompositorLayer, s_compositorLayer)
+struct QSSGCompositionLayerInstance
+{
+    QPointer<CompositorLayer> instance;
+};
+
+Q_GLOBAL_STATIC(QSSGCompositionLayerInstance, s_compositorLayer)
+
+// FIXME: Maybe unify with the openxr implementation?!
+void QQuick3DXrManagerPrivate::updateCameraImp(simd_float4x4 headTransform, cp_drawable_t drawable, QQuick3DXrOrigin *xrOrigin, int i)
+{
+    cp_view_t view = cp_drawable_get_view(drawable, i);
+    simd_float2 depth_range = cp_drawable_get_depth_range(drawable);
+    const float clipNear = depth_range[1];
+    const float clipFar = depth_range[0];
+
+    xrOrigin->eyeCamera(i)->setClipNear(clipNear);
+    xrOrigin->eyeCamera(i)->setClipFar(clipFar);
+
+    simd_float4x4 projection = cp_drawable_compute_projection(drawable, cp_axis_direction_convention_right_up_forward, i);
+    QMatrix4x4 proj{projection.columns[0].x, projection.columns[1].x, projection.columns[2].x, projection.columns[3].x,
+                     projection.columns[0].y, projection.columns[1].y, projection.columns[2].y, projection.columns[3].y,
+                     projection.columns[0].z, projection.columns[1].z, projection.columns[2].z, projection.columns[3].z,
+                     projection.columns[0].w, projection.columns[1].w, projection.columns[2].w, projection.columns[3].w};
+    xrOrigin->eyeCamera(i)->setProjection(proj);
+
+    simd_float4x4 localEyeTransform = cp_view_get_transform(view);
+    simd_float4x4 eyeCameraTransform = simd_mul(headTransform, localEyeTransform);
+    // NOTE: We need to convert from meters to centimeters here
+    QMatrix4x4 transform{eyeCameraTransform.columns[0].x, eyeCameraTransform.columns[1].x, eyeCameraTransform.columns[2].x, eyeCameraTransform.columns[3].x * 100,
+                           eyeCameraTransform.columns[0].y, eyeCameraTransform.columns[1].y, eyeCameraTransform.columns[2].y, eyeCameraTransform.columns[3].y * 100,
+                           eyeCameraTransform.columns[0].z, eyeCameraTransform.columns[1].z, eyeCameraTransform.columns[2].z, eyeCameraTransform.columns[3].z * 100,
+                           0.0f, 0.0f, 0.0f, 1.0f};
+    QQuick3DNodePrivate::get(xrOrigin->eyeCamera(i))->setLocalTransform(transform);
+}
+
+void QQuick3DXrManagerPrivate::updateCamera(QQuick3DViewport *xrViewport, simd_float4x4 headTransform, cp_drawable_t drawable, QQuick3DXrOrigin *xrOrigin, int i)
+{
+    updateCameraImp(headTransform, drawable, xrOrigin, i);
+    xrViewport->setCamera(xrOrigin->eyeCamera(i));
+}
+
+void QQuick3DXrManagerPrivate::updateCameraMultiview(QQuick3DViewport *xrViewport, simd_float4x4 headTransform, cp_drawable_t drawable, QQuick3DXrOrigin *xrOrigin)
+{
+    QQuick3DCamera *cameras[2] {xrOrigin->eyeCamera(0), xrOrigin->eyeCamera(1)};
+
+    for (int i = 0; i < 2; ++i)
+        updateCameraImp(headTransform, drawable, xrOrigin, i);
+
+    xrViewport->setMultiViewCameras(cameras);
+}
+
 
 QQuick3DXrManagerPrivate::QQuick3DXrManagerPrivate(QQuick3DXrManager &manager)
     : q_ptr(&manager)
@@ -92,7 +492,6 @@ QQuick3DXrManagerPrivate::QQuick3DXrManagerPrivate(QQuick3DXrManager &manager)
 
 QQuick3DXrManagerPrivate::~QQuick3DXrManagerPrivate()
 {
-    ar_session_stop(m_arSession);
 }
 
 QQuick3DXrManagerPrivate *QQuick3DXrManagerPrivate::get(QQuick3DXrManager *manager)
@@ -105,28 +504,79 @@ bool QQuick3DXrManagerPrivate::initialize()
 {
     Q_Q(QQuick3DXrManager);
 
-    if (!m_worldTrackingProvider)
-        runWorldTrackingARSession();
-
-    // NOTE: Check if the compository layer proxy is already active.
-    if (!s_compositorLayer->isActive()) {
-        if (auto *visionOSApplicaton = qGuiApp->nativeInterface<QNativeInterface::QVisionOSApplication>()) {
-            visionOSApplicaton->setImmersiveSpaceCompositorLayer(&(*s_compositorLayer));
-            s_compositorLayer->setActive();
-            // FIXME: We don't actually handle the case where the rendere changes or we get multiple calls should do something.
-
-            QObject::connect(s_compositorLayer, &CompositorLayer::renderingRequested, q, &QQuick3DXrManager::initialized, Qt::ConnectionType(Qt::SingleShotConnection | Qt::QueuedConnection));
-
-            // Listen for spatial events (these are native gestures like pinch click/drag coming from SwiftUI)
-            QObject::connect(s_compositorLayer, &CompositorLayer::handleSpatialEventsRequested, q, &QQuick3DXrManager::processSpatialEvents);
+    // NOTE: Check if there's a global instance of the compositor layer
+    // already created, if not create one. Should probably move this over
+    // to the native interface.
+    if (!m_compositorLayer) {
+        m_compositorLayer = s_compositorLayer->instance;
+        if (!m_compositorLayer) {
+            m_compositorLayer = new CompositorLayer;
+            s_compositorLayer->instance = m_compositorLayer;
         }
-        return s_compositorLayer->layerRenderer() == nullptr ? false : true;
     }
 
-    cp_layer_renderer_t renderer = layerRenderer();
+    if (!m_inputManager)
+        m_inputManager = QQuick3DXrInputManager::instance();
+    if (!m_anchorManager)
+        m_anchorManager = QQuick3DXrAnchorManager::instance();
 
-    if (!renderer) {
-        qWarning("QQuick3DXrManagerPrivate: Layer renderer is not available.");
+    // NOTE: Check if the compository layer proxy is already active.
+    if (!m_compositorLayer->isInitialized()) {
+        if (auto *visionOSApplicaton = qGuiApp->nativeInterface<QNativeInterface::QVisionOSApplication>()) {
+            visionOSApplicaton->setImmersiveSpaceCompositorLayer(m_compositorLayer);
+            m_compositorLayer->init(this);
+
+            // FIXME: We don't actually handle the case where the rendere changes or we get multiple calls should do something.
+            QObject::connect(m_compositorLayer, &CompositorLayer::layerRendererReady, q, &QQuick3DXrManager::initialized, Qt::ConnectionType(Qt::SingleShotConnection | Qt::QueuedConnection));
+            QObject::connect(m_compositorLayer, &CompositorLayer::renderStateChanged, q, [q](QQuick3DXrManagerPrivate::RenderState state) {
+                switch (state) {
+                    case QQuick3DXrManagerPrivate::RenderState::Uninitialized:
+                        qCDebug(lcQuick3DXr, "Render state: Uninitialized");
+                        QQuick3DXrManagerPrivate::get(q)->m_running = false;
+                        break;
+                    case QQuick3DXrManagerPrivate::RenderState::Running:
+                        qCDebug(lcQuick3DXr, "Render state: Running");
+                        QQuick3DXrManagerPrivate::get(q)->m_running = true;
+                        QCoreApplication::postEvent(q, new QEvent(QEvent::UpdateRequest));
+                        break;
+                    case QQuick3DXrManagerPrivate::RenderState::Invalidated:
+                        qCDebug(lcQuick3DXr, "Render state: Invalidated");
+                        QQuick3DXrManagerPrivate::get(q)->m_running = false;
+                        emit q->sessionEnded();
+                        break;
+                    case QQuick3DXrManagerPrivate::RenderState::Paused:
+                        QQuick3DXrManagerPrivate::get(q)->m_running = false;
+                        qCDebug(lcQuick3DXr, "Render state: Paused");
+                        break;
+                }
+            }, Qt::DirectConnection);
+
+            QObject::connect(m_compositorLayer, &CompositorLayer::arStateChanged, q, [q](QQuick3DXrManagerPrivate::ArTrackingState state) {
+                switch (state) {
+                    case QQuick3DXrManagerPrivate::ArTrackingState::Uninitialized:
+                        qCDebug(lcQuick3DXr, "AR state: Uninitialized");
+                        QQuick3DXrManagerPrivate::get(q)->m_arRunning = false;
+                        break;
+                    case QQuick3DXrManagerPrivate::ArTrackingState::Initialized:
+                        qCDebug(lcQuick3DXr, "AR state: Initialized");
+                        QQuick3DXrManagerPrivate::get(q)->m_arRunning = false;
+                        break;
+                    case QQuick3DXrManagerPrivate::ArTrackingState::Running:
+                        qCDebug(lcQuick3DXr, "AR state: Running");
+                        QQuick3DXrManagerPrivate::get(q)->m_arRunning = true;
+                        QCoreApplication::postEvent(q, new QEvent(QEvent::UpdateRequest));
+                        break;
+                    case QQuick3DXrManagerPrivate::ArTrackingState::Paused:
+                        qCDebug(lcQuick3DXr, "AR state: Paused");
+                        QQuick3DXrManagerPrivate::get(q)->m_arRunning = false;
+                        break;
+                    case QQuick3DXrManagerPrivate::ArTrackingState::Stopped:
+                        qCDebug(lcQuick3DXr, "AR state: Stopped");
+                        QQuick3DXrManagerPrivate::get(q)->m_arRunning = false;
+                        break;
+                }
+            }, Qt::DirectConnection);
+        }
         return false;
     }
 
@@ -140,7 +590,9 @@ void QQuick3DXrManagerPrivate::setupWindow(QQuickWindow *window)
         return;
     }
 
-    cp_layer_renderer_t renderer = layerRenderer();
+    QSSG_ASSERT_X(m_compositorLayer != nullptr, "No composition layer!", return);
+
+    cp_layer_renderer_t renderer = m_compositorLayer->layerRenderer();
     if (!renderer) {
         qWarning("QQuick3DXrManagerPrivate: Layer renderer is not available.");
         return;
@@ -157,13 +609,14 @@ void QQuick3DXrManagerPrivate::setupWindow(QQuickWindow *window)
 bool QQuick3DXrManagerPrivate::finalizeGraphics(QRhi *rhi)
 {
     Q_UNUSED(rhi);
+
     m_isGraphicsInitialized = true;
     return m_isGraphicsInitialized;
 }
 
 bool QQuick3DXrManagerPrivate::isReady() const
 {
-    return (s_compositorLayer->layerRenderer() != nullptr);
+    return m_compositorLayer && (m_compositorLayer->layerRenderer() != nullptr);
 }
 
 bool QQuick3DXrManagerPrivate::isGraphicsInitialized() const
@@ -173,55 +626,75 @@ bool QQuick3DXrManagerPrivate::isGraphicsInitialized() const
 
 bool QQuick3DXrManagerPrivate::setupGraphics(QQuickWindow *window)
 {
-    // FIXME:
-    Q_UNUSED(window);
-    Q_UNIMPLEMENTED(); qWarning() << Q_FUNC_INFO;
-    return true;
-}
+    QSSG_ASSERT(window != nullptr && m_compositorLayer != nullptr, return false);
 
-void QQuick3DXrManagerPrivate::createSwapchains()
-{
-    // cp_layer_renderer_t renderer = getLayerRenderer();
-    // if (!renderer) {
-    //     qWarning("QQuick3DXrManagerPrivate: Layer renderer is not available.");
-    //     return;
-    // }
+    if (m_compositorLayer->isMultiviewEnabled()) {
+        if (!m_renderThread) {
+            m_renderThread = new QThread;
+            m_renderThread->setObjectName(QLatin1StringView(s_renderThreadName));
+            m_renderThread->start();
+        }
 
-    //cp_layer_renderer_configuration_t layerConfiguration = cp_layer_renderer_get_configuration(renderer);
-    //cp_layer_renderer_layout layout = cp_layer_renderer_configuration_get_layout(layerConfiguration);
-}
+        if (m_compositorLayer->thread() != m_renderThread)
+            m_compositorLayer->moveToThread(m_renderThread);
 
-QQuick3DXrManagerPrivate::RenderState QQuick3DXrManagerPrivate::getRenderState()
-{
-    if (!isReady())
-        return RenderState::Paused;
-
-    cp_layer_renderer_t renderer = layerRenderer();
-    switch (cp_layer_renderer_get_state(renderer)) {
-        case cp_layer_renderer_state_paused:
-            return RenderState::Paused;
-        case cp_layer_renderer_state_running:
-            return RenderState::Running;
-        case cp_layer_renderer_state_invalidated:
-            return RenderState::Invalidated;
+        Q_ASSERT(m_renderThread != nullptr);
+        QQuickWindowPrivate::get(window)->renderControl->prepareThread(m_renderThread);
     }
-    return RenderState::Invalidated;
+
+    // NOTE: See QQuick3DXrManager::setupGraphics() for emission of the value changed signal
+    m_multiviewRenderingEnabled = m_compositorLayer->isMultiviewEnabled();
+
+    return true;
 }
 
 void QQuick3DXrManagerPrivate::getDefaultClipDistances(float &nearClip, float &farClip) const
 {
-    s_compositorLayer->getDefaultDepthRange(nearClip, farClip);
+    m_compositorLayer->getDefaultDepthRange(nearClip, farClip);
 }
 
 void QQuick3DXrManagerPrivate::teardown()
 {
-    Q_UNIMPLEMENTED(); qWarning() << Q_FUNC_INFO;
+    Q_Q(QQuick3DXrManager);
+
+    qCDebug(lcQuick3DXr) << "Tearing down XR session";
+
+    QMutexLocker<QMutex> locker { nullptr };
+    if (m_compositorLayer)
+        locker = QMutexLocker<QMutex>{ &m_compositorLayer->renderLock() };
+
+    m_running = false;
+
+    if (m_inputManager)
+        QQuick3DXrInputManagerPrivate::get(m_inputManager)->teardown();
+
+    if (m_anchorManager)
+        m_anchorManager->teardown();
+
+    if (m_compositorLayer) {
+        m_compositorLayer->stopArSession();
+        m_compositorLayer->teardown();
+
+        // NOTE: Unlock the render mutex. The compositor layer will be destroyed on the render thread now!
+        // Also, be aware of the race condition here once the lock is released (see: teardownStarted())...
+        locker.unlock();
+
+        Qt::ConnectionType connection = (m_compositorLayer->thread() == QThread::currentThread())
+                                        ? Qt::DirectConnection : Qt::BlockingQueuedConnection;
+        QMetaObject::invokeMethod(m_compositorLayer, &CompositorLayer::destroy, connection, q->m_quickWindow, m_compositorLayer);
+        m_compositorLayer = nullptr;
+    }
 }
 
 void QQuick3DXrManagerPrivate::setMultiViewRenderingEnabled(bool enable)
 {
     Q_UNUSED(enable);
-    Q_UNIMPLEMENTED(); qWarning() << Q_FUNC_INFO;
+    qWarning() << "Changing multiview rendering is not supported at runtime on VisionOS!";
+}
+
+bool QQuick3DXrManagerPrivate::isMultiViewRenderingEnabled() const
+{
+    return m_multiviewRenderingEnabled;
 }
 
 void QQuick3DXrManagerPrivate::setPassthroughEnabled(bool enable)
@@ -250,95 +723,67 @@ void QQuick3DXrManagerPrivate::setDepthSubmissionEnabled(bool enable)
         qWarning("Depth submission is required on VisionOS");
 }
 
-cp_layer_renderer_t QQuick3DXrManagerPrivate::layerRenderer() const
+void QQuick3DXrManagerPrivate::update()
 {
-    return s_compositorLayer->layerRenderer();
-}
+    Q_Q(QQuick3DXrManager);
 
-ar_device_anchor_t QQuick3DXrManagerPrivate::createPoseForTiming(cp_frame_timing_t timing)
-{
-    ar_device_anchor_t outAnchor = ar_device_anchor_create();
-    cp_time_t presentationTime = cp_frame_timing_get_presentation_time(timing);
-    CFTimeInterval queryTime = cp_time_to_cf_time_interval(presentationTime);
-    ar_device_anchor_query_status_t status = ar_world_tracking_provider_query_device_anchor_at_timestamp(m_worldTrackingProvider, queryTime, outAnchor);
-    if (status != ar_device_anchor_query_status_success) {
-        NSLog(@"Failed to get estimated pose from world tracking provider for presentation timestamp %0.3f", queryTime);
+    // Lock the render mutex and request a new frame to be rendered.
+    QMutexLocker<QMutex> locker { &m_compositorLayer->renderLock() };
+
+    if (!m_running || !m_arRunning || !m_isGraphicsInitialized) {
+        qCDebug(lcQuick3DXr, "Not running, skipping update");
+        return;
     }
-    return outAnchor;
+
+    if (m_compositorLayer->isMultiviewEnabled()) {
+        // polish (GUI thread)
+        q->m_renderControl->polishItems();
+        m_syncDone = false;
+        QCoreApplication::postEvent(m_compositorLayer, new QEvent(CompositorLayer::asQEvent(CompositorLayer::Event::Render)));
+        // Wait for the sync to complete.
+        bool waitCompleted = m_compositorLayer->waitForSyncToComplete();
+        // The gui thread can now continue.
+
+        QQuick3DXrAnimationDriver *animationDriver = q->m_animationDriver;
+
+        if (Q_LIKELY(waitCompleted && m_syncDone && animationDriver)) {
+            animationDriver->setStep(m_nextStepSize);
+            animationDriver->advance();
+        } else {
+            qCDebug(lcQuick3DXr) << "Failed to wait for sync to complete" << "\nWaitCompleted:" << waitCompleted << "\nsyncDone" << m_syncDone;
+        }
+    } else {
+        [[maybe_unused]] bool ret = m_compositorLayer->renderFrame(locker);
+    }
+
+    QCoreApplication::postEvent(q, new QEvent(QEvent::UpdateRequest));
 }
 
 void QQuick3DXrManagerPrivate::processXrEvents()
 {
-    Q_Q(QQuick3DXrManager);
-
-    enum RenderState : quint8 {
-        Paused,
-        Running,
-        Invalidated
-    };
-    static bool logOnce[3] = {false, false, false};
-    QQuick3DXrManagerPrivate::RenderState renderState = getRenderState();
-    if (renderState == QQuick3DXrManagerPrivate::RenderState::Paused) {
-        // Wait
-        if (!logOnce[RenderState::Paused]) {
-            qDebug() << "-- Wait --";
-            logOnce[RenderState::Paused] = true;
-            logOnce[RenderState::Running] = false;
-            logOnce[RenderState::Invalidated] = false;
-        }
-    } else if (renderState == QQuick3DXrManagerPrivate::RenderState::Running) {
-        q->renderFrame();
-        if (!logOnce[RenderState::Running]) {
-            qDebug() << "-- Running --";
-            logOnce[RenderState::Paused] = false;
-            logOnce[RenderState::Running] = true;
-            logOnce[RenderState::Invalidated] = false;
-        }
-    } else if (renderState == QQuick3DXrManagerPrivate::RenderState::Invalidated) {
-        if (!logOnce[RenderState::Invalidated]) {
-            qDebug() << "-- Invalidated --";
-            logOnce[RenderState::Paused] = false;
-            logOnce[RenderState::Running] = false;
-            logOnce[RenderState::Invalidated] = true;
-        }
-        emit q->sessionEnded();
-    }
+    // NOTE: This is not used on visionOS
 }
 
-void QQuick3DXrManagerPrivate::runWorldTrackingARSession()
+void QQuick3DXrManagerPrivate::processSpatialEvents(const QJsonObject &events)
 {
-    ar_world_tracking_configuration_t worldTrackingConfiguration = ar_world_tracking_configuration_create();
-    m_worldTrackingProvider = ar_world_tracking_provider_create(worldTrackingConfiguration);
+    Q_Q(QQuick3DXrManager);
+    QSSG_ASSERT(q->m_vrViewport != nullptr, return);
+    QQuick3DXrInputManagerPrivate::processSpatialEvents(*q->m_vrViewport, events);
+}
 
-    ar_data_providers_t dataProviders = ar_data_providers_create();
-    ar_data_providers_add_data_provider(dataProviders, m_worldTrackingProvider);
+void QQuick3DXrManagerPrivate::prepareAnchorManager(QQuick3DXrAnchorManager *anchorManager, ar_data_providers_t dataProviders)
+{
+    anchorManager->prepareAnchorManager(dataProviders);
+}
 
-    if (!m_inputManager)
-        m_inputManager = QQuick3DXrInputManager::instance();
+void QQuick3DXrManagerPrivate::initAnchorManager(QQuick3DXrAnchorManager *anchorManager)
+{
+    anchorManager->initAnchorManager();
+}
 
-    if (!m_anchorManager)
-        m_anchorManager = QQuick3DXrAnchorManager::instance();
-
-    // 1. prepare
-    QQuick3DXrInputManagerPrivate *pim = nullptr;
-    if (QSSG_GUARD_X(m_inputManager != nullptr, "No InputManager available!")) {
-        pim = QQuick3DXrInputManagerPrivate::get(m_inputManager);
-        if (QSSG_GUARD(pim != nullptr))
-            pim->prepareHandtracking(dataProviders);
-    }
-
-    if (QSSG_GUARD_X(m_anchorManager != nullptr, "No AnchorManager available!"))
-        m_anchorManager->prepareAnchorManager(dataProviders);
-
-    m_arSession = ar_session_create();
-    ar_session_run(m_arSession, dataProviders);
-
-    // 2. initialize
-    if (pim)
-        pim->initHandtracking();
-
-    if (m_anchorManager != nullptr)
-        m_anchorManager->initAnchorManager();
+void QQuick3DXrManagerPrivate::initInputManager(QQuick3DXrInputManager *im)
+{
+    QQuick3DXrInputManagerPrivate::get(im)->initHandtracking();
 }
 
 void QQuick3DXrManagerPrivate::setSamples(int samples)
@@ -349,7 +794,7 @@ void QQuick3DXrManagerPrivate::setSamples(int samples)
 
 QString QQuick3DXrManagerPrivate::runtimeName() const
 {
-    return QStringLiteral("VisionOS");
+    return QStringLiteral("visionOS");
 }
 
 QVersionNumber QQuick3DXrManagerPrivate::runtimeVersion() const
@@ -363,29 +808,34 @@ QString QQuick3DXrManagerPrivate::errorString() const
     return QString();
 }
 
-void QQuick3DXrManagerPrivate::doRenderFrame()
+bool QQuick3DXrManagerPrivate::renderFrameImpl(QMutexLocker<QMutex> &locker, QWaitCondition &waitCondition)
 {
     Q_Q(QQuick3DXrManager);
 
-    QQuickWindow *quickWindow = q->m_quickWindow;
+    // NOTE: The GUI thread is locked at this point
+    QQuickWindow *window = q->m_quickWindow;
     QQuickRenderControl *renderControl = q->m_renderControl;
     QQuick3DXrOrigin *xrOrigin = q->m_xrOrigin;
     QQuick3DViewport *xrViewport = q->m_vrViewport;
     QQuick3DXrAnimationDriver *animationDriver = q->m_animationDriver;
 
-    QSSG_ASSERT_X(quickWindow && renderControl && xrViewport && xrOrigin && animationDriver, "Invalid state, rendering aborted", return);
+    QSSG_ASSERT_X(window && renderControl && xrViewport && xrOrigin && animationDriver, "Invalid state, rendering aborted", return false);
 
-    auto layerRenderer = this->layerRenderer();
+    const bool multiviewRenderingEnabled = isMultiViewRenderingEnabled();
+
+    Q_ASSERT(!multiviewRenderingEnabled || QThread::currentThread() != window->thread());
+
+    auto layerRenderer = m_compositorLayer->layerRenderer();
     cp_frame_t frame = cp_layer_renderer_query_next_frame(layerRenderer);
-    if (frame == nullptr) {
+    if (Q_UNLIKELY(frame == nullptr)) {
         qWarning("Failed to get next frame");
-        return;
+        return false;
     }
 
     cp_frame_timing_t timing = cp_frame_predict_timing(frame);
-    if (timing == nullptr) {
+    if (Q_UNLIKELY(timing == nullptr)) {
         qWarning("Failed to get timing for frame");
-        return;
+        return false;
     }
 
     cp_frame_start_update(frame);
@@ -397,13 +847,13 @@ void QQuick3DXrManagerPrivate::doRenderFrame()
 
     cp_frame_start_submission(frame);
     cp_drawable_t drawable = cp_frame_query_drawable(frame);
-    if (drawable == nullptr) {
+    if (Q_UNLIKELY(drawable == nullptr)) {
         qWarning("Failed to get drawable for frame");
-        return;
+        return false;
     }
 
     cp_frame_timing_t actualTiming = cp_drawable_get_frame_timing(drawable);
-    ar_device_anchor_t anchor = createPoseForTiming(actualTiming);
+    ar_device_anchor_t anchor = m_compositorLayer->createPoseForTiming(actualTiming);
     cp_drawable_set_device_anchor(drawable, anchor);
 
     // Get the pose transform from the anchor
@@ -422,27 +872,52 @@ void QQuick3DXrManagerPrivate::doRenderFrame()
 
     // Animation driver
     // Convert the cp_frame_timing_t ticks to milliseconds
-    const qint64 displayPeriodMS = qint64(cp_time_to_cf_time_interval(optimalInputTime) * 1000.0);
-    const qint64 displayDeltaMS = ((qint64(cp_time_to_cf_time_interval(cp_frame_timing_get_optimal_input_time(actualTiming)) * 1000.0)) - m_previousTime);
+    enum : size_t { DisplayPeriod  = 0, DisplayDelta };
+    qint64 stepSizes[2] {0, 0};
+    auto &[displayPeriodMS, displayDeltaMS] = stepSizes;
+    displayPeriodMS = qint64(cp_time_to_cf_time_interval(optimalInputTime) * 1000.0);
+    displayDeltaMS = ((qint64(cp_time_to_cf_time_interval(cp_frame_timing_get_optimal_input_time(actualTiming)) * 1000.0)) - m_previousTime);
+    const size_t selector = ((m_previousTime == 0) || (displayDeltaMS > displayPeriodMS)) ? DisplayPeriod : DisplayDelta;
+    m_nextStepSize = stepSizes[selector];
+    m_previousTime = displayPeriodMS;
 
-    if (m_previousTime == 0)
-        animationDriver->setStep(displayPeriodMS);
-    else {
-        if (displayDeltaMS > displayPeriodMS)
-            animationDriver->setStep(displayPeriodMS);
-        else
-            animationDriver->setStep(displayDeltaMS);
+    if (!multiviewRenderingEnabled) {
+        animationDriver->setStep(m_nextStepSize);
         animationDriver->advance();
     }
-    m_previousTime = displayPeriodMS;
 
     QRhi *rhi = renderControl->rhi();
 
-    for (size_t i = 0, end = cp_drawable_get_view_count(drawable); i != end ; ++i) {
+    const auto viewCount = cp_drawable_get_view_count(drawable);
+    const auto textureCount = cp_drawable_get_texture_count(drawable);
+    const auto renderCalls = textureCount; // To make it less confusing...
+
+    static bool viewStatPrinted = false;
+    if (!viewStatPrinted) {
+        qCDebug(lcQuick3DXr) << "View count:" << viewCount
+                             << "Texture count:" << textureCount;
+        viewStatPrinted = true;
+    }
+
+    // NOTE: Expectation is that when multiview rendering is enabled we get a multiple drawables with a single texture array,
+    //       each view/eye is then rendered to a slice in the texture array. If multiview rendering is _not_ enabled we get
+    //       two drawables with two textures, one for each eye. In this case we render each eye to its own texture.
+    //
+    //       And just to keep things interesting the emulator will use one view and one texture, so even if we hit the
+    //       "dedicated"/non-multiview case we need to handle that as well. NOTE: We don't do threaded rendering when
+    //       multiview rendering is disabled!
+
+    for (size_t i = 0, end = renderCalls; i != end ; ++i) {
         // Setup the RenderTarget based on the current drawable
         id<MTLTexture> colorMetalTexture = cp_drawable_get_color_texture(drawable, i);
         auto textureSize = QSize([colorMetalTexture width], [colorMetalTexture height]);
-        auto renderTarget = QQuickRenderTarget::fromMetalTexture(static_cast<MTLTexture*>(colorMetalTexture), [colorMetalTexture pixelFormat], textureSize);
+
+        QQuickRenderTarget renderTarget;
+
+        if (multiviewRenderingEnabled)
+            renderTarget = QQuickRenderTarget::fromMetalTexture(static_cast<MTLTexture*>(colorMetalTexture), [colorMetalTexture pixelFormat], [colorMetalTexture pixelFormat]/*viewFormat*/, textureSize, 1 /*sampleCount*/, viewCount, {});
+        else
+            renderTarget = QQuickRenderTarget::fromMetalTexture(static_cast<MTLTexture*>(colorMetalTexture), [colorMetalTexture pixelFormat], textureSize);
 
         auto depthMetalTexture = cp_drawable_get_depth_texture(drawable, i);
         auto depthTextureSize = QSize([depthMetalTexture width], [depthMetalTexture height]);
@@ -465,60 +940,63 @@ void QQuick3DXrManagerPrivate::doRenderFrame()
                 m_rhiDepthTexture = nullptr;
             }
 
-            if (!m_rhiDepthTexture)
-                m_rhiDepthTexture = rhi->newTexture(depthFormat, depthTextureSize, 1, QRhiTexture::RenderTarget);
+            if (!m_rhiDepthTexture) {
+                if (multiviewRenderingEnabled)
+                    m_rhiDepthTexture = rhi->newTextureArray(depthFormat, viewCount, depthTextureSize, 1, QRhiTexture::RenderTarget);
+                else
+                    m_rhiDepthTexture = rhi->newTexture(depthFormat, depthTextureSize, 1, QRhiTexture::RenderTarget);
+            }
 
 
             m_rhiDepthTexture->createFrom({ quint64(static_cast<MTLTexture*>(depthMetalTexture)), 0});
             renderTarget.setDepthTexture(m_rhiDepthTexture);
         }
 
-        quickWindow->setRenderTarget(renderTarget);
+        window->setRenderTarget(renderTarget);
 
         // Update the window size and content item size using the texture size
-        quickWindow->setGeometry(0,
-                                0,
-                                textureSize.width(),
-                                textureSize.height());
-        quickWindow->contentItem()->setSize(QSizeF(textureSize.width(),
-                                                    textureSize.height()));
+        window->setGeometry(0,
+                            0,
+                            textureSize.width(),
+                            textureSize.height());
+        window->contentItem()->setSize(QSizeF(textureSize.width(),
+                                              textureSize.height()));
 
         // Update the camera pose
         if (QSSG_GUARD(xrOrigin)) {
-            cp_view_t view = cp_drawable_get_view(drawable, i);
-            simd_float4 tangents = cp_view_get_tangents(view);
-            const float tangentLeft = tangents[0];
-            const float tangentRight = tangents[1];
-            const float tangentUp = tangents[2];
-            const float tangentDown = tangents[3];
-            //qDebug() << "Left: " << tangentLeft << " Right: " << tangentRight << " Up: " << tangentUp << " Down: " << tangentDown;
-            simd_float2 depth_range = cp_drawable_get_depth_range(drawable);
-            const float clipNear = depth_range[1];
-            const float clipFar = depth_range[0];
-            //qDebug() << "Near: " << clipNear << " Far: " << clipFar;
-            xrOrigin->eyeCamera(i)->setLeftTangent(tangentLeft);
-            xrOrigin->eyeCamera(i)->setRightTangent(tangentRight);
-            xrOrigin->eyeCamera(i)->setUpTangent(tangentUp);
-            xrOrigin->eyeCamera(i)->setDownTangent(tangentDown);
-            xrOrigin->eyeCamera(i)->setClipNear(clipNear);
-            xrOrigin->eyeCamera(i)->setClipFar(clipFar);
-
-            simd_float4x4 localEyeTransform = cp_view_get_transform(view);
-            simd_float4x4 eyeCameraTransform = simd_mul(headTransform, localEyeTransform);
-            // NOTE: We need to convert from meters to centimeters here
-            QMatrix4x4 transform{eyeCameraTransform.columns[0].x, eyeCameraTransform.columns[1].x, eyeCameraTransform.columns[2].x, eyeCameraTransform.columns[3].x * 100,
-                                 eyeCameraTransform.columns[0].y, eyeCameraTransform.columns[1].y, eyeCameraTransform.columns[2].y, eyeCameraTransform.columns[3].y * 100,
-                                 eyeCameraTransform.columns[0].z, eyeCameraTransform.columns[1].z, eyeCameraTransform.columns[2].z, eyeCameraTransform.columns[3].z * 100,
-                                 0.0f, 0.0f, 0.0f, 1.0f};
-            QQuick3DNodePrivate::get(xrOrigin->eyeCamera(i))->setLocalTransform(transform);
-            xrViewport->setCamera(xrOrigin->eyeCamera(i));
+            if (multiviewRenderingEnabled)
+                updateCameraMultiview(xrViewport, headTransform, drawable, xrOrigin);
+            else
+                updateCamera(xrViewport, headTransform, drawable, xrOrigin, i);
         }
 
-        renderControl->polishItems();
-        renderControl->beginFrame();
-        renderControl->sync();
-        renderControl->render();
-        renderControl->endFrame();
+        // We only do this if we are rendering on a separate thread and with multiview rendering enabled,
+        // or else the beginFrame and sync will be done on the GUI thread after both eyes have been
+        // rendered...
+        if (multiviewRenderingEnabled) {
+            // Marks the start of the frame.
+            renderControl->beginFrame();
+            // Synchronization happens here on the render thread (with the GUI thread locked)
+            m_syncDone = renderControl->sync();
+
+            if (Q_UNLIKELY(!m_syncDone))
+                return false;
+
+            // Signal the GUI thread that the sync is done, so it can continue.
+            waitCondition.wakeOne();
+            locker.unlock();
+
+            // Render the frame
+            renderControl->render();
+            // Marks the end of the frame.
+            renderControl->endFrame();
+        } else {
+            renderControl->polishItems();
+            renderControl->beginFrame();
+            renderControl->sync();
+            renderControl->render();
+            renderControl->endFrame();
+        }
     }
 
     id<MTLCommandBuffer> commandBuffer = [static_cast<const QRhiMetalNativeHandles*>(renderControl->rhi()->nativeHandles())->cmdQueue commandBuffer];
@@ -527,6 +1005,8 @@ void QQuick3DXrManagerPrivate::doRenderFrame()
     [commandBuffer commit];
 
     cp_frame_end_submission(frame);
+
+    return true;
 }
 
 QT_END_NAMESPACE

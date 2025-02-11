@@ -1231,12 +1231,13 @@ void QQmlData::NotifyList::layout()
 
 void QQmlData::deferData(
         int objectIndex, const QQmlRefPointer<QV4::ExecutableCompilationUnit> &compilationUnit,
-        const QQmlRefPointer<QQmlContextData> &context)
+        const QQmlRefPointer<QQmlContextData> &context, const QString &inlineComponentName)
 {
     QQmlData::DeferredData *deferData = new QQmlData::DeferredData;
     deferData->deferredIdx = objectIndex;
     deferData->compilationUnit = compilationUnit;
     deferData->context = context;
+    deferData->inlineComponentName = inlineComponentName;
 
     const QV4::CompiledData::Object *compiledObject = compilationUnit->objectAt(objectIndex);
     const QV4::CompiledData::BindingPropertyData *propertyData
@@ -2005,7 +2006,7 @@ QQmlEnginePrivate::createInternalContext(const QQmlRefPointer<QV4::ExecutableCom
         QV4::Scope scope(v4);
 
         QV4::ScopedObject scripts(scope, v4->newArrayObject(dependentScriptsSize));
-        context->setImportedScripts(QV4::PersistentValue(v4, scripts.asReturnedValue()));
+        context->setImportedScripts(v4, scripts);
         QV4::ScopedValue v(scope);
         for (qsizetype i = 0; i < dependentScriptsSize; ++i)
             scripts->put(i, (v = dependentScripts->at(i)->scriptValueForContext(context)));

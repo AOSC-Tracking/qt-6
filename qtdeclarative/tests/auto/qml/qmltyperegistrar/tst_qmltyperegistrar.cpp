@@ -2,15 +2,21 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
 #include "tst_qmltyperegistrar.h"
+
+#include "UnregisteredTypes/uncreatable.h"
+#include "hppheader.hpp"
+#include "tst_qmltyperegistrar_namespaced_tst_qmltyperegistrar_namespaced_module.h"
+
 #include <QtTest/qtest.h>
-#include <QtCore/qcoreapplication.h>
-#include <QtCore/qfile.h>
-#include <QtQml/QQmlEngine>
-#include <QtQml/QQmlComponent>
+
+#include <QtQml/qqmlcomponent.h>
+#include <QtQml/qqmlengine.h>
 #include <QtQml/qqmlprivate.h>
 
-#include "hppheader.hpp"
-#include "UnregisteredTypes/uncreatable.h"
+#include <QtCore/qcoreapplication.h>
+#include <QtCore/qfile.h>
+#include <QtCore/qlibraryinfo.h>
+#include <QtCore/qprocess.h>
 
 void tst_qmltyperegistrar::initTestCase()
 {
@@ -20,6 +26,21 @@ void tst_qmltyperegistrar::initTestCase()
     qmltypesData = file.readAll();
     QVERIFY(file.atEnd());
     QCOMPARE(file.error(), QFile::NoError);
+
+    m_qmljsrootgenPath = QLibraryInfo::path(QLibraryInfo::LibraryExecutablesPath)
+            + QLatin1String("/qmljsrootgen");
+
+#ifdef Q_OS_WIN
+    m_qmljsrootgenPath += QLatin1String(".exe");
+#endif
+
+#ifdef QT_QMLJSROOTGEN_PRESENT
+    if (!QFileInfo(m_qmljsrootgenPath).exists()) {
+        QString message = QStringLiteral("qmljsrootgen executable not found (looked for %0)")
+                                  .arg(m_qmljsrootgenPath);
+        QFAIL(qPrintable(message));
+    }
+#endif
 }
 
 void tst_qmltyperegistrar::qmltypesHasForeign()
@@ -474,6 +495,47 @@ void tst_qmltyperegistrar::consistencyWarnings()
 
     expectWarning("Warning: tst_qmltyperegistrar.h:: Refusing to generate non-lowercase name "
                   "Invisible for unknown foreign type");
+
+    r.generatePluginTypes(pluginTypes.fileName());
+}
+
+void tst_qmltyperegistrar::enumWarnings()
+{
+    QmlTypeRegistrar r;
+    r.setModuleVersions(QTypeRevision::fromVersion(1, 1), {}, false);
+    QString moduleName = "tstmodule";
+    QString targetNamespace = "tstnamespace";
+    r.setModuleNameAndNamespace(moduleName, targetNamespace);
+
+    const auto expectWarning = [](const char *message) {
+        QTest::ignoreMessage(QtWarningMsg, message);
+    };
+
+    expectWarning("Warning: tst_qmltyperegistrar.h:885: "
+                  "Unrecognized value for RegisterEnumClassesUnscoped: horst");
+    expectWarning("Warning: tst_qmltyperegistrar.h:878: "
+                  "Setting RegisterEnumClassesUnscoped to true has no effect.");
+
+    QTest::failOnWarning();
+
+
+    MetaTypesJsonProcessor processor(true);
+
+    QVERIFY(processor.processTypes({ ":/brokenEnums.json" }));
+    processor.postProcessTypes();
+    processor.postProcessForeignTypes();
+
+    QVector<MetaType> types = processor.types();
+    QVector<MetaType> typesforeign = processor.foreignTypes();
+    r.setTypes(types, typesforeign);
+
+    QString outputData;
+    QTextStream output(&outputData, QIODeviceBase::ReadWrite);
+
+    r.write(output, "tst_qmltyperegistrar_qmltyperegistrations.cpp");
+
+    QTemporaryFile pluginTypes;
+    QVERIFY(pluginTypes.open());
 
     r.generatePluginTypes(pluginTypes.fileName());
 }
@@ -1144,5 +1206,110 @@ void tst_qmltyperegistrar::inaccessibleBase()
     })"));
 }
 
+void tst_qmltyperegistrar::enumsExplicitlyScoped()
+{
+    QVERIFY(qmltypesData.contains(R"(Component {
+        file: "tst_qmltyperegistrar.h"
+        name: "EnumsExplicitlyScoped"
+        accessSemantics: "reference"
+        prototype: "QObject"
+        exports: ["QmlTypeRegistrarTest/EnumsExplicitlyScoped 1.0"]
+        enforcesScopedEnums: true
+        exportMetaObjectRevisions: [256]
+    })"));
+}
+
+void tst_qmltyperegistrar::namespacedExtracted()
+{
+    // Make sure that the foreign type declaration is in the namespace "nnn"
+    static_assert(std::is_same_v<
+        decltype(nnn::NamespacedForeign::staticMetaObject),
+        const QMetaObject
+    >);
+
+    QQmlEngine engine;
+    QQmlComponent c(&engine, "Namespaced", "Namespaced");
+    QVERIFY(c.isReady());
+    QScopedPointer<QObject> o(c.create());
+    QVERIFY(!o.isNull());
+}
+
+void tst_qmltyperegistrar::derivedFromInvisible()
+{
+    QVERIFY(qmltypesData.contains(R"(Component {
+        file: "tst_qmltyperegistrar.h"
+        name: "DerivedFromInvisible"
+        accessSemantics: "reference"
+        prototype: "InvisibleBase"
+        exports: ["QmlTypeRegistrarTest/DerivedFromInvisible 1.0"]
+        exportMetaObjectRevisions: [256]
+        Property { name: "b"; type: "int"; read: "b"; index: 0; isReadonly: true; isConstant: true }
+    })"));
+}
+
+void tst_qmltyperegistrar::foreignNamespacedWithEnum()
+{
+    QVERIFY(qmltypesData.contains(R"(Component {
+        file: "tst_qmltyperegistrar.h"
+        name: "F::ForeignQObject"
+        accessSemantics: "reference"
+        prototype: "QObject"
+        exports: ["QmlTypeRegistrarTest/ForeignQObject 1.0"]
+        isCreatable: false
+        exportMetaObjectRevisions: [256]
+        Enum {
+            name: "Enum"
+            isScoped: true
+            values: ["ValueA", "ValueB"]
+        }
+    })"));
+}
+
+
+#ifdef QT_QMLJSROOTGEN_PRESENT
+void tst_qmltyperegistrar::verifyJsRoot()
+{
+    QProcess process;
+
+    QTemporaryDir dir;
+
+    QProcess jsrootProcess;
+    connect(&jsrootProcess, &QProcess::errorOccurred, [&](QProcess::ProcessError error) {
+        qWarning() << error << jsrootProcess.errorString();
+    });
+    jsrootProcess.setWorkingDirectory(dir.path());
+    jsrootProcess.start(m_qmljsrootgenPath, {"jsroot.json"});
+
+    jsrootProcess.waitForFinished();
+
+    QCOMPARE(jsrootProcess.exitStatus(), QProcess::NormalExit);
+    QCOMPARE(jsrootProcess.exitCode(), 0);
+
+    QString currentJsRootContent, generatedJsRootContent;
+
+    QFile currentJsRoot(":/qt-project.org/meta_types/jsroot_metatypes.json");
+    QVERIFY(currentJsRoot.open(QFile::ReadOnly | QIODevice::Text));
+    currentJsRootContent = QString::fromUtf8(currentJsRoot.readAll());
+    currentJsRoot.close();
+
+    QFile generatedJsRoot(dir.path() + QDir::separator() + "jsroot.json");
+    QVERIFY(generatedJsRoot.open(QFile::ReadOnly | QIODevice::Text));
+    generatedJsRootContent = QString::fromUtf8(generatedJsRoot.readAll());
+    generatedJsRoot.close();
+
+           // If any of the following asserts fail you need to update
+           // src/qmltyperegistrar/jsroot_metatypes.json to reflect the changes.
+           // You can generate the jsroot metatypes with qmljsrootgen.
+    QStringList currentLines = currentJsRootContent.split(QLatin1Char('\n'));
+    QStringList generatedLines = generatedJsRootContent.split(QLatin1Char('\n'));
+
+    QCOMPARE(currentLines.size(), generatedLines.size());
+
+    for (qsizetype i = 0; i < currentLines.size(); i++) {
+        QCOMPARE(currentLines[i], generatedLines[i]);
+    }
+}
+
+#endif
 
 QTEST_MAIN(tst_qmltyperegistrar)

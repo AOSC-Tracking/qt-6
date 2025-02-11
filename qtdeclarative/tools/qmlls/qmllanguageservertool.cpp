@@ -229,8 +229,11 @@ int main(int argv, char *argc[])
     parser.addOption(noCMakeCallsOption);
     settings.addOption("no-cmake-calls", "false");
 
-    QCommandLineOption docDir(QStringList() << "p",
-                              QLatin1String("Documentation path to use for the documentation hints feature"));
+    QCommandLineOption docDir(
+            { { "d", "p", "doc-dir" },
+              QLatin1String("Documentation path to use for the documentation hints feature"),
+              "path",
+              QString() });
     parser.addOption(docDir);
     settings.addOption("docDir");
 
@@ -358,7 +361,7 @@ int main(int argv, char *argc[])
         });
     };
     QObject::connect(&r, &StdinReader::eof, &app, exit);
-    QObject::connect(qmlServer.server(), &QLanguageServer::shutdown, exit);
+    QObject::connect(qmlServer.server(), &QLanguageServer::exit, exit);
 
     emit r.readNextMessage();
     workerThread.start();

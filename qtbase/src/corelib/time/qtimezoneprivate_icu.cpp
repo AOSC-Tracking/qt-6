@@ -149,7 +149,7 @@ static QTimeZonePrivate::Data ucalTimeZoneTransition(UCalendar *m_ucal,
     QTimeZone::TimeType timeType = dst == 0 ? QTimeZone::StandardTime : QTimeZone::DaylightTime;
     using namespace QtTimeZoneLocale;
     tran.abbreviation = ucalTimeZoneDisplayName(m_ucal, timeType,
-                                                QTimeZone::ShortName, QLocale().name());
+                                                QTimeZone::ShortName, QLocale().name().toUtf8());
     return tran;
 }
 #endif // U_ICU_VERSION_SHORT
@@ -258,7 +258,7 @@ QString QIcuTimeZonePrivate::displayName(QTimeZone::TimeType timeType,
     // Technically this may be suspect, if locale isn't QLocale(), since that's
     // what we used when constructing m_ucal; does ICU cope with inconsistency ?
     using namespace QtTimeZoneLocale;
-    return ucalTimeZoneDisplayName(m_ucal, timeType, nameType, locale.name());
+    return ucalTimeZoneDisplayName(m_ucal, timeType, nameType, locale.name().toUtf8());
 }
 
 int QIcuTimeZonePrivate::offsetFromUtc(qint64 atMSecsSinceEpoch) const
@@ -335,7 +335,12 @@ QTimeZonePrivate::Data QIcuTimeZonePrivate::data(qint64 forMSecsSinceEpoch) cons
         ucalOffsetsAtTime(m_ucal, forMSecsSinceEpoch, &data.standardTimeOffset,
                           &data.daylightTimeOffset);
         data.offsetFromUtc = data.standardTimeOffset + data.daylightTimeOffset;
-        data.abbreviation = abbreviation(forMSecsSinceEpoch);
+        // TODO No ICU API for abbreviation, use short name for it:
+        using namespace QtTimeZoneLocale;
+        QTimeZone::TimeType timeType
+            = data.daylightTimeOffset ? QTimeZone::DaylightTime : QTimeZone::StandardTime;
+        data.abbreviation = ucalTimeZoneDisplayName(m_ucal, timeType, QTimeZone::ShortName,
+                                                    QLocale().name().toUtf8());
     }
     data.atMSecsSinceEpoch = forMSecsSinceEpoch;
     return data;
@@ -420,6 +425,8 @@ QList<QByteArray> QIcuTimeZonePrivate::availableTimeZoneIds(QLocale::Territory t
     if (U_SUCCESS(status))
         result = uenumToIdList(uenum);
     uenum_close(uenum);
+    // We could merge in what matchingTimeZoneIds(territory) gives us, but
+    // hopefully that's redundant, as ICU packages CLDR.
     return result;
 }
 
@@ -434,6 +441,8 @@ QList<QByteArray> QIcuTimeZonePrivate::availableTimeZoneIds(int offsetFromUtc) c
     if (U_SUCCESS(status))
         result = uenumToIdList(uenum);
     uenum_close(uenum);
+    // We could merge in what matchingTimeZoneIds(offsetFromUtc) gives us, but
+    // hopefully that's redundant, as ICU packages CLDR.
     return result;
 #else
     return QTimeZonePrivate::availableTimeZoneIds(offsetFromUtc);

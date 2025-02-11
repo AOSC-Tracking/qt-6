@@ -1,7 +1,13 @@
 # Copyright (C) 2022 The Qt Company Ltd.
 # SPDX-License-Identifier: BSD-3-Clause
 
+# Avoid running xmllint on each ts file to extract the ts file language.
+# We only need to do that for qt apps, not the qt translations. Speeds up
+# configuration of the repo on macOS hosts.
+set(QT_SKIP_STORE_LANGUAGES_FROM_TS_FILES TRUE)
+
 add_custom_target(ts-all)
+add_custom_target(ts-untranslated)
 
 set(repo_root_directory "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 set(en_ts_file_dir "${CMAKE_CURRENT_BINARY_DIR}/en_ts")
@@ -23,13 +29,22 @@ endfunction()
 # Create a rudimentary .ts file in ${en_ts_file_dir}.
 function(generate_empty_ts_file file_name)
     if(NOT EXISTS "${en_ts_file_dir}/${file_name}")
-        file(WRITE "${en_ts_file_dir}/${file_name}" "<TS></TS>")
+        file(WRITE "${en_ts_file_dir}/${file_name}" "<TS language=\"en_US\"></TS>")
     endif()
 endfunction()
 
-function(add_ts_target target input_file output_file)
+function(add_ts_target target input_file)
+    set(no_value_options "")
+    set(single_value_options "")
+    set(multi_value_options TS_FILES)
+    cmake_parse_arguments(PARSE_ARGV 2 arg
+        "${no_value_options}" "${single_value_options}" "${multi_value_options}"
+    )
+    _qt_internal_validate_all_args_are_parsed(arg)
     add_custom_target(${target}
-        COMMAND ${QT_CMAKE_EXPORT_NAMESPACE}::lupdate -locations relative -no-ui-lines -no-sort "@${input_file}" -ts ${output_file}
+        COMMAND ${QT_CMAKE_EXPORT_NAMESPACE}::lupdate -locations relative -no-ui-lines -no-sort
+                "@${input_file}" -ts ${arg_TS_FILES}
+        VERBATIM
     )
 endfunction()
 
@@ -42,7 +57,7 @@ function(add_ts_targets catalog)
 
     set(languages)
     foreach(file IN LISTS ts_files)
-        if(file MATCHES "([a-z][a-z](_[A-Z][A-Z])?).ts$")
+        if(file MATCHES "_([a-z][a-z](_[A-Z][A-Z])?).ts$")
             list(APPEND languages ${CMAKE_MATCH_1})
         endif()
     endforeach()
@@ -101,26 +116,38 @@ function(add_ts_targets catalog)
         CONTENT "${file_list_string}"
     )
 
-    add_custom_target(ts-${catalog}-all)
-    add_dependencies(ts-all ts-${catalog}-all)
+    set(ts_files "")
     foreach(lang IN LISTS languages)
         set(lang_target_name ts-${catalog}-${lang})
+        set(ts_file "${CMAKE_CURRENT_SOURCE_DIR}/${catalog}_${lang}.ts")
+        list(APPEND ts_files "${ts_file}")
         add_ts_target(${lang_target_name}
             ${source_files_list_file}
-            "${CMAKE_CURRENT_SOURCE_DIR}/${catalog}_${lang}.ts"
+            TS_FILES "${ts_file}"
         )
-        add_dependencies(ts-${catalog}-all ${lang_target_name})
 
         if(NOT TARGET ts-${lang})
             add_custom_target(ts-${lang})
         endif()
         add_dependencies(ts-${lang} ${lang_target_name})
     endforeach()
+
+    # Add a qtfoo_untranslated.ts file. Such files should not be committed.
+    # They are meant to quickly create a template for a new language.
+    set(untranslated_ts_file "${CMAKE_CURRENT_SOURCE_DIR}/${catalog}_untranslated.ts")
+    list(APPEND ts_files "${untranslated_ts_file}")
     add_ts_target(ts-${catalog}-untranslated
         ${source_files_list_file}
-        "${CMAKE_CURRENT_SOURCE_DIR}/${catalog}_untranslated.ts"
+        TS_FILES "${untranslated_ts_file}"
     )
-    add_dependencies(ts-${catalog}-all ts-${catalog}-untranslated)
+    add_dependencies(ts-untranslated ts-${catalog}-untranslated)
+
+    # Create a ts-qtfoo-all target that updates all ts files for this catalog in one go.
+    add_ts_target(ts-${catalog}-all
+        ${source_files_list_file}
+        TS_FILES ${ts_files}
+    )
+    add_dependencies(ts-all ts-${catalog}-all)
 endfunction()
 
 # Create the English "translation" for "qt".

@@ -1,7 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#include "mediabackendutils.h"
+#include <private/mediabackendutils_p.h>
 #include <QtTest/QtTest>
 #include <QDebug>
 #include <QtMultimedia/qmediaplayer.h>
@@ -42,8 +42,7 @@ class tst_qmediaplayerformatsupport : public QObject
 public slots:
     void initTestCase()
     {
-        if (!isFFMPEGPlatform())
-            QSKIP("Test is only intended for FFmpeg backend");
+        QSKIP_IF_NOT_FFMPEG("Test is only intended for FFmpeg backend");
     }
 
 private slots:

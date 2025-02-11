@@ -1,10 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#include <QtNetwork/qtnetwork-config.h>
-
-#ifndef QT_NO_HTTP
-
 #include <qabstractoauth2.h>
 #include <private/qabstractoauth2_p.h>
 
@@ -139,7 +135,10 @@ using namespace Qt::StringLiterals;
 /*!
     \property QAbstractOAuth2::expiration
     This property holds the expiration time of the current access
-    token.
+    token. An invalid value means that the authorization server hasn't
+    provided a valid expiration time.
+
+    \sa QDateTime::isValid()
 */
 
 /*!
@@ -184,7 +183,7 @@ const QString OAuth2::codeVerifier =       u"code_verifier"_s;
 const QString OAuth2::codeChallenge =      u"code_challenge"_s;
 const QString OAuth2::codeChallengeMethod = u"code_challenge_method"_s;
 
-QAbstractOAuth2Private::QAbstractOAuth2Private(const QPair<QString, QString> &clientCredentials,
+QAbstractOAuth2Private::QAbstractOAuth2Private(const std::pair<QString, QString> &clientCredentials,
                                                const QUrl &authorizationUrl,
                                                QNetworkAccessManager *manager) :
     QAbstractOAuthPrivate("qt.networkauth.oauth2",
@@ -196,6 +195,16 @@ QAbstractOAuth2Private::QAbstractOAuth2Private(const QPair<QString, QString> &cl
 
 QAbstractOAuth2Private::~QAbstractOAuth2Private()
 {}
+
+void QAbstractOAuth2Private::setExpiresAt(const QDateTime &expiration)
+{
+    Q_ASSERT(!expiration.isValid() || expiration.timeSpec() == Qt::TimeSpec::UTC);
+    if (expiresAtUtc == expiration)
+        return;
+    Q_Q(QAbstractOAuth2);
+    expiresAtUtc = expiration;
+    emit q->expirationAtChanged(expiresAtUtc.toLocalTime());
+}
 
 QString QAbstractOAuth2Private::generateRandomState()
 {
@@ -248,7 +257,7 @@ QAbstractOAuth2::QAbstractOAuth2(QObject *parent) :
     sets \a manager as the network access manager.
 */
 QAbstractOAuth2::QAbstractOAuth2(QNetworkAccessManager *manager, QObject *parent) :
-    QAbstractOAuth(*new QAbstractOAuth2Private(qMakePair(QString(), QString()),
+    QAbstractOAuth(*new QAbstractOAuth2Private(std::make_pair(QString(), QString()),
                                                QUrl(),
                                                manager),
                    parent)
@@ -552,7 +561,7 @@ void QAbstractOAuth2::setState(const QString &state)
 QDateTime QAbstractOAuth2::expirationAt() const
 {
     Q_D(const QAbstractOAuth2);
-    return d->expiresAt;
+    return d->expiresAtUtc.toLocalTime();
 }
 
 /*!
@@ -633,5 +642,3 @@ void QAbstractOAuth2::setSslConfiguration(const QSslConfiguration &configuration
 QT_END_NAMESPACE
 
 #include "moc_qabstractoauth2.cpp"
-
-#endif // QT_NO_HTTP

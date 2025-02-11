@@ -911,7 +911,9 @@ inline void QUrlPrivate::appendPath(QString &appendTo, QUrl::FormattingOptions o
 {
     QString thePath = path;
     if (options & QUrl::NormalizePathSegments) {
-        thePath = qt_normalizePathSegments(path, isLocalFile() ? QDirPrivate::DefaultNormalization : QDirPrivate::RemotePath);
+        qt_normalizePathSegments(
+                &thePath,
+                isLocalFile() ? QDirPrivate::KeepLocalTrailingSlash : QDirPrivate::RemotePath);
     }
 
     QStringView thePathView(thePath);
@@ -1524,86 +1526,21 @@ inline QString QUrlPrivate::mergePaths(const QString &relativePath) const
     return newPath;
 }
 
-/*
-    From http://www.ietf.org/rfc/rfc3986.txt, 5.2.4: Remove dot segments
-
-    Removes unnecessary ../ and ./ from the path. Used for normalizing
-    the URL.
-*/
-static void removeDotsFromPath(QString *path)
+// Authority-less URLs cannot have paths starting with double slashes (see
+// QUrlPrivate::validityError). We refuse to turn a valid URL into invalid by
+// way of QUrl::resolved().
+static void fixupNonAuthorityPath(QString *path)
 {
-    // The input buffer is initialized with the now-appended path
-    // components and the output buffer is initialized to the empty
-    // string.
-    QChar *out = path->data();
-    const QChar *in = out;
-    const QChar *end = out + path->size();
+    if (path->isEmpty() || path->at(0) != u'/')
+        return;
 
-    // If the input buffer consists only of
-    // "." or "..", then remove that from the input
-    // buffer;
-    if (path->size() == 1 && in[0].unicode() == '.')
-        ++in;
-    else if (path->size() == 2 && in[0].unicode() == '.' && in[1].unicode() == '.')
-        in += 2;
-    // While the input buffer is not empty, loop:
-    while (in < end) {
-
-        // otherwise, if the input buffer begins with a prefix of "../" or "./",
-        // then remove that prefix from the input buffer;
-        if (path->size() >= 2 && in[0].unicode() == '.' && in[1].unicode() == '/')
-            in += 2;
-        else if (path->size() >= 3 && in[0].unicode() == '.'
-                 && in[1].unicode() == '.' && in[2].unicode() == '/')
-            in += 3;
-
-        // otherwise, if the input buffer begins with a prefix of
-        // "/./" or "/.", where "." is a complete path segment,
-        // then replace that prefix with "/" in the input buffer;
-        if (in <= end - 3 && in[0].unicode() == '/' && in[1].unicode() == '.'
-                && in[2].unicode() == '/') {
-            in += 2;
-            continue;
-        } else if (in == end - 2 && in[0].unicode() == '/' && in[1].unicode() == '.') {
-            *out++ = u'/';
-            in += 2;
-            break;
-        }
-
-        // otherwise, if the input buffer begins with a prefix
-        // of "/../" or "/..", where ".." is a complete path
-        // segment, then replace that prefix with "/" in the
-        // input buffer and remove the last //segment and its
-        // preceding "/" (if any) from the output buffer;
-        if (in <= end - 4 && in[0].unicode() == '/' && in[1].unicode() == '.'
-                && in[2].unicode() == '.' && in[3].unicode() == '/') {
-            while (out > path->constData() && (--out)->unicode() != '/')
-                ;
-            if (out == path->constData() && out->unicode() != '/')
-                ++in;
-            in += 3;
-            continue;
-        } else if (in == end - 3 && in[0].unicode() == '/' && in[1].unicode() == '.'
-                   && in[2].unicode() == '.') {
-            while (out > path->constData() && (--out)->unicode() != '/')
-                ;
-            if (out->unicode() == '/')
-                ++out;
-            in += 3;
-            break;
-        }
-
-        // otherwise move the first path segment in
-        // the input buffer to the end of the output
-        // buffer, including the initial "/" character
-        // (if any) and any subsequent characters up
-        // to, but not including, the next "/"
-        // character or the end of the input buffer.
-        *out++ = *in++;
-        while (in < end && in->unicode() != '/')
-            *out++ = *in++;
-    }
-    path->truncate(out - path->constData());
+    // Find the first non-slash character, because its position is equal to the
+    // number of slashes. We'll remove all but one of them.
+    qsizetype i = 0;
+    while (i + 1 < path->size() && path->at(i + 1) == u'/')
+        ++i;
+    if (i)
+        path->remove(0, i);
 }
 
 inline QUrlPrivate::ErrorCode QUrlPrivate::validityError(QString *source, qsizetype *position) const
@@ -2777,7 +2714,11 @@ QUrl QUrl::resolved(const QUrl &relative) const
     else
         t.d->sectionIsPresent &= ~QUrlPrivate::Fragment;
 
-    removeDotsFromPath(&t.d->path);
+    qt_normalizePathSegments(
+            &t.d->path,
+            isLocalFile() ? QDirPrivate::KeepLocalTrailingSlash : QDirPrivate::RemotePath);
+    if (!t.d->hasAuthority())
+        fixupNonAuthorityPath(&t.d->path);
 
 #if defined(QURL_DEBUG)
     qDebug("QUrl(\"%ls\").resolved(\"%ls\") = \"%ls\"",
@@ -3288,9 +3229,7 @@ QUrl &QUrl::operator =(const QString &url)
 /*!
     \fn void QUrl::swap(QUrl &other)
     \since 4.8
-
-    Swaps URL \a other with this URL. This operation is very
-    fast and never fails.
+    \memberswap{URL}
 */
 
 /*!
@@ -3677,10 +3616,8 @@ QList<QUrl> QUrl::fromStringList(const QStringList &urls, ParsingMode mode)
 */
 
 /*!
-    Returns the hash value for the \a url. If specified, \a seed is used to
-    initialize the hash.
-
-    \relates QHash
+    \fn size_t qHash(const QUrl &key, size_t seed)
+    \qhashold{QHash}
     \since 5.0
 */
 size_t qHash(const QUrl &url, size_t seed) noexcept

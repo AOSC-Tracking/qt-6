@@ -33,7 +33,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlproperty float PhysicsMaterial::staticFriction
+    \qmlproperty real PhysicsMaterial::staticFriction
     This property defines the amount of friction that is applied between surfaces that are not
     moving lateral to each-other.
 
@@ -43,7 +43,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlproperty float PhysicsMaterial::dynamicFriction
+    \qmlproperty real PhysicsMaterial::dynamicFriction
     This property defines the amount of friction applied between surfaces that are moving relative
     to each-other.
 
@@ -53,7 +53,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlproperty float PhysicsMaterial::restitution
+    \qmlproperty real PhysicsMaterial::restitution
     This property defines the coefficient of restitution, or how bouncy the material is.
     The coefficient of restitution of two
     colliding objects is a fractional value representing the ratio of speeds after and before an

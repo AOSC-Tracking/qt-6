@@ -58,25 +58,21 @@ constexpr float polarRoundness = 64.0f;
 /*!
  * \qmlproperty Graphs3D.SelectionMode GraphsItem3D::selectionMode
  * The active selection mode in the graph.
- * One of the QtGraphs3D::SelectionFlag enum values.
- *
- * \sa QtGraphs3D::SelectionFlag
+ * One of the \l Graphs3D.SelectionFlag enum values.
  */
 
 /*!
  * \qmlproperty Graphs3D.ShadowQuality GraphsItem3D::shadowQuality
- * The quality of shadows. One of the QtGraphs3D::ShadowQuality enum
+ * The quality of shadows. One of the \l Graphs3D.ShadowQuality enum
  * values.
- *
- * \sa QtGraphs3D::ShadowQuality
  */
 
 /*!
  * \qmlproperty Graphs3D.CameraPreset GraphsItem3D::cameraPreset
  *
  * The currently active camera preset, which is one of
- * \l{GraphsItem3D::cameraPreset}{Graphs3D.CameraPreset}. If no
- * preset is active, the value is \c {Graphs3D.CameraPreset.None}.
+ * \l{Graphs3D.CameraPreset}. If no
+ * preset is active, the value is \c {Graphs3D.CameraPreset.NoPreset}.
  */
 
 /*!
@@ -196,12 +192,12 @@ constexpr float polarRoundness = 64.0f;
  * indicate the edges of the corresponding axis range. Any values outside this
  * range are clamped to the edge.
  *
- * \note For bar graphs, the Y-coordinate is ignored and camera always targets
- * a point on the horizontal background.
  */
 
 /*!
  * \qmlproperty Scene3D GraphsItem3D::scene
+ * \readonly
+ *
  * The Scene3D pointer that can be used to manipulate the scene and access the
  * scene elements.
  *
@@ -220,33 +216,11 @@ constexpr float polarRoundness = 64.0f;
  *
  * How the graph will be rendered. Defaults to \c{Indirect}.
  *
- * \value DirectToBackground
- *        Indicates that the graph will be rendered directly on the window
- * background and QML items are rendered on top of it. Using non-transparent QML
- * item as a background will hide the graph. Clears the whole window before
- * rendering the graph, including the areas outside the graph. If the surface
- * format of the window supports antialiasing, it will be used (see
- * \c {qDefaultSurfaceFormat()}).
- * This rendering mode offers the best performance at the expense of
- * non-standard QML behavior. For example, the graphs do not obey the z ordering
- * of QML items and the opacity value has no effect on them.
- *
- * \value Indirect
- *        Indicates the graph will be first rendered to an offscreen surface
- * that is then drawn during normal QML item rendering. The rendered image is
- * antialiased using the multisampling method if it is supported in the current
- * environment and the msaaSamples property value is greater than zero.
- * This rendering mode offers good quality and normal QML item behavior at the
- * expense of performance.
- *
- * \note Antialiasing is not supported in OpenGL ES2 environments in any
- * rendering mode.
- *
  * \note Setting the \c antialiasing property of the graph does not do anything.
  * However, it is set by the graph itself if the current rendering mode uses
  * antialiasing.
  *
- * \sa msaaSamples
+ * \sa msaaSamples, Graphs3D.RenderingMode
  */
 
 /*!
@@ -301,7 +275,7 @@ constexpr float polarRoundness = 64.0f;
 /*!
  * \qmlproperty real GraphsItem3D::labelMargin
  *
- * brief This property specifies the margin for the placement of the axis labels.
+ * \brief This property specifies the margin for the placement of the axis labels.
  *
  * Negative values place the labels inside the plot-area while positive values
  * place them outside the plot-area. Label automatic rotation is disabled when
@@ -428,6 +402,7 @@ constexpr float polarRoundness = 64.0f;
 
 /*!
  * \qmlproperty Graphs3D.ElementType GraphsItem3D::selectedElement
+ * \readonly
  *
  * The element selected in the graph.
  *
@@ -440,7 +415,7 @@ constexpr float polarRoundness = 64.0f;
  *
  * \sa selectedLabelIndex(), selectedAxis(), selectedCustomItemIndex(),
  * selectedCustomItem(), Bars3D::selectedSeries, Scatter3D::selectedSeries,
- * Scene3D::selectionQueryPosition, QtGraphs3D::ElementType
+ * Scene3D::selectionQueryPosition, Graphs3D.ElementType
  */
 
 /*!
@@ -480,7 +455,7 @@ constexpr float polarRoundness = 64.0f;
 /*!
  * \qmlproperty Graphs3D.OptimizationHint GraphsItem3D::optimizationHint
  *
- * Whether the default, static, or legacy mode is used for rendering optimization.
+ * \brief Specifies whether the default or legacy mode is used for rendering optimization.
  *
  * The default mode uses instanced rendering, and provides the full feature set
  * at the best level of performance on most systems. The static mode optimizes
@@ -498,7 +473,7 @@ constexpr float polarRoundness = 64.0f;
  * This is mostly an issue on 32bit and OpenGL ES2 platforms. To work around
  * this issue, choose an item mesh with a low vertex count or use the point mesh.
  *
- * \sa Abstract3DSeries::mesh, QtGraphs3D::OptimizationHint
+ * \sa Abstract3DSeries::mesh, Graphs3D.OptimizationHint
  */
 
 /*!
@@ -512,6 +487,7 @@ constexpr float polarRoundness = 64.0f;
 
 /*!
  * \qmlproperty vector3d GraphsItem3D::queriedGraphPosition
+ * \readonly
  *
  * This read-only property contains the latest graph position values along each
  * axis queried using Scene3D::graphPositionQuery. The values are normalized to
@@ -540,7 +516,7 @@ constexpr float polarRoundness = 64.0f;
  * If the margin value is negative, the margins are determined automatically and
  * can vary according to the size of the items in the series and the type of the
  * graph. The value is interpreted as a fraction of the y-axis range if the
- * graph aspect ratios have not beed changed from the default values.
+ * graph aspect ratios have not been changed from the default values.
  * Defaults to \c{-1.0}.
  *
  * \note Setting a smaller margin for a scatter graph than the automatically
@@ -555,10 +531,12 @@ constexpr float polarRoundness = 64.0f;
 /*!
  * \qmlproperty Graphs3D.GridLineType GraphsItem3D::gridLineType
  *
- * Defines whether the grid lines type is Graphs3D.GridLineType.Shader or
- * Graphs3D.GridLineType.Geometry.
+ * Defines whether the grid lines type is \c Graphs3D.GridLineType.Shader or
+ * \c Graphs3D.GridLineType.Geometry.
  *
  * This value affects all grid lines.
+ *
+ * \sa Graphs3D.GridLineType
  */
 
 /*!
@@ -1522,8 +1500,10 @@ QList<QAbstract3DAxis *> QQuickGraphsItem::axes() const
 
 void QQuickGraphsItem::setRenderingMode(QtGraphs3D::RenderingMode mode)
 {
-    if (mode == m_renderMode)
+    if (mode == m_renderMode || mode < QtGraphs3D::RenderingMode::DirectToBackground
+            || mode > QtGraphs3D::RenderingMode::Indirect) {
         return;
+    }
 
     QtGraphs3D::RenderingMode previousMode = m_renderMode;
 
@@ -2359,11 +2339,30 @@ void QQuickGraphsItem::synchData()
         m_changeTracker.axisZRangeChanged = false;
     }
 
+    if (m_changeTracker.axisXReversedChanged) {
+        m_changeTracker.axisXReversedChanged = false;
+        if (m_axisX->type() == QAbstract3DAxis::AxisType::Value) {
+            QValue3DAxis *valueAxisX = static_cast<QValue3DAxis *>(m_axisX);
+            updateAxisReversed(valueAxisX->reversed());
+            m_labelsNeedupdate = true;
+        }
+    }
+
     if (m_changeTracker.axisYReversedChanged) {
         m_changeTracker.axisYReversedChanged = false;
         if (m_axisY->type() == QAbstract3DAxis::AxisType::Value) {
             QValue3DAxis *valueAxisY = static_cast<QValue3DAxis *>(m_axisY);
             updateAxisReversed(valueAxisY->reversed());
+            m_labelsNeedupdate = true;
+        }
+    }
+
+    if (m_changeTracker.axisZReversedChanged) {
+        m_changeTracker.axisZReversedChanged = false;
+        if (m_axisZ->type() == QAbstract3DAxis::AxisType::Value) {
+            QValue3DAxis *valueAxisZ = static_cast<QValue3DAxis *>(m_axisZ);
+            updateAxisReversed(valueAxisZ->reversed());
+            m_labelsNeedupdate = true;
         }
     }
 
@@ -2480,11 +2479,24 @@ void QQuickGraphsItem::synchData()
     }
 
     auto rotation = Utils::calculateRotation(rotVec);
-    if (m_yFlipped) {
-        m_backgroundRotation->setRotation(rotation);
-    } else {
-        modelMatrix.rotate(rotation);
-        m_backgroundRotation->setRotation(rotation);
+
+    if (rotation != m_backgroundRotation->rotation()) {
+        if (m_yFlipped) {
+            m_backgroundRotation->setRotation(rotation);
+            if (m_axisX->labelAutoAngle() > 0.0f ||
+                    m_axisY->labelAutoAngle() > 0.0f ||
+                    m_axisZ->labelAutoAngle() > 0.0f) {
+                m_labelsNeedupdate = true;
+            }
+        } else {
+            modelMatrix.rotate(rotation);
+            m_backgroundRotation->setRotation(rotation);
+            if (m_axisX->labelAutoAngle() > 0.0f ||
+                    m_axisY->labelAutoAngle() > 0.0f ||
+                    m_axisZ->labelAutoAngle() > 0.0f) {
+                m_labelsNeedupdate = true;
+            }
+        }
     }
 
     bool forceUpdateCustomVolumes = false;
@@ -2815,6 +2827,9 @@ void QQuickGraphsItem::synchData()
 
     if (m_measureFps)
         QQuickItem::update();
+
+    if (m_labelsNeedupdate)
+        updateLabels();
 }
 
 void QQuickGraphsItem::updateGrid()
@@ -3561,9 +3576,13 @@ void QQuickGraphsItem::updateLabels()
             obj->setScale(m_fontScaled);
             obj->setPosition(labelTrans);
             obj->setRotation(totalRotation);
-            obj->setProperty("labelText", labels[i]);
+            qsizetype labelIndex =
+                    valueAxisX->reversed() ? labelCount - 1 - i : i;
+            obj->setProperty("labelText", labels[labelIndex]);
             obj->setProperty("labelWidth", labelsMaxWidth);
             obj->setProperty("labelHeight", labelHeight);
+            if (!labels[i].compare(hiddenLabelTag))
+                obj->setVisible(false);
         }
     } else if (axisX()->type() == QAbstract3DAxis::AxisType::Category) {
         for (int i = 0; i < repeaterX()->count(); i++) {
@@ -3596,7 +3615,6 @@ void QQuickGraphsItem::updateLabels()
     labelAngleFraction = labelAutoAngle / 90.0f;
     fractionCamX = m_xRotation * labelAngleFraction;
     fractionCamY = m_yRotation * labelAngleFraction;
-
     QVector3D sideLabelRotation(0.0f, -90.0f, 0.0f);
     QVector3D backLabelRotation(0.0f, 0.0f, 0.0f);
 
@@ -3641,20 +3659,23 @@ void QQuickGraphsItem::updateLabels()
     if (zFlipped)
         zPos *= -1.0f;
     labelTrans.setZ(zPos);
-
     for (int i = 0; i < repeaterY()->count() / 2; i++) {
         if (labelCount <= i)
             break;
         auto obj = static_cast<QQuick3DNode *>(repeaterY()->objectAt(i));
-        labelTrans.setY(static_cast<QValue3DAxis *>(axisY())->labelPositionAt(i) * scale * 2.0f
-                        - scale);
+        auto valueAxisY = static_cast<QValue3DAxis *>(axisY());
+        labelTrans.setY(valueAxisY->labelPositionAt(i) * scale * 2.0f - scale);
+
         obj->setObjectName(QStringLiteral("ElementAxisYLabel"));
         obj->setScale(m_fontScaled);
         obj->setPosition(labelTrans);
         obj->setRotation(totalRotation);
-        obj->setProperty("labelText", labels[i]);
+        qsizetype labelIndex = valueAxisY->reversed() ? labelCount - 1 - i : i;
+        obj->setProperty("labelText", labels[labelIndex]);
         obj->setProperty("labelWidth", labelsMaxWidth);
         obj->setProperty("labelHeight", labelHeight);
+        if (!labels[i].compare(hiddenLabelTag))
+            obj->setVisible(false);
     }
 
     auto sideLabelTrans = labelTrans;
@@ -3782,9 +3803,12 @@ void QQuickGraphsItem::updateLabels()
             obj->setScale(m_fontScaled);
             obj->setPosition(labelTrans);
             obj->setRotation(totalRotation);
-            obj->setProperty("labelText", labels[i]);
+            qsizetype labelIndex = valueAxisZ->reversed() ? labelCount - 1 - i : i;
+            obj->setProperty("labelText", labels[labelIndex]);
             obj->setProperty("labelWidth", labelsMaxWidth);
             obj->setProperty("labelHeight", labelHeight);
+            if (!labels[i].compare(hiddenLabelTag))
+                obj->setVisible(false);
         }
     } else if (axisZ()->type() == QAbstract3DAxis::AxisType::Category) {
         for (int i = 0; i < repeaterZ()->count(); i++) {
@@ -3831,15 +3855,19 @@ void QQuickGraphsItem::updateLabels()
             break;
         auto obj = static_cast<QQuick3DNode *>(
             repeaterY()->objectAt(i + (repeaterY()->count() / 2)));
-        labelTrans.setY(static_cast<QValue3DAxis *>(axisY())->labelPositionAt(i) * scale * 2.0f
+        auto valueAxisY = static_cast<QValue3DAxis *>(axisY());
+        labelTrans.setY(valueAxisY->labelPositionAt(i) * scale * 2.0f
                         - scale);
         obj->setObjectName(QStringLiteral("ElementAxisYLabel"));
         obj->setScale(m_fontScaled);
         obj->setPosition(labelTrans);
         obj->setRotation(totalRotation);
-        obj->setProperty("labelText", labels[i]);
+        qsizetype labelIndex = valueAxisY->reversed() ? labelCount - 1 - i : i;
+        obj->setProperty("labelText", labels[labelIndex]);
         obj->setProperty("labelWidth", labelsMaxWidth);
         obj->setProperty("labelHeight", labelHeight);
+        if (!labels[i].compare(hiddenLabelTag))
+            obj->setVisible(false);
     }
 
     QVector3D backLabelTrans = labelTrans;
@@ -3852,6 +3880,7 @@ void QQuickGraphsItem::updateLabels()
                  totalBackLabelRotation,
                  labelsMaxWidth,
                  m_fontScaled);
+    m_labelsNeedupdate = false;
 }
 
 void QQuickGraphsItem::updateRadialLabelOffset()
@@ -3940,6 +3969,7 @@ void QQuickGraphsItem::updateItemLabel(QVector3D position)
     QVector3D pos2d = mapFrom3DScene(m_labelPosition);
     int pointSize = theme()->labelFont().pointSize();
     float scale = m_labelScale.x() * ((-10.0f * pointSize) + 650.0f) / pos2d.z();
+    scale = scale < 0 ? -scale : scale;
     if (m_sliceView && m_sliceView->isVisible())
         m_itemLabel->setScale(scale * .2f);
     else
@@ -4782,7 +4812,7 @@ void QQuickGraphsItem::updateCustomData()
         customLabel->setProperty("labelFont", label->font());
         customLabel->setProperty("backgroundVisible", label->isBackgroundVisible());
         customLabel->setProperty("backgroundColor", label->backgroundColor());
-        customLabel->setProperty("borderVisible", label->isBackgroundVisible());
+        customLabel->setProperty("borderVisible", label->isBorderVisible());
         customLabel->setVisible(label->isVisible());
 
         ++labelIterator;
@@ -5030,6 +5060,8 @@ void QQuickGraphsItem::geometryChange(const QRectF &newGeometry, const QRectF &o
 {
     QQuickItem::geometryChange(newGeometry, oldGeometry);
     // Do not cache primary subviewport geometry, as that will mess up window size
+    if (!parentItem())
+        return;
     m_cachedGeometry = parentItem()->boundingRect();
     updateWindowParameters();
 }
@@ -5088,12 +5120,6 @@ void QQuickGraphsItem::handleOptimizationHintChange(QtGraphs3D::OptimizationHint
     Q_UNUSED(hint)
 }
 
-void QQuickGraphsItem::mouseMoveEvent(QMouseEvent *event)
-{
-    QPoint mousePos = event->pos();
-    emit mouseMove(mousePos);
-}
-
 void QQuickGraphsItem::resizeViewports(QSizeF viewportSize)
 {
     if (!viewportSize.isEmpty()) {
@@ -5146,6 +5172,7 @@ void QQuickGraphsItem::setMeasureFps(bool enable)
         } else {
             QObject::disconnect(renderStats(), 0, this, 0);
         }
+        emit measureFpsChanged(enable);
     }
 }
 
@@ -5184,7 +5211,7 @@ QtGraphs3D::ElementType QQuickGraphsItem::selectedElement() const
 
 void QQuickGraphsItem::setAspectRatio(qreal ratio)
 {
-    if (m_aspectRatio != ratio) {
+    if (m_aspectRatio != ratio && ratio > 0.0) {
         m_aspectRatio = ratio;
         m_changeTracker.aspectRatioChanged = true;
         emit aspectRatioChanged(m_aspectRatio);
@@ -5266,7 +5293,7 @@ float QQuickGraphsItem::radialLabelOffset() const
 
 void QQuickGraphsItem::setHorizontalAspectRatio(qreal ratio)
 {
-    if (m_horizontalAspectRatio != ratio) {
+    if (m_horizontalAspectRatio != ratio && ratio > 0.0) {
         m_horizontalAspectRatio = ratio;
         m_changeTracker.horizontalAspectRatioChanged = true;
         emit horizontalAspectRatioChanged(m_horizontalAspectRatio);
@@ -5938,7 +5965,9 @@ void QQuickGraphsItem::setCameraTargetPosition(QVector3D target)
     if (m_requestedTarget == target)
         return;
 
-    m_requestedTarget = target;
+    m_requestedTarget.setX(std::clamp(target.x(), -1.0f, 1.0f));
+    m_requestedTarget.setY(std::clamp(target.y(), -1.0f, 1.0f));
+    m_requestedTarget.setZ(std::clamp(target.z(), -1.0f, 1.0f));
     emit cameraTargetPositionChanged(target);
 }
 
@@ -6246,6 +6275,8 @@ void QQuickGraphsItem::updateSliceLabels()
             obj->setProperty("backgroundVisible", backgroundVisible);
             obj->setProperty("backgroundColor", backgroundColor);
             obj->setEulerRotation(QVector3D(.0f, .0f, -45.0f));
+            if (!labels[i].compare(hiddenLabelTag))
+                obj->setVisible(false);
         }
     } else if (horizontalAxis->type() == QAbstract3DAxis::AxisType::Category) {
         for (int i = 0; i < m_sliceHorizontalLabelRepeater->count(); i++) {
@@ -6300,6 +6331,8 @@ void QQuickGraphsItem::updateSliceLabels()
             obj->setProperty("labelTextColor", verticalLabelTextColor);
             obj->setProperty("backgroundVisible", backgroundVisible);
             obj->setProperty("backgroundColor", backgroundColor);
+            if (!labels[i].compare(hiddenLabelTag))
+                obj->setVisible(false);
         }
     } else if (verticalAxis->type() == QAbstract3DAxis::AxisType::Category) {
         for (int i = 0; i < m_sliceVerticalLabelRepeater->count(); i++) {

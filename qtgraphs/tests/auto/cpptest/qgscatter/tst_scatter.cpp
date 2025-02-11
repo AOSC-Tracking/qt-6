@@ -101,6 +101,7 @@ void tst_scatter::initialProperties()
     QCOMPARE(m_graph->queriedGraphPosition(), QVector3D(0, 0, 0));
     QCOMPARE(m_graph->margin(), -1.0);
     QCOMPARE(m_graph->labelMargin(), 0.1f);
+    QCOMPARE(m_graph->cameraTargetPosition(), QVector3D(.0f, .0f, .0f));
 }
 
 void tst_scatter::initializeProperties()
@@ -122,6 +123,7 @@ void tst_scatter::initializeProperties()
     m_graph->setLocale(QLocale("FI"));
     m_graph->setMargin(1.0);
     m_graph->setLabelMargin(1.0f);
+    m_graph->setCameraTargetPosition(QVector3D(1.f, 1.f, 1.f));
 
     QCOMPARE(m_graph->activeTheme()->theme(), QGraphsTheme::Theme::QtGreenNeon);
     QCOMPARE(m_graph->selectionMode(), QtGraphs3D::SelectionFlag::None);
@@ -137,6 +139,7 @@ void tst_scatter::initializeProperties()
     QCOMPARE(m_graph->locale(), QLocale("FI"));
     QCOMPARE(m_graph->margin(), 1.0);
     QCOMPARE(m_graph->labelMargin(), 1.0f);
+    QCOMPARE(m_graph->cameraTargetPosition(), QVector3D(1.f, 1.f, 1.f));
 }
 
 void tst_scatter::invalidProperties()
@@ -146,11 +149,13 @@ void tst_scatter::invalidProperties()
     m_graph->setAspectRatio(-1.0);
     m_graph->setHorizontalAspectRatio(-1.0);
     m_graph->setLocale(QLocale("XX"));
+    m_graph->setCameraTargetPosition(QVector3D(2.f, -2.f, -2.f));
 
     QCOMPARE(m_graph->selectionMode(), QtGraphs3D::SelectionFlag::Item);
-    QCOMPARE(m_graph->aspectRatio(), -1.0/*2.0*/); // TODO: Fix once QTRD-3367 is done
-    QCOMPARE(m_graph->horizontalAspectRatio(), -1.0/*0.0*/); // TODO: Fix once QTRD-3367 is done
+    QCOMPARE(m_graph->aspectRatio(), 2.0);
+    QCOMPARE(m_graph->horizontalAspectRatio(), 0.0);
     QCOMPARE(m_graph->locale(), QLocale("C"));
+    QCOMPARE(m_graph->cameraTargetPosition(), QVector3D(1.f, -1.f, -1.f));
 }
 
 void tst_scatter::addSeries()

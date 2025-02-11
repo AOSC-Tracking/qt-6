@@ -48,6 +48,7 @@ qt6_add_qml_module(tst_qmltc_qprocess
         data/componentDefinitionInnerRequiredProperty.qml
         data/componentDefinitionInnerRequiredPropertyFromOutside.qml
         data/innerLevelRequiredProperty.qml
+    NO_GENERATE_EXTRA_QMLDIRS
 )
 
 set(common_libraries
@@ -71,6 +72,7 @@ _qt_internal_genex_getjoinedproperty(qrc_args tst_qmltc_qprocess
 )
 target_compile_definitions(tst_qmltc_qprocess PRIVATE
     TST_QMLTC_QPROCESS_RESOURCES="${qrc_args}"
+    QT_NO_CAST_FROM_ASCII
 )
 
 qt_internal_extend_target(tst_qmltc_qprocess CONDITION ANDROID OR IOS

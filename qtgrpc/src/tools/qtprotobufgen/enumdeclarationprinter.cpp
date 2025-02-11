@@ -52,7 +52,6 @@ void EnumDeclarationPrinter::printEnum()
 
     m_printer->Print(CommonTemplates::SemicolonBlockEnclosureTemplate());
     m_printer->Print(m_typeMap, CommonTemplates::QEnumNSTemplate());
-    m_printer->Print(m_typeMap, CommonTemplates::UsingRepeatedEnumTemplate());
 
     if (!m_typeMap["export_macro"].empty())
         m_printer->Print(m_typeMap, CommonTemplates::EnumRegistrationDeclaration());

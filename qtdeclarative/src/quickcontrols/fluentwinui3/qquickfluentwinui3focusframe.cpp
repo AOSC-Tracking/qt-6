@@ -3,6 +3,8 @@
 
 #include "qquickfluentwinui3focusframe_p.h"
 
+#include <private/qquickitem_p.h>
+
 #include <QtCore/qmetaobject.h>
 
 #include <QtGui/qguiapplication.h>
@@ -18,12 +20,14 @@ QScopedPointer<QQuickItem> QQuickFluentWinUI3FocusFrame::m_focusFrame;
 
 QQuickFluentWinUI3FocusFrame::QQuickFluentWinUI3FocusFrame()
 {
-    connect(qGuiApp, &QGuiApplication::focusObjectChanged, this, [this]{
-        if (auto control = qobject_cast<QQuickControl *>(qGuiApp->focusObject())) {
-            if (control->focusReason() == Qt::FocusReason::TabFocusReason
-                || control->focusReason() == Qt::FocusReason::BacktabFocusReason) {
-                moveToItem(control);
-            }
+    connect(qGuiApp, &QGuiApplication::focusObjectChanged, this, [this](QObject *focusObject){
+        if (QQuickControl *control = qobject_cast<QQuickControl *>(focusObject);
+            control && (control->focusReason() == Qt::FocusReason::TabFocusReason
+                    || control->focusReason() == Qt::FocusReason::BacktabFocusReason
+                    || control->focusReason() == Qt::FocusReason::OtherFocusReason)) {
+                        moveToItem(control);
+        } else {
+            moveToItem(nullptr);
         }
     });
 }
@@ -50,6 +54,7 @@ void QQuickFluentWinUI3FocusFrame::moveToItem(QQuickControl *item)
         if (!context || !context->engine())
             return;
         m_focusFrame.reset(createFocusFrame(context));
+        QQuickItemPrivate::get(m_focusFrame.get())->setTransparentForPositioner(true);
         if (!m_focusFrame) {
             qWarning() << "Failed to create FocusFrame";
             return;
@@ -63,6 +68,9 @@ void QQuickFluentWinUI3FocusFrame::moveToItem(QQuickControl *item)
 
 QQuickControl *QQuickFluentWinUI3FocusFrame::getFocusTarget(QQuickControl *focusItem) const
 {
+    if (!focusItem)
+        return nullptr;
+
     const auto parentItem = focusItem->parentItem();
     if (!parentItem)
         return nullptr;

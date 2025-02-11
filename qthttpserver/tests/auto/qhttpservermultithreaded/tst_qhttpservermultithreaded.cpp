@@ -7,6 +7,8 @@
 #include <QtTest/qtest.h>
 #include <QtConcurrent/qtconcurrentrun.h>
 
+#include <QtCore/qoperatingsystemversion.h>
+#include <QtCore/qsystemdetection.h>
 #include <QtCore/qbytearray.h>
 #include <QtCore/qlist.h>
 #include <QtCore/qurl.h>
@@ -131,7 +133,9 @@ enum ServerType
 };
 
 static int port = 0;
+#if QT_CONFIG(ssl)
 static int sslPort = 0;
+#endif
 static QString local = u"tst_qhttpservermultithreaded_local"_s;
 // Simple HTTP 1.1 client
 class LocalHttpClient
@@ -424,11 +428,33 @@ QString tst_QHttpServerMultithreaded::toString(qsizetype input) const
 
 void tst_QHttpServerMultithreaded::initTestCase_data()
 {
+    // Check if it's a macOS-build-with-SDK14 running on macOS 15:
+    auto sslServerIsBlockingKeychain = []
+    {
+    #ifdef Q_OS_MACOS
+    #if QT_MACOS_IOS_PLATFORM_SDK_EQUAL_OR_ABOVE(150000, 180000)
+        // Starting from macOS 15 our temporary keychain is ignored.
+        // We have to use kSecImportToMemoryOnly/kCFBooleanTrue key/value
+        // instead. This way we don't have to use QT_SSL_USE_TEMPORARY_KEYCHAIN anymore.
+        return false;
+    #else
+        if (QSslSocket::activeBackend() == QLatin1String("securetransport")
+            && QOperatingSystemVersion::current() >= QOperatingSystemVersion::MacOSSequoia) {
+            // We were built with SDK below 15, but a file-based keychains are not working anymore on macOS 15...
+            return true;
+        }
+    #endif // QT_MACOS_IOS_PLATFORM_SDK_EQUAL_OR_ABOVE
+    #endif // Q_OS_MACOS
+        return false;
+    };
+
     QTest::addColumn<ServerType>("serverType");
     QTest::addRow("TCP") << ServerType::TCP;
 #if QT_CONFIG(ssl)
-    if (QSslSocket::supportsSsl())
+    if (QSslSocket::supportsSsl() && !sslServerIsBlockingKeychain())
         QTest::addRow("SSL") << ServerType::SSL;
+    else if (QSslSocket::supportsSsl())
+        qInfo("Not testing TLS, keychain access will block the test");
 #endif
 #if QT_CONFIG(localserver)
     QTest::addRow("LOCAL") << ServerType::LOCAL;

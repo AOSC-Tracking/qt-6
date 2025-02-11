@@ -61,6 +61,8 @@ public:
     bool isGraphicsInitialized() const;
     bool setupGraphics(QQuickWindow *window);
 
+    void update();
+
     void processXrEvents();
 
     void doRenderFrame();
@@ -75,7 +77,6 @@ public:
 
     void setMultiViewRenderingEnabled(bool enable);
     bool isMultiViewRenderingEnabled() const { return m_multiviewRendering; }
-    bool isMultiViewRenderingSupported() const;
 
     void setPassthroughEnabled(bool enable);
     bool isPassthroughEnabled() const { return m_enablePassthrough; }
@@ -207,7 +208,7 @@ private:
     bool m_passThroughEnabled = false;
     bool m_passthroughSupported = false;
     bool m_enablePassthrough = false;
-    bool m_multiviewRendering = false;
+    bool m_multiviewRendering = true;
     bool m_spaceExtensionSupported = false;
     QQuick3DXrAnchorManager *m_spaceExtension = nullptr;
     bool m_colorspaceExtensionSupported = false;

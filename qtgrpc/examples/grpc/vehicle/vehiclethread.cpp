@@ -12,6 +12,7 @@
 
 using namespace qtgrpc::examples;
 using namespace google::protobuf;
+
 VehicleThread::VehicleThread(QObject *parent) : QThread(parent)
 {
 }
@@ -21,51 +22,83 @@ VehicleThread::~VehicleThread() = default;
 void VehicleThread::run()
 {
     if (!m_client) {
-        auto channel = std::shared_ptr<
-            QAbstractGrpcChannel>(new QGrpcHttp2Channel(QUrl("http://localhost:50051",
-                                                             QUrl::StrictMode)));
-        m_client = std::make_shared<qtgrpc::examples::VehicleService::Client>();
-        m_client->attachChannel(channel);
+        m_client = std::make_unique<qtgrpc::examples::VehicleService::Client>();
+        m_client
+            ->attachChannel(std::make_shared<QGrpcHttp2Channel>(QUrl("http://localhost:50051")));
     }
 
-    Empty fuelLvlRequest;
-    std::shared_ptr<QGrpcCallReply> replyFuel = m_client->getFuelLevel(fuelLvlRequest);
+    //! [Speed stream]
+    Empty speedRequest;
+    m_streamSpeed = m_client->getSpeedStream(speedRequest);
 
-    connect(replyFuel.get(), &QGrpcCallReply::finished, [replyFuel, this] (const QGrpcStatus &status) {
-        if (status.code() == QtGrpc::StatusCode::Ok) {
-            if (const auto fuelLvl = replyFuel->read<FuelLevelMsg>())
-                emit fuelLevelChanged(fuelLvl->fuelLevel());
-        } else {
-            emit connectionError(true);
-            emit fuelLevelChanged(0);
+    connect(m_streamSpeed.get(), &QGrpcServerStream::messageReceived, this, [this]() {
+        if (const auto speedResponse = m_streamSpeed->read<SpeedMsg>()) {
+            emit speedChanged(speedResponse->speed());
         }
     });
 
-    Empty speedRequest;
-    m_streamSpeed = m_client->getSpeedStream(speedRequest);
-    connect(m_streamSpeed.get(), &QGrpcServerStream::messageReceived, this, [this] {
-        if (const auto speedResponse = m_streamSpeed->read<SpeedMsg>())
-            emit speedChanged(speedResponse->speed());
+    connect(
+        m_streamSpeed.get(), &QGrpcServerStream::finished, this,
+        [this](const QGrpcStatus &status) {
+            if (!status.isOk()) {
+                auto error = QString("Stream error fetching speed %1 (%2)")
+                                 .arg(status.message())
+                                 .arg(QVariant::fromValue(status.code()).toString());
+                emit connectionError(error);
+                qWarning() << error;
+                return;
+            }
+        },
+        Qt::SingleShotConnection);
+    //! [Speed stream]
+
+    Empty rpmRequest;
+    m_streamRpm = m_client->getRpmStream(rpmRequest);
+    connect(m_streamRpm.get(), &QGrpcServerStream::messageReceived, this, [this]() {
+        if (const auto rpmResponse = m_streamRpm->read<RpmMsg>()) {
+            emit rpmChanged(rpmResponse->rpm());
+        }
     });
 
-    connect(m_streamSpeed.get(), &QGrpcServerStream::finished, this,
-            [this](const QGrpcStatus &status) {
-                emit speedChanged(0);
-                if (status.code() != QtGrpc::StatusCode::Ok) {
-                    emit connectionError(true);
-                    emit fuelLevelChanged(0);
-                    qWarning() << "Stream error(" << status.code() << "):" << status.message();
-                }
-            });
+    connect(
+        m_streamRpm.get(), &QGrpcServerStream::finished, this,
+        [this](const QGrpcStatus &status) {
+            if (!status.isOk()) {
+                auto error = QString("Stream error fetching RPM %1 (%2)")
+                                 .arg(status.message())
+                                 .arg(QVariant::fromValue(status.code()).toString());
+                emit connectionError(error);
+                qWarning() << error;
+                return;
+            }
+        },
+        Qt::SingleShotConnection);
 
-    Empty gearRequest;
-    m_streamGear = m_client->getGearStream(gearRequest);
-    connect(m_streamGear.get(), &QGrpcServerStream::messageReceived, this, [this] {
-        if (const auto gearResponse = m_streamGear->read<GearMsg>())
-            emit rpmChanged(gearResponse->rpm());
-    });
+    //! [Autonomy call]
+    Empty autonomyRequest;
+    std::unique_ptr<QGrpcCallReply> autonomyReply = m_client->getAutonomy(autonomyRequest);
+    const auto *autonomyReplyPtr = autonomyReply.get();
+    connect(
+        autonomyReplyPtr, &QGrpcCallReply::finished, this,
+        [this, autonomyReply = std::move(autonomyReply)](const QGrpcStatus &status) {
+            if (!status.isOk()) {
+                auto error = QString("Call error fetching autonomy %1 (%2)")
+                                 .arg(status.message())
+                                 .arg(QVariant::fromValue(status.code()).toString());
+                emit connectionError(error);
+                qWarning() << error;
+                return;
+            }
 
-    connect(m_streamGear.get(), &QGrpcServerStream::finished, this, [this] { emit rpmChanged(0); });
+            if (const auto autonomyMsg = autonomyReply->read<AutonomyMsg>()) {
+                emit autonomyChanged(autonomyMsg->autonomy());
+            }
+        },
+        Qt::SingleShotConnection);
+    //! [Autonomy call]
 
     QThread::run();
+
+    // Delete the VehicleService::Client object to shut down the connection
+    m_client.reset();
 }

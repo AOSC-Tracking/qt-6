@@ -1,6 +1,6 @@
 [
     {
-        "Id": "OpenXR",
+        "Id": "openxr",
         "Name": "OpenXR SDK",
         "QDocModule": "qtquick3d",
         "Description": "OpenXR SDK for developing XR applications",
@@ -14,12 +14,13 @@
         "Copyright": "Copyright (c) 2017-2024, The Khronos Group Inc.\nCopyright (c) 2017-2019, Valve Corporation\nCopyright (c) 2017-2019, LunarG, Inc."
     },
     {
-        "Id": "JsonCpp",
+        "Id": "jsoncpp",
         "Name": "JsonCpp",
         "QDocModule": "qtquick3d",
         "Description": "JsonCpp is a C++ library that allows manipulating JSON values, including serialization and deserialization to and from strings.",
         "QtUsage": "Used by the bundled OpenXR Loader inside of QtQuick3DXr to read JSON configuration files.",
 
+        "Path": "src/external/jsoncpp",
         "Homepage": "https://github.com/open-source-parsers/jsoncpp",
         "Version": "1.9.5",
         "License": "MIT License",
@@ -28,12 +29,13 @@
         "Copyright": "Copyright (c) 2007-2010 Baptiste Lepilleur and The JsonCpp Authors"
     },
     {
-        "Id": "JNIPP",
+        "Id": "jnipp",
         "Name": "Java Native Interface for C++",
         "QDocModule": "qtquick3d",
         "Description": "JJNIPP is just a C++ wrapper for the standard Java Native Interface (JNI).",
         "QtUsage": "Used the bundled OpenXR Loader inside of QtQuick3DXr on Android.",
 
+        "Path": "src/external/jnipp",
         "Homepage": "https://github.com/mitchdowd/jnipp",
         "Version": "1.0.0",
         "License": "MIT License",

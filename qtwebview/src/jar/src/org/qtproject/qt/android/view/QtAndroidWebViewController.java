@@ -108,12 +108,14 @@ class QtAndroidWebViewController
         public void onPageFinished(WebView view, String url)
         {
             super.onPageFinished(view, url);
-            m_loadingState = FINISHED_STATE;
-            if (m_progress != 100) // onProgressChanged() will notify Qt if we didn't finish here.
-                return;
-
-             m_frameCount = 0;
-             c_onPageFinished(m_id, url);
+            m_frameCount = 0;
+            if (m_loadingState == INIT_STATE) {
+                // we got an error do not call pageFinished
+                m_loadingState = FINISHED_STATE;
+            } else {
+                m_loadingState = FINISHED_STATE;
+                c_onPageFinished(m_id, url);
+            }
         }
 
         @Override
@@ -147,10 +149,6 @@ class QtAndroidWebViewController
             super.onProgressChanged(view, newProgress);
             m_progress = newProgress;
             c_onProgressChanged(m_id, newProgress);
-            if (m_loadingState == FINISHED_STATE && m_progress == 100) { // Did we finish?
-                m_frameCount = 0;
-                c_onPageFinished(m_id, view.getUrl());
-            }
         }
 
         @Override
@@ -406,7 +404,6 @@ class QtAndroidWebViewController
         }
 
         resetLoadingState(STARTED_STATE);
-        c_onPageStarted(m_id, url, null);
         m_activity.runOnUiThread(new Runnable() {
             @Override
             public void run() { m_webView.loadUrl(url); }
@@ -419,7 +416,6 @@ class QtAndroidWebViewController
             return;
 
         resetLoadingState(STARTED_STATE);
-        c_onPageStarted(m_id, null, null);
         m_activity.runOnUiThread(new Runnable() {
             @Override
             public void run() { m_webView.loadData(data, mimeType, encoding); }
@@ -436,7 +432,6 @@ class QtAndroidWebViewController
             return;
 
         resetLoadingState(STARTED_STATE);
-        c_onPageStarted(m_id, null, null);
         m_activity.runOnUiThread(new Runnable() {
             @Override
             public void run() { m_webView.loadDataWithBaseURL(baseUrl, data, mimeType, encoding, historyUrl); }

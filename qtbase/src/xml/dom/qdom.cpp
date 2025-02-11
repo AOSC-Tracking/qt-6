@@ -639,14 +639,9 @@ QDomNodeListPrivate::~QDomNodeListPrivate()
         delete node_impl;
 }
 
-bool QDomNodeListPrivate::operator==(const QDomNodeListPrivate &other) const
+bool QDomNodeListPrivate::operator==(const QDomNodeListPrivate &other) const noexcept
 {
     return (node_impl == other.node_impl) && (tagname == other.tagname);
-}
-
-bool QDomNodeListPrivate::operator!=(const QDomNodeListPrivate &other) const
-{
-    return !operator==(other);
 }
 
 void QDomNodeListPrivate::createList() const
@@ -1354,16 +1349,40 @@ void QDomNodePrivate::normalize()
     qNormalizeNode(this);
 }
 
-/*! \internal
-  \a depth is used for indentation, it seems.
- */
-void QDomNodePrivate::save(QTextStream& s, int depth, int indent) const
+void QDomNodePrivate::saveSubTree(const QDomNodePrivate *n, QTextStream &s,
+                                  int depth, int indent) const
 {
-    const QDomNodePrivate* n = first;
-    while (n) {
-        n->save(s, depth, indent);
-        n = n->next;
+    if (!n)
+        return;
+
+    const QDomNodePrivate *root = n->first;
+    n->save(s, depth, indent);
+    if (root) {
+        const int branchDepth = depth + 1;
+        int layerDepth = 0;
+        while (root) {
+            root->save(s, layerDepth + branchDepth, indent);
+            // A flattened (non-recursive) depth-first walk through the node tree.
+            if (root->first) {
+                layerDepth ++;
+                root = root->first;
+                continue;
+            }
+            root->afterSave(s, layerDepth + branchDepth, indent);
+            const QDomNodePrivate *prev = root;
+            root = root->next;
+            // Close QDomElementPrivate groups
+            while (!root && (layerDepth > 0)) {
+                root = prev->parent();
+                layerDepth --;
+                root->afterSave(s, layerDepth + branchDepth, indent);
+                prev = root;
+                root = root->next;
+            }
+        }
+        Q_ASSERT(layerDepth == 0);
     }
+    n->afterSave(s, depth, indent);
 }
 
 void QDomNodePrivate::setLocation(int lineNumber, int columnNumber)
@@ -2151,7 +2170,7 @@ void QDomNode::save(QTextStream& stream, int indent, EncodingPolicy encodingPoli
     if (isDocument())
         static_cast<const QDomDocumentPrivate *>(impl)->saveDocument(stream, indent, encodingPolicy);
     else
-        IMPL->save(stream, 1, indent);
+        IMPL->saveSubTree(IMPL, stream, 1, indent);
 }
 
 /*!
@@ -3069,11 +3088,11 @@ void QDomDocumentTypePrivate::save(QTextStream& s, int, int indent) const
 
         auto it2 = notations->map.constBegin();
         for (; it2 != notations->map.constEnd(); ++it2)
-            it2.value()->save(s, 0, indent);
+            it2.value()->saveSubTree(it2.value(), s, 0, indent);
 
         auto it = entities->map.constBegin();
         for (; it != entities->map.constEnd(); ++it)
-            it.value()->save(s, 0, indent);
+            it.value()->saveSubTree(it.value(), s, 0, indent);
 
         s << ']';
     }
@@ -4126,13 +4145,25 @@ void QDomElementPrivate::save(QTextStream& s, int depth, int indent) const
             if (indent != -1)
                 s << Qt::endl;
         }
-        QDomNodePrivate::save(s, depth + 1, indent); if (!last->isText())
-            s << QString(indent < 1 ? 0 : depth * indent, u' ');
-
-        s << "</" << qName << '>';
     } else {
         s << "/>";
     }
+}
+
+void QDomElementPrivate::afterSave(QTextStream &s, int depth, int indent) const
+{
+    if (last) {
+        QString qName(name);
+
+        if (!prefix.isEmpty())
+            qName = prefix + u':' + name;
+
+        if (!last->isText())
+            s << QString(indent < 1 ? 0 : depth * indent, u' ');
+
+        s << "</" << qName << '>';
+    }
+
     if (!(next && next->isText())) {
         /* -1 disables new lines. */
         if (indent != -1)
@@ -5913,7 +5944,7 @@ void QDomDocumentPrivate::saveDocument(QTextStream& s, const int indent, QDomNod
                 type->save(s, 0, indent);
                 doc = true;
             }
-            n->save(s, 0, indent);
+            n->saveSubTree(n, s, 0, indent);
             n = n->next;
         }
     }
@@ -5940,8 +5971,8 @@ void QDomDocumentPrivate::saveDocument(QTextStream& s, const int indent, QDomNod
         }
 
         // Now we serialize all the nodes after the faked XML declaration(the PI).
-        while(startNode) {
-            startNode->save(s, 0, indent);
+        while (startNode) {
+            startNode->saveSubTree(startNode, s, 0, indent);
             startNode = startNode->next;
         }
     }

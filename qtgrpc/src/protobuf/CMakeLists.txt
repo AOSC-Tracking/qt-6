@@ -3,8 +3,12 @@
 
 qt_internal_add_module(Protobuf
     SOURCES
+        protobuffieldpresencechecker_p.h
+        protobufscalarserializers_p.h protobufscalarserializers_p.cpp
+        protobufscalarjsonserializers_p.h
         qtprotobufglobal.h
         qabstractprotobufserializer.cpp qabstractprotobufserializer.h
+        qprotobufdeserializerbase_p.h qprotobufdeserializerbase.cpp
         qprotobufjsonserializer.cpp qprotobufjsonserializer.h
         qprotobuflazymessagepointer.h
         qprotobufmessage.cpp qprotobufmessage.h qprotobufmessage_p.h
@@ -20,6 +24,7 @@ qt_internal_add_module(Protobuf
         qtprotobuflogging.cpp qtprotobuflogging_p.h
         qtprotobufserializerhelpers.cpp qtprotobufserializerhelpers_p.h
         qtprotobuftypes.cpp qtprotobuftypes.h
+        qprotobufserializerbase_p.h qprotobufserializerbase.cpp
     EXTRA_CMAKE_FILES
         "${CMAKE_CURRENT_SOURCE_DIR}/QtProtobufProperties.cmake.in"
     PUBLIC_LIBRARIES

@@ -105,8 +105,6 @@ enum FooItems
 Q_ENUM_NS(FooItems)
 }
 
-Q_DECLARE_METATYPE(const QMetaObject*);
-
 #define TESTEXPORTMACRO Q_DECL_EXPORT
 
 #if !defined(Q_MOC_RUN) && !defined(Q_NOREPLY)
@@ -548,6 +546,18 @@ class TestClass : public MyNamespace::TestSuperClass, public DONT_CONFUSE_MOC(My
 public:
     inline TestClass() {}
 
+    // These two here test that Q_DECLARE_FLAGS is permitted in a class or
+    // struct nested inside of a Q_OBJECT and defined within the body of the
+    // class. A Q_OBJECT is not allowed here (see privateClass()).
+    struct NestedStruct {
+        enum E {};
+        Q_DECLARE_FLAGS(Flags, E)
+    };
+    class NestedClass {
+        enum E {};
+        Q_DECLARE_FLAGS(Flags, E)
+    };
+
 private slots:
     inline void dummy1() MACRO_WITH_POSSIBLE_COMPILER_SPECIFIC_ATTRIBUTES {}
     inline void dummy2() MACRO_WITH_POSSIBLE_COMPILER_SPECIFIC_ATTRIBUTES const {}
@@ -661,6 +671,7 @@ public:
     { return *this; }
     Q_INVOKABLE const QObject& myInvokableReturningConstRef() const
     { return *this; }
+    Q_INVOKABLE static int inline constexpr invokableWithConstexpr() { return 42; }
 
 
     // that one however should be fine
@@ -777,6 +788,9 @@ private slots:
     void uLongLong();
     void inputFileNameWithDotsButNoExtension();
     void userProperties();
+#if QT_VERSION <= QT_VERSION_CHECK(7, 0, 0)
+    void integerAccessFlagsProperties();
+#endif
     void supportConstSignals();
     void task87883();
     void multilineComments();
@@ -894,8 +908,8 @@ signals:
     void sigWithDefaultArg(int i = 12);
 
 private:
-    bool user1() { return true; };
-    bool user2() { return false; };
+    bool user1() { return true; }
+    bool user2() { return false; }
     template <class T> void revisions_T();
     QString member2() const { return sMember; }
     void setMember3( const QString &sVal ) { sMember = sVal; }
@@ -1076,6 +1090,25 @@ void tst_Moc::userProperties()
     QVERIFY(property.isValid());
     QVERIFY(!property.isUser());
 }
+
+#if QT_VERSION <= QT_VERSION_CHECK(7, 0, 0)
+#include "flags-property-integer-access.h"
+
+void tst_Moc::integerAccessFlagsProperties()
+{
+    ClassWithFlagsAccessAsInteger o;
+
+    const QMetaObject *mobj = &ClassWithFlagsAccessAsInteger::staticMetaObject;
+    QMetaProperty property = mobj->property(mobj->indexOfProperty("flagsValue"));
+    QVERIFY(property.isValid());
+    QCOMPARE(property.metaType(), QMetaType::fromType<ClassWithFlagsAccessAsInteger::Flags>());
+
+    QVariant v = property.read(&o);
+    QCOMPARE(v, 0);
+    property.write(&o, QVariant::fromValue(ClassWithFlagsAccessAsInteger::F2));
+    QCOMPARE(o.flagsValue(), ClassWithFlagsAccessAsInteger::F2);
+}
+#endif
 
 void tst_Moc::supportConstSignals()
 {
@@ -1273,8 +1306,6 @@ void tst_Moc::structQObject()
 }
 
 #include "namespaced-flags.h"
-
-Q_DECLARE_METATYPE(QList<Foo::Bar::Flags>);
 
 void tst_Moc::namespacedFlags()
 {
@@ -1990,11 +2021,11 @@ struct const_ {};
 class QTBUG9354_constInName: public QObject
 { Q_OBJECT
 public slots:
-    void slotChooseScientificConst0(science_constant const &) {};
-    void foo(science_const const &) {};
-    void foo(constconst const &) {};
-    void foo(constconst *) {};
-    void foo(const_ *) {};
+    void slotChooseScientificConst0(science_constant const &) {}
+    void foo(science_const const &) {}
+    void foo(constconst const &) {}
+    void foo(constconst *) {}
+    void foo(const_ *) {}
 };
 
 
@@ -2111,7 +2142,7 @@ public:
     Q_INVOKABLE Q_REVISION(6, 0) void method60() {}
 
     enum TestEnum { One, Two };
-    Q_ENUM(TestEnum);
+    Q_ENUM(TestEnum)
 
 
 public slots:
@@ -2155,7 +2186,7 @@ public:
     Q_INVOKABLE Q_REVISION(6, 0) void method60() {}
 
     enum TestEnum { One, Two };
-    Q_ENUM(TestEnum);
+    Q_ENUM(TestEnum)
 
 public slots:
     void slot1() {}
@@ -2472,6 +2503,29 @@ void tst_Moc::warnings_data()
         << QString()
         << QString("standard input:2:1: error: Plugin Metadata file \".\" could not be opened: file to open is a directory");
 #endif
+
+    static const char *tags[] = { "class", "struct" };
+    static const char *metaKeywords[] = { "Q_OBJECT", "Q_GADGET" };
+    for (size_t i = 0; i < std::size(tags) * 2 * std::size(metaKeywords) * 2; ++i) {
+        const char *tag1 = tags[i & 1];
+        const char *tag2 = tags[(i >> 1) & 1];
+        const char *meta1 = metaKeywords[(i >> 2) & 1];
+        const char *meta2 = metaKeywords[(i >> 3) & 1];
+        QByteArray input = tag1;
+        input += " X : public Base {\n    ";
+        input += meta1;
+        input += "\n    ";
+        input += tag2;
+        input += " Nested : public Base {\n        ";
+        input += meta2;
+        input += "    };\n};\n";
+        QTest::addRow("nested-%s-%s-%s-%s", tag1, meta1, tag2, meta2)
+                << input
+                << QStringList()
+                << 1
+                << QString()
+                << "standard input:4:1: error: Meta object features not supported for nested classes";
+    }
 }
 
 void tst_Moc::warnings()
@@ -3314,7 +3368,6 @@ public:
 Q_DECLARE_METATYPE(CustomQObject::Number)
 
 typedef CustomQObject* CustomQObjectStar;
-Q_DECLARE_METATYPE(CustomQObjectStar);
 
 namespace SomeNamespace {
 
@@ -3355,7 +3408,6 @@ public:
 Q_DECLARE_METATYPE(CustomQObject2::Number)
 
 typedef CustomQObject2* CustomQObject2Star;
-Q_DECLARE_METATYPE(CustomQObject2Star);
 
 namespace SomeNamespace2 {
 
@@ -3833,7 +3885,7 @@ namespace QTBUG32933_relatedObjectsDontIncludeItself {
             Q_PROPERTY(Obj::MyEnum p2 MEMBER member)
             Q_PROPERTY(NS::Obj::MyEnum p3 MEMBER member)
             Q_PROPERTY(QTBUG32933_relatedObjectsDontIncludeItself::NS::Obj::MyEnum p4 MEMBER member)
-            Q_ENUMS(MyEnum);
+            Q_ENUMS(MyEnum)
         public:
             enum MyEnum { Something, SomethingElse };
             MyEnum member;
@@ -4375,8 +4427,6 @@ void TestFwdProperties::setProp3(const FwdClass3 &v)
 }
 TestFwdProperties::~TestFwdProperties() {}
 
-Q_DECLARE_METATYPE(FwdClass1);
-
 void tst_Moc::mocInclude()
 {
     TestFwdProperties obj;
@@ -4420,7 +4470,8 @@ signals:
 
 public:
     QBindable<int> bindablePublicProperty() { return QBindable<int>(&publicProperty); }
-    Q_OBJECT_BINDABLE_PROPERTY(ClassWithQPropertyMembers, int, publicProperty, &ClassWithQPropertyMembers::publicPropertyChanged);
+    Q_OBJECT_BINDABLE_PROPERTY(ClassWithQPropertyMembers, int, publicProperty,
+                               &ClassWithQPropertyMembers::publicPropertyChanged)
     QProperty<int> notExposed;
 
 
@@ -4547,7 +4598,7 @@ public:
         ClassWithPrivateQPropertyShim *q = nullptr;
 
         void onTestPropertyChanged() { q->testPropertyChanged(); }
-        Q_OBJECT_BINDABLE_PROPERTY(Private, int, testProperty, &Private::onTestPropertyChanged);
+        Q_OBJECT_BINDABLE_PROPERTY(Private, int, testProperty, &Private::onTestPropertyChanged)
         QProperty<int> testProperty2;
     };
     Private priv{this};

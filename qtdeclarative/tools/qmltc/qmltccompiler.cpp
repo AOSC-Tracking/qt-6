@@ -608,7 +608,7 @@ static void compilePropertyInitializer(QmltcType &current, const QQmlJSScope::Co
                 current.propertyInitializer.component.name, property.write(), name);
         }
 
-        compiledSetter.body << u"%1.insert(\"%2\");"_s.arg(
+        compiledSetter.body << u"%1.insert(QStringLiteral(\"%2\"));"_s.arg(
             current.propertyInitializer.initializedCache.name, name);
     }
 }
@@ -1491,7 +1491,8 @@ void QmltcCompiler::compileAttachedPropertyBinding(QmltcType &current,
     auto &attachedMemberName =
             m_uniques[UniqueStringId(current, propertyName)].attachedVariableName;
     if (attachedMemberName.isEmpty()) {
-        attachedMemberName = u"m_" + attachingTypeName;
+        attachedMemberName = uniqueVariableName(attachingTypeName);
+
         // add attached type as a member variable to allow noop lookup
         current.variables.emplaceBack(attachedTypeName + u" *", attachedMemberName, u"nullptr"_s);
 
@@ -1789,8 +1790,8 @@ void QmltcCompiler::compileBindingByType(QmltcType &current,
         break;
     }
     case QQmlSA::BindingType::Script: {
-        QString bindingSymbolName = type->internalName() + u'_' + propertyName + u"_binding";
-        bindingSymbolName.replace(u'.', u'_'); // can happen with group properties
+        QString bindingSymbolName
+                = uniqueVariableName(type->internalName() + u'_' + propertyName + u"_binding");
         compileScriptBinding(current, binding, bindingSymbolName, type, propertyName, propertyType,
                              accessor);
         break;
@@ -2029,7 +2030,7 @@ void QmltcCompiler::compileScriptBinding(QmltcType &current,
         current.children << compileScriptBindingPropertyChangeHandler(
                 binding, objectType, m_urlMethodName, bindingFunctorName, objectClassName);
 
-        current.setComplexBindings.body << u"if (!%1.contains(\"%2\"))"_s.arg(
+        current.setComplexBindings.body << u"if (!%1.contains(QStringLiteral(\"%2\")))"_s.arg(
             current.propertyInitializer.initializedCache.name, propertyName);
 
         // TODO: this could be dropped if QQmlEngine::setContextForObject() is

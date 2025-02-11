@@ -52,11 +52,13 @@ Q_TRACE_POINT(qtqml, QQmlObjectCreator_createInstance_entry, const QV4::Executab
 Q_TRACE_POINT(qtqml, QQmlObjectCreator_createInstance_exit, const QString &typeName)
 
 QQmlObjectCreator::QQmlObjectCreator(
-        QQmlRefPointer<QQmlContextData> parentContext,
+        const QQmlRefPointer<QQmlContextData> &parentContext,
         const QQmlRefPointer<QV4::ExecutableCompilationUnit> &compilationUnit,
         const QQmlRefPointer<QQmlContextData> &creationContext,
+        const QString &inlineComponentName,
         QQmlIncubatorPrivate *incubator)
     : phase(Startup)
+    , m_inlineComponentName(inlineComponentName)
     , compilationUnit(compilationUnit)
     , propertyCaches(compilationUnit->propertyCachesPtr())
     , sharedState(new QQmlObjectCreatorSharedState, QQmlRefPointer<QQmlObjectCreatorSharedState>::Adopt)
@@ -64,12 +66,12 @@ QQmlObjectCreator::QQmlObjectCreator(
     , isContextObject(true)
     , incubator(incubator)
 {
-    init(std::move(parentContext));
+    init(parentContext);
 
     sharedState->componentAttached = nullptr;
-    sharedState->allCreatedBindings.allocate(compilationUnit->totalBindingsCount());
-    sharedState->allParserStatusCallbacks.allocate(compilationUnit->totalParserStatusCount());
-    sharedState->allCreatedObjects.allocate(compilationUnit->totalObjectCount());
+    sharedState->allCreatedBindings.allocate(compilationUnit->totalBindingsCount(inlineComponentName));
+    sharedState->allParserStatusCallbacks.allocate(compilationUnit->totalParserStatusCount(inlineComponentName));
+    sharedState->allCreatedObjects.allocate(compilationUnit->totalObjectCount(inlineComponentName));
     sharedState->allJavaScriptObjects = ObjectInCreationGCAnchorList();
     sharedState->creationContext = creationContext;
     sharedState->rootContext.reset();
@@ -77,16 +79,17 @@ QQmlObjectCreator::QQmlObjectCreator(
 
     if (auto profiler = QQmlEnginePrivate::get(engine)->profiler) {
         Q_QML_PROFILE_IF_ENABLED(QQmlProfilerDefinitions::ProfileCreating, profiler,
-                sharedState->profiler.init(profiler, compilationUnit->totalParserStatusCount()));
+                sharedState->profiler.init(profiler, compilationUnit->totalParserStatusCount(inlineComponentName)));
     } else {
         Q_UNUSED(profiler);
     }
 }
 
-QQmlObjectCreator::QQmlObjectCreator(QQmlRefPointer<QQmlContextData> parentContext,
-        const QQmlRefPointer<QV4::ExecutableCompilationUnit> &compilationUnit,
-        QQmlObjectCreatorSharedState *inheritedSharedState, bool isContextObject)
+QQmlObjectCreator::QQmlObjectCreator(const QQmlRefPointer<QQmlContextData> &parentContext,
+                                     const QQmlRefPointer<QV4::ExecutableCompilationUnit> &compilationUnit, const QString inlineComponentName,
+                                     QQmlObjectCreatorSharedState *inheritedSharedState, bool isContextObject)
     : phase(Startup)
+    , m_inlineComponentName(inlineComponentName)
     , compilationUnit(compilationUnit)
     , propertyCaches(compilationUnit->propertyCachesPtr())
     , sharedState(inheritedSharedState)
@@ -94,12 +97,12 @@ QQmlObjectCreator::QQmlObjectCreator(QQmlRefPointer<QQmlContextData> parentConte
     , isContextObject(isContextObject)
     , incubator(nullptr)
 {
-    init(std::move(parentContext));
+    init(parentContext);
 }
 
-void QQmlObjectCreator::init(QQmlRefPointer<QQmlContextData> providedParentContext)
+void QQmlObjectCreator::init(const QQmlRefPointer<QQmlContextData> &providedParentContext)
 {
-    parentContext = std::move(providedParentContext);
+    parentContext = providedParentContext;
     engine = parentContext->engine();
     v4 = engine->handle();
 
@@ -191,11 +194,12 @@ QObject *QQmlObjectCreator::create(int subComponentIndex, QObject *parent, QQmlI
 
     Q_ASSERT(sharedState->allJavaScriptObjects.canTrack() || topLevelCreator);
     if (topLevelCreator)
-        sharedState->allJavaScriptObjects = ObjectInCreationGCAnchorList(scope, compilationUnit->totalObjectCount());
+        sharedState->allJavaScriptObjects = ObjectInCreationGCAnchorList(scope, compilationUnit->totalObjectCount(m_inlineComponentName));
 
     if (!isComponentRoot && sharedState->creationContext) {
         // otherwise QQmlEnginePrivate::createInternalContext() handles it
-        context->setImportedScripts(sharedState->creationContext->importedScripts());
+        QV4::ScopedValue scripts(scope, sharedState->creationContext->importedScripts());
+        context->setImportedScripts(v4, scripts);
     }
 
     QObject *instance = createInstance(objectToCreate, parent, /*isContextObject*/true);
@@ -239,7 +243,7 @@ void QQmlObjectCreator::beginPopulateDeferred(const QQmlRefPointer<QQmlContextDa
 
     // FIXME (QTBUG-122956): allocating from the short lived scope does not make any sense
     QV4::Scope valueScope(v4);
-    sharedState->allJavaScriptObjects = ObjectInCreationGCAnchorList(valueScope, compilationUnit->totalObjectCount());
+    sharedState->allJavaScriptObjects = ObjectInCreationGCAnchorList(valueScope, compilationUnit->totalObjectCount(m_inlineComponentName));
 }
 
 void QQmlObjectCreator::populateDeferred(QObject *instance, int deferredIndex,
@@ -671,7 +675,8 @@ void QQmlObjectCreator::setPropertyValue(const QQmlPropertyData *property, const
                 break;
             }
 
-            QVariant target = QQmlValueTypeProvider::createValueType(source, propertyType);
+            QVariant target = QQmlValueTypeProvider::createValueType(
+                    source, propertyType, engine->handle());
             if (target.isValid()) {
                 property->writeProperty(_qobject, target.data(), propertyWriteFlags);
                 break;
@@ -1337,6 +1342,7 @@ QObject *QQmlObjectCreator::createInstance(int index, QObject *parent, bool isCo
                 QQmlObjectCreator subCreator(
                         context, engine->handle()->executableCompilationUnit(
                                          std::move(compilationUnit)),
+                        QString(), // not an inline component
                         sharedState.data(), isContextObject);
                 instance = subCreator.create();
                 if (!instance) {
@@ -1344,28 +1350,16 @@ QObject *QQmlObjectCreator::createInstance(int index, QObject *parent, bool isCo
                     return nullptr;
                 }
             } else {
-                QString subObjectName;
-                if (QString *icRootName = compilationUnit->icRootName.get()) {
-                    subObjectName = type.elementName();
-                    std::swap(*icRootName, subObjectName);
-                } else {
-                    compilationUnit->icRootName = std::make_unique<QString>(type.elementName());
-                }
-
-                const auto guard = qScopeGuard([&] {
-                    if (subObjectName.isEmpty())
-                        compilationUnit->icRootName.reset();
-                    else
-                        std::swap(*compilationUnit->icRootName, subObjectName);
-                });
+                const QString inlineComponentName = type.elementName();
 
                 const int inlineComponentId
-                        = compilationUnit->inlineComponentId(*compilationUnit->icRootName);
+                        = compilationUnit->inlineComponentId(inlineComponentName);
                 QQmlObjectCreator subCreator(
                         context,
                         engine->handle()->executableCompilationUnit(
                                 QQmlRefPointer<QV4::CompiledData::CompilationUnit>(
                                         compilationUnit)),
+                        inlineComponentName,
                         sharedState.data(),
                         isContextObject);
                 instance = subCreator.create(
@@ -1669,7 +1663,7 @@ bool QQmlObjectCreator::populateInstance(int index, QObject *instance, QObject *
 
     _ddata->compilationUnit = compilationUnit;
     if (_compiledObject->hasFlag(QV4::CompiledData::Object::HasDeferredBindings))
-        _ddata->deferData(_compiledObjectIndex, compilationUnit, context);
+        _ddata->deferData(_compiledObjectIndex, compilationUnit, context, m_inlineComponentName);
 
     const qsizetype oldRequiredPropertiesCount = sharedState->requiredProperties.size();
     QSet<QString> postHocRequired;

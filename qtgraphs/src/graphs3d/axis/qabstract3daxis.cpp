@@ -111,8 +111,8 @@ QT_BEGIN_NAMESPACE
  *
  * The rotation of axis titles.
  *
- * If \c{true}, axis titles in the primary graph view will be rotated towards
- * the camera similarly to the axis labels. If \c{false}, axis titles are only
+ * If \c{false}, axis titles in the primary graph view will be rotated towards
+ * the camera similarly to the axis labels. If \c{true}, axis titles are only
  * rotated around their axis but are not otherwise oriented towards the camera.
  * This property does not have any effect if the labelAutoAngle property
  * value is zero.
@@ -397,8 +397,8 @@ bool QAbstract3DAxis::labelsVisible() const
  *
  * \brief The rotation of the axis titles.
  *
- * If \c{true}, axis titles in the primary graph view will be rotated towards
- * the camera similarly to the axis labels. If \c{false}, axis titles are only
+ * If \c{false}, axis titles in the primary graph view will be rotated towards
+ * the camera similarly to the axis labels. If \c{true}, axis titles are only
  * rotated around their axis but are not otherwise oriented towards the camera.
  * This property does not have any effect if the labelAutoAngle property
  * value is zero.

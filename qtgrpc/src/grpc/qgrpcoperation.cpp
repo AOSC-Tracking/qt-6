@@ -19,23 +19,37 @@ using namespace Qt::StringLiterals;
 /*!
     \class QGrpcOperation
     \inmodule QtGrpc
-    \brief The QGrpcOperation class implements common logic to
-           handle the gRPC communication from the client side.
+    \brief The QGrpcOperation class provides common operations to handle the
+    \gRPC communication from the client side.
+
+    QGrpcOperation serves as the base class for the four \gRPC method types:
+    QGrpcCallReply (unary calls), QGrpcServerStream (server streaming),
+    QGrpcClientStream (client streaming), and QGrpcBidiStream (bidirectional
+    streaming). It provides a common interface for interacting with these
+    remote procedure calls (RPCs).
+
+    Each QGrpcOperation corresponds to a specific RPC requested through the
+    generated client interface.
+
+    For a high-level overview, refer to the \l {clientguide} {Qt GRPC
+    Client Guide}.
 */
 
 /*!
     \fn void QGrpcOperation::finished(const QGrpcStatus &status)
 
-    This signal indicates the end of communication for this call.
+    This signal is emitted when a previously started RPC has finished. The \a
+    status provides additional information about the outcome of the RPC.
 
-    If this signal is emitted the respective operation when it's finished with
-    the respective \a status.
+    After this signal is received, no further write or read operations should
+    be performed on the operation object. At this point, it is safe to reuse or
+    destroy the RPC object.
 
     \note This signal is emitted only once, and in most cases, you will want to
     disconnect right after receiving it to avoid issues, such as lambda
     captures not being destroyed after receiving the signal. An easy way to
-    achieve this is by using the Qt::SingleShotConnection \l {Qt::}
-    {ConnectionType}.
+    achieve this is by using the \l {Qt::} {SingleShotConnection} connection
+    type. See \l {Single Shot RPCs} for further details.
 */
 
 class QGrpcOperationPrivate : public QObjectPrivate
@@ -52,6 +66,12 @@ public:
     QAtomicInteger<bool> isFinished{ false };
 };
 
+/*!
+    \internal
+
+    Constructs a QGrpcOperation using \a operationContext to communicate
+    with the underlying channel and sets \a parent as the owner.
+*/
 QGrpcOperation::QGrpcOperation(std::shared_ptr<QGrpcOperationContext> operationContext,
                                QObject *parent)
     : QObject(*new QGrpcOperationPrivate(std::move(operationContext)), parent)
@@ -78,13 +98,15 @@ QGrpcOperation::QGrpcOperation(std::shared_ptr<QGrpcOperationContext> operationC
                "Unable to make connection to the 'finished' signal");
 }
 
+/*!
+    Destroys the QGrpcOperation.
+*/
 QGrpcOperation::~QGrpcOperation() = default;
 
 /*!
     \fn template <typename T, QtProtobuf::if_protobuf_message<T> = true> std::optional<T> QGrpcOperation::read() const
 
-    Reads a message from a raw byte array stored within this QGrpcOperation
-    instance.
+    Reads a message from a raw byte array stored within this operation object.
 
     Returns an optional deserialized message. On failure, \c {std::nullopt} is
     returned.
@@ -92,20 +114,20 @@ QGrpcOperation::~QGrpcOperation() = default;
     \note This function only participates in overload resolution if \c T is a
     subclass of QProtobufMessage.
 
-    \sa read
+    \sa read(QProtobufMessage *)
 */
 
 /*!
     \since 6.8
-    Reads a message from a raw byte array which is stored within this
-    QGrpcOperation instance.
+
+    Reads a message from a raw byte array stored within this operation object.
 
     The function writes the deserialized value to the \a message pointer.
 
     If the deserialization is successful, this function returns \c true.
     Otherwise, it returns \c false.
 
-    \sa read
+    \sa read()
 */
 bool QGrpcOperation::read(QProtobufMessage *message) const
 {
@@ -123,7 +145,11 @@ bool QGrpcOperation::read(QProtobufMessage *message) const
 }
 
 /*!
-    T.B.A
+    Tries to cancel the RPC immediately. Successful cancellation cannot be
+    guaranteed. Emits the \l finished signal with a \l {QtGrpc::StatusCode::}
+    {Cancelled} status code.
+
+    \sa QGrpcOperationContext::cancelRequested
 */
 void QGrpcOperation::cancel()
 {
@@ -137,8 +163,10 @@ void QGrpcOperation::cancel()
 }
 
 /*!
-    Getter of the metadata received from the channel. For the HTTP2 channels it
-    usually contains the HTTP headers received from the server.
+    Returns the server metadata received from the channel.
+
+    \note For \l {QGrpcHttp2Channel} {HTTP/2 channels} it usually includes the
+    HTTP headers received from the server.
 */
 const QHash<QByteArray, QByteArray> &QGrpcOperation::metadata() const & noexcept
 {
@@ -147,7 +175,7 @@ const QHash<QByteArray, QByteArray> &QGrpcOperation::metadata() const & noexcept
 }
 
 /*!
-    Getter of the method that this operation was initialized with.
+    Returns the method name associated with this RPC operation.
 */
 QLatin1StringView QGrpcOperation::method() const noexcept
 {
@@ -156,8 +184,8 @@ QLatin1StringView QGrpcOperation::method() const noexcept
 }
 
 /*!
-    Returns true when QGrpcOperation finished its workflow,
-    meaning it was finished, canceled, or error occurred, otherwise returns false.
+    Returns true if this operation has finished, meaning that no more
+    operations can happen on the corresponding RPC, otherwise returns false.
 */
 bool QGrpcOperation::isFinished() const noexcept
 {

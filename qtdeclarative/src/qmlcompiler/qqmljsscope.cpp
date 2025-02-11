@@ -703,7 +703,7 @@ void QQmlJSScope::resolveList(const QQmlJSScope::Ptr &self, const QQmlJSScope::C
     self->m_listType = listType;
 }
 
-void QQmlJSScope::resolveGeneralizedGroup(
+void QQmlJSScope::resolveGroup(
         const Ptr &self, const ConstPtr &baseType,
         const QQmlJS::ContextualTypes &contextualTypes, QSet<QString> *usedTypes)
 {
@@ -1161,13 +1161,16 @@ QDeferredFactory<QQmlJSScope>::QDeferredFactory(QQmlJSImporter *importer, const 
 void QDeferredFactory<QQmlJSScope>::populate(const QSharedPointer<QQmlJSScope> &scope) const
 {
     scope->setOwnModuleName(m_moduleName);
+    scope->setFilePath(m_filePath);
 
     QList<QQmlJS::DiagnosticMessage> errors = m_typeReader(m_importer, m_filePath, scope);
     m_importer->m_globalWarnings.append(errors);
 
     scope->setInternalName(internalName());
-    QQmlJSScope::resolveEnums(scope, m_importer->builtinInternalNames());
-    QQmlJSScope::resolveList(scope, m_importer->builtinInternalNames().arrayType());
+    QQmlJSScope::resolveEnums(
+            scope, m_importer->builtinInternalNames().contextualTypes());
+    QQmlJSScope::resolveList(
+            scope, m_importer->builtinInternalNames().contextualTypes().arrayType());
 
     if (m_isSingleton && !scope->isSingleton()) {
         m_importer->m_globalWarnings.append(
@@ -1280,6 +1283,22 @@ QVector<QQmlJSScope::ConstPtr> QQmlJSScope::childScopes() const
     for (const auto &child : m_childScopes)
         result.append(child);
     return result;
+}
+
+/*!
+    \internal
+
+    Returns true if this type or any base type of it has the "EnforcesScopedEnums" flag.
+    The rationale is that you can turn on enforcement of scoped enums, but you cannot turn
+    it off explicitly.
+ */
+bool QQmlJSScope::enforcesScopedEnums() const
+{
+    for (const QQmlJSScope *scope = this; scope; scope = scope->baseType().get()) {
+        if (scope->hasEnforcesScopedEnumsFlag())
+            return true;
+    }
+    return false;
 }
 
 /*!

@@ -17,6 +17,8 @@
 #include <QtQml/private/qqmljsastvisitor_p.h>
 #include <QtQml/private/qqmljsast_p.h>
 
+#include <QtQmlCompiler/private/qqmljsutils_p.h>
+
 #include <QtCore/QBasicMutex>
 #include <QtCore/QCborArray>
 #include <QtCore/QDebug>
@@ -1138,11 +1140,25 @@ void DomEnvironment::loadFile(const FileToLoad &file, const Callback &callback,
     Management and handing of this is happening through the m_loadsWithWork.
 */
 // TODO(QTBUG-119550) refactor this
-void DomEnvironment::loadFile(const FileToLoad &file, const Callback &loadCallback,
+void DomEnvironment::loadFile(const FileToLoad &_file, const Callback &loadCallback,
                               const Callback &endCallback, std::optional<DomType> fileType,
                               const ErrorHandler &h)
 {
     DomItem self(shared_from_this());
+    const DomType fType =
+            (bool(fileType) ? (*fileType) : fileTypeForPath(self, _file.logicalPath()));
+
+    FileToLoad file {_file};
+
+    if (domCreationOptions().testFlag(DomCreationOption::WithSemanticAnalysis)) {
+        // use source folders when loading qml files and build folders otherwise
+        if (fType == DomType::QmlFile) {
+            file.setCanonicalPath(QQmlJSUtils::qmlSourcePathFromBuildPath(
+                    semanticAnalysis().m_mapper.get(), file.canonicalPath()));
+            file.setLogicalPath(file.logicalPath());
+        }
+    }
+
     if (file.canonicalPath().isEmpty()) {
         if (!file.content() || file.content()->data.isNull()) {
             // file's content inavailable and no path to retrieve it
@@ -1163,8 +1179,6 @@ void DomEnvironment::loadFile(const FileToLoad &file, const Callback &loadCallba
     }
 
     shared_ptr<ExternalItemInfoBase> oldValue, newValue;
-    const DomType fType =
-            (bool(fileType) ? (*fileType) : fileTypeForPath(self, file.canonicalPath()));
     switch (fType) {
     case DomType::QmlDirectory: {
         const auto &fetchResult = fetchFileFromEnvs<QmlDirectory>(file);
@@ -1823,13 +1837,13 @@ DomEnvironment::DomEnvironment(const QStringList &loadPaths, Options options,
 Do not call this method inside of DomEnvironment's constructor! It requires weak_from_this() that
 only works after the constructor call finished.
 */
-DomEnvironment::SemanticAnalysis &DomEnvironment::semanticAnalysis()
+DomEnvironment::SemanticAnalysis DomEnvironment::semanticAnalysis()
 {
     // QTBUG-124799: do not create a SemanticAnalysis in a temporary DomEnvironment, and use the one
     // from the base environment instead.
     if (m_base) {
-        auto &result = m_base->semanticAnalysis();
-        result.setLoadPaths(m_loadPaths);
+        auto result = m_base->semanticAnalysis();
+        result.updateLoadPaths(m_loadPaths);
         return result;
     }
 
@@ -1842,18 +1856,29 @@ DomEnvironment::SemanticAnalysis &DomEnvironment::semanticAnalysis()
 }
 
 DomEnvironment::SemanticAnalysis::SemanticAnalysis(const QStringList &loadPaths)
-    : m_mapper(
-            std::make_shared<QQmlJSResourceFileMapper>(resourceFilesFromBuildFolders(loadPaths))),
-      m_importer(std::make_shared<QQmlJSImporter>(loadPaths, m_mapper.get(), true))
+    : m_mapper(std::make_shared<QQmlJSResourceFileMapper>(
+              QQmlJSUtils::resourceFilesFromBuildFolders(loadPaths))),
+      m_importer(std::make_shared<QQmlJSImporter>(loadPaths, m_mapper.get(),
+                                                  QQmlJSImporterFlags{} | UseOptionalImports
+                                                          | PreferQmlFilesFromSourceFolder))
 {
 }
 
-void DomEnvironment::SemanticAnalysis::setLoadPaths(const QStringList &loadPaths)
+/*!
+\internal
+
+Sets the new load paths in the importer and recreate the mapper.
+
+This affects all copies of SemanticAnalysis that use the same QQmlJSImporter and QQmlJSMapper
+pointers.
+*/
+void DomEnvironment::SemanticAnalysis::updateLoadPaths(const QStringList &loadPaths)
 {
     if (loadPaths == m_importer->importPaths())
         return;
 
     m_importer->setImportPaths(loadPaths);
+    *m_mapper = QQmlJSResourceFileMapper(QQmlJSUtils::resourceFilesFromBuildFolders(loadPaths));
 }
 
 std::shared_ptr<DomEnvironment> DomEnvironment::create(const QStringList &loadPaths,
@@ -2153,7 +2178,7 @@ void DomEnvironment::setLoadPaths(const QStringList &v)
     m_loadPaths = v;
 
     if (m_semanticAnalysis)
-        m_semanticAnalysis->setLoadPaths(v);
+        m_semanticAnalysis->updateLoadPaths(v);
 }
 
 QStringList DomEnvironment::loadPaths() const
@@ -2209,7 +2234,7 @@ void DomEnvironment::populateFromQmlFile(MutableDomItem &&qmlFile)
 {
     if (std::shared_ptr<QmlFile> qmlFilePtr = qmlFile.ownerAs<QmlFile>()) {
         auto logger = std::make_shared<QQmlJSLogger>();
-        logger->setFileName(qmlFile.canonicalFilePath());
+        logger->setFilePath(qmlFile.canonicalFilePath());
         logger->setCode(qmlFilePtr->code());
         logger->setSilent(true);
 
@@ -2222,7 +2247,7 @@ void DomEnvironment::populateFromQmlFile(MutableDomItem &&qmlFile)
         };
 
         if (m_domCreationOptions.testFlag(DomCreationOption::WithSemanticAnalysis)) {
-            auto &analysis = semanticAnalysis();
+            SemanticAnalysis analysis = semanticAnalysis();
             auto scope = analysis.m_importer->importFile(qmlFile.canonicalFilePath());
             auto v = std::make_unique<QQmlDomAstCreatorWithQQmlJSScope>(
                     scope, qmlFile, logger.get(), analysis.m_importer.get());

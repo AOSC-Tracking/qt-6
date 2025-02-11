@@ -378,17 +378,6 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlmethod BarSet BarSeries::append(string label, VariantList values)
-    Adds a new bar set with \a label and \a values to the index. \a values is
-    a list of real values.
-
-    For example:
-    \code
-        myBarSeries.append("set 1", [0, 0.2, 0.2, 0.5, 0.4, 1.5, 0.9]);
-    \endcode
-*/
-
-/*!
     \qmlmethod BarSet BarSeries::insert(int index, string label, VariantList values)
     Adds a new bar set with \a label and \a values to \a index. \a values can be a list
     of real values or a list of XYPoint types.
@@ -595,6 +584,7 @@ bool QBarSeries::append(QBarSet *set)
         set->setParent(this);
         QObject::connect(set, &QBarSet::update, this, &QBarSeries::update);
         emit barsetsAdded(sets);
+        emit barSetsChanged();
         emit countChanged();
         emit update();
     }
@@ -615,6 +605,7 @@ bool QBarSeries::remove(QBarSet *set)
         set->setParent(0);
         QObject::disconnect(set, &QBarSet::update, this, &QBarSeries::update);
         emit barsetsRemoved(sets);
+        emit barSetsChanged();
         emit countChanged();
         emit update();
         delete set;
@@ -639,6 +630,7 @@ bool QBarSeries::take(QBarSet *set)
         sets.append(set);
         QObject::disconnect(set, &QBarSet::update, this, &QBarSeries::update);
         emit barsetsRemoved(sets);
+        emit barSetsChanged();
         emit countChanged();
         emit update();
     }
@@ -664,6 +656,7 @@ bool QBarSeries::append(const QList<QBarSet *> &sets)
     }
 
     emit barsetsAdded(sets);
+    emit barSetsChanged();
     emit countChanged();
     emit update();
     return true;
@@ -683,6 +676,7 @@ bool QBarSeries::insert(qsizetype index, QBarSet *set)
         sets.append(set);
         QObject::connect(set, &QBarSet::update, this, &QBarSeries::update);
         emit barsetsAdded(sets);
+        emit barSetsChanged();
         emit countChanged();
         emit update();
     }
@@ -699,6 +693,7 @@ void QBarSeries::clear()
     bool success = d->remove(sets);
     if (success) {
         emit barsetsRemoved(sets);
+        emit barSetsChanged();
         emit countChanged();
         for (QBarSet *set : sets) {
             QObject::disconnect(set, &QBarSet::update, this, &QBarSeries::update);
@@ -723,8 +718,8 @@ void QBarSeries::replace(qsizetype index, QBarSet *set)
     if (index < 0)
         index = 0;
 
-    delete d->m_barSets[index];
-    d->m_barSets[index] = set;
+    remove(d->m_barSets[index]);
+    d->insert(index, set);
 
     QList<QBarSet *> sets;
     sets.append(set);
@@ -811,8 +806,8 @@ bool QBarSeries::replace(QBarSet *oldValue, QBarSet *newValue)
 
     for (qsizetype i = 0; i < d->m_barSets.size(); ++i) {
         if (d->m_barSets[i] == oldValue) {
-            delete d->m_barSets[i];
-            d->m_barSets[i] = newValue;
+            remove(d->m_barSets[i]);
+            d->insert(i, newValue);
 
             QList<QBarSet *> sets;
             sets.append(newValue);
@@ -839,14 +834,14 @@ bool QBarSeries::replace(const QList<QBarSet *> &sets)
     }
 
     for (const auto set : d->m_barSets) {
-        delete set;
+        remove(set);
     }
 
     for (const auto set : sets) {
         QObject::connect(set, &QBarSet::update, this, &QBarSeries::update);
     }
 
-    d->m_barSets = sets;
+    d->append(sets);
     emit barsetsReplaced(sets);
 
     return true;
@@ -1111,9 +1106,7 @@ void QBarSeriesPrivate::setVisible(bool visible)
 
 void QBarSeriesPrivate::setLabelsVisible(bool visible)
 {
-    Q_Q(QBarSeries);
     m_labelsVisible = visible;
-    emit q->labelsVisibleChanged(visible);
 }
 
 qreal QBarSeriesPrivate::min()

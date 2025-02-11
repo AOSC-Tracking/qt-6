@@ -9,7 +9,9 @@
 #include <data/getOptionalLookup.h>
 #include <data/listprovider.h>
 #include <data/objectwithmethod.h>
+#include <data/qmlusing.h>
 #include <data/resettable.h>
+#include <data/takenumber.h>
 #include <data/weathermoduleurl.h>
 #include <data/withlength.h>
 
@@ -28,6 +30,7 @@
 using namespace Qt::StringLiterals;
 
 Q_IMPORT_QML_PLUGIN(TestTypesPlugin)
+Q_IMPORT_QML_PLUGIN(ConfusedPlugin)
 
 class tst_QmlCppCodegen : public QObject
 {
@@ -68,6 +71,7 @@ private slots:
     void componentReturnType();
     void compositeSingleton();
     void compositeTypeMethod();
+    void confusedModule();
     void consoleObject();
     void consoleTrace();
     void construct();
@@ -130,6 +134,7 @@ private slots:
     void infinities();
     void infinitiesToInt();
     void innerObjectNonShadowable();
+    void insertContextOnInvalidType();
     void intEnumCompare();
     void intOverflow();
     void intToEnum();
@@ -199,6 +204,7 @@ private slots:
     void popContextAfterRet();
     void prefixedType();
     void propertyOfParent();
+    void qmlUsing();
     void reduceWithNullThis();
     void readEnumFromInstance();
     void readonlyListProperty();
@@ -233,6 +239,8 @@ private slots:
     void stringLength();
     void stringToByteArray();
     void structuredValueType();
+    void takeNumbers();
+    void takeNumbers_data();
     void testIsnan();
     void thisObject();
     void throwObjectName();
@@ -1088,6 +1096,28 @@ void tst_QmlCppCodegen::compositeTypeMethod()
     QVERIFY(!object.isNull());
     QSignalSpy spy(object.data(), SIGNAL(foo()));
     QTRY_VERIFY(spy.size() > 0);
+}
+
+void tst_QmlCppCodegen::confusedModule()
+{
+    QQmlEngine engine;
+    QQmlComponent component(&engine, QUrl(u"qrc:/qt/qml/Confused/Main.qml"_s));
+    QVERIFY2(!component.isError(), component.errorString().toUtf8());
+    QTest::ignoreMessage(QtDebugMsg, "Hello from Test");
+    QScopedPointer<QObject> object(component.create());
+    QVERIFY(!object.isNull());
+
+    QQmlComponent component2(&engine, QUrl(u"qrc:/qt/qml/Confused/Main2.qml"_s));
+    QVERIFY2(!component2.isError(), component2.errorString().toUtf8());
+
+    // TODO: We would like to have a better error here, but we currently cannot propagate it.
+    QTest::ignoreMessage(
+            QtWarningMsg,
+            "qrc:/qt/qml/Confused/Main2.qml:5: "
+            "TypeError: Property 'Print' of object Broken is not a function");
+
+    QScopedPointer<QObject> object2(component2.create());
+    QVERIFY(!object2.isNull());
 }
 
 void tst_QmlCppCodegen::consoleObject()
@@ -2472,6 +2502,36 @@ void tst_QmlCppCodegen::innerObjectNonShadowable()
     QVERIFY(rootObject);
 
     QCOMPARE(rootObject->objectName(), u"foo"_s);
+}
+
+class HandleHandler : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QQmlComponent *handle MEMBER m_handle)
+
+private:
+    QQmlComponent *m_handle = nullptr;
+};
+
+void tst_QmlCppCodegen::insertContextOnInvalidType()
+{
+    qmlRegisterType<HandleHandler>("Handlerei", 1, 0, "HandleHandler");
+
+    QQmlEngine engine;
+    QQmlComponent component(&engine, QUrl(u"qrc:/qt/qml/TestTypes/insertContextOnInvalidType.qml"_s));
+
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+
+    QTest::ignoreMessage(
+            QtWarningMsg,
+            "qrc:/qt/qml/TestTypes/insertContextOnInvalidType.qml:5: "
+            "ReferenceError: handleDelegate is not defined");
+    QScopedPointer<QObject> rootObject(component.create());
+    QVERIFY(rootObject);
+
+    const char *outter = "handleDelegateOutter";
+    QVERIFY(rootObject->metaObject()->indexOfProperty(outter) != -1);
+    QVERIFY(!rootObject->property(outter).isValid());
 }
 
 void tst_QmlCppCodegen::intEnumCompare()
@@ -4156,6 +4216,127 @@ void tst_QmlCppCodegen::propertyOfParent()
     }
 }
 
+void tst_QmlCppCodegen::qmlUsing()
+{
+    QQmlEngine engine;
+    const QString url = u"qrc:/qt/qml/TestTypes/qmlUsing.qml"_s;
+    QQmlComponent component(&engine, QUrl(url));
+    QVERIFY2(component.isReady(), component.errorString().toUtf8());
+    QScopedPointer<QObject> object(component.create());
+    QVERIFY(!object.isNull());
+
+    UsingUserObject *u = qobject_cast<UsingUserObject *>(object.data());
+    QVERIFY(u);
+
+    QCOMPARE(u->a(), 7);
+    QCOMPARE(u->getB(), 5);
+    QCOMPARE(u->val().a(), 24);
+    QCOMPARE(u->val().getB(), 25);
+    QCOMPARE(u->property("valA").toInt(), 24);
+    QCOMPARE(u->property("myA").toInt(), 7);
+    QCOMPARE(u->property("myB").toInt(), 5);
+    QCOMPARE(u->property("myA2").toInt(), 7);
+    QCOMPARE(u->property("myB2").toInt(), 5);
+
+    QCOMPARE(u->u(), 9u);
+    QCOMPARE(u->val().u(), 26u);
+    QCOMPARE(u->property("valU").toUInt(), 26u);
+    QCOMPARE(u->property("myU").toUInt(), 9u);
+    QCOMPARE(u->property("myU2").toUInt(), 9u);
+
+    QList<int> as;
+    QList<int> bs;
+    QList<uint> us;
+    QObject::connect(u, &UsingUserObject::aChanged, this, [&]() {
+        as.append(u->a());
+        bs.append(u->getB());
+    });
+
+    QObject::connect(u, &UsingUserObject::uChanged, this, [&]() {
+        us.append(u->u());
+    });
+
+    QMetaObject::invokeMethod(object.data(), "twiddle");
+
+    const QList<int> expectedA = { 57, 59 };
+    QCOMPARE(as, expectedA);
+
+    const QList<int> expectedB = { 5, 58 };
+    QCOMPARE(bs, expectedB);
+
+    const QList<uint> expectedU = { 62, 63 };
+    QCOMPARE(us, expectedU);
+
+    QCOMPARE(u->a(), 59);
+    QCOMPARE(u->getB(), 60);
+    QCOMPARE(u->val().a(), 55);
+    QCOMPARE(u->val().getB(), 25);
+    QCOMPARE(u->property("valA").toInt(), 55);
+    QCOMPARE(u->property("myA").toInt(), 59);
+    QCOMPARE(u->property("myB").toInt(), 5);  // Remains 5, due to lack of signaling
+    QCOMPARE(u->property("myA2").toInt(), 59);
+    QCOMPARE(u->property("myB2").toInt(), 5); // Remains 5, due to lack of signaling
+
+    QCOMPARE(u->u(), 63u);
+    QCOMPARE(u->val().u(), 61u);
+    QCOMPARE(u->property("valU").toUInt(), 61u);
+    QCOMPARE(u->property("myU").toUInt(), 63u);
+    QCOMPARE(u->property("myU2").toUInt(), 63u);
+
+
+    QMetaObject::invokeMethod(object.data(), "burn");
+
+    const uint huge = 4294967295;
+
+    const QList<uint> expectedU2 = { 62, 63, huge, 64, huge };
+    QCOMPARE(us, expectedU2);
+
+    QCOMPARE(u->u(), huge);
+    QCOMPARE(u->val().u(), huge);
+    QCOMPARE(u->property("valU").toUInt(), huge);
+    QCOMPARE(u->property("myU").toUInt(), huge);
+    QCOMPARE(u->property("myU2").toUInt(), huge);
+
+    QMetaObject::invokeMethod(object.data(), "twiddle");
+
+    const QString iError = u" Error: Cannot assign QString to TransparentWrapper<int,int_tag>"_s;
+    const QString uError = u" Error: Cannot assign QString to TransparentWrapper<uint,int_tag>"_s;
+
+    QTest::ignoreMessage(QtWarningMsg, qPrintable(url + u":46:"_s + iError));
+    QMetaObject::invokeMethod(object.data(), "impossibleValA");
+    QCOMPARE(u->val().a(), 55);
+    QCOMPARE(u->property("valA").toInt(), 55);
+
+    QTest::ignoreMessage(QtWarningMsg, qPrintable(url + u":50:"_s + iError));
+    QMetaObject::invokeMethod(object.data(), "impossibleA");
+    QCOMPARE(u->a(), 59);
+    QCOMPARE(u->property("myA").toInt(), 59);
+    QCOMPARE(u->property("myA2").toInt(), 59);
+
+    QTest::ignoreMessage(QtWarningMsg, qPrintable(url + u":54:"_s + iError));
+    QMetaObject::invokeMethod(object.data(), "impossibleSelfA");
+    QCOMPARE(u->a(), 59);
+    QCOMPARE(u->property("myA").toInt(), 59);
+    QCOMPARE(u->property("myA2").toInt(), 59);
+
+    QTest::ignoreMessage(QtWarningMsg, qPrintable(url + u":58:"_s + uError));
+    QMetaObject::invokeMethod(object.data(), "impossibleValU");
+    QCOMPARE(u->val().u(), 61u);
+    QCOMPARE(u->property("valU").toUInt(), 61u);
+
+    QTest::ignoreMessage(QtWarningMsg, qPrintable(url + u":62:"_s + uError));
+    QMetaObject::invokeMethod(object.data(), "impossibleU");
+    QCOMPARE(u->u(), 63u);
+    QCOMPARE(u->property("myU").toUInt(), 63u);
+    QCOMPARE(u->property("myU2").toUInt(), 63u);
+
+    QTest::ignoreMessage(QtWarningMsg, qPrintable(url + u":66:"_s + uError));
+    QMetaObject::invokeMethod(object.data(), "impossibleSelfU");
+    QCOMPARE(u->u(), 63u);
+    QCOMPARE(u->property("myU").toUInt(), 63u);
+    QCOMPARE(u->property("myU2").toUInt(), 63u);
+}
+
 void tst_QmlCppCodegen::reduceWithNullThis()
 {
     QQmlEngine engine;
@@ -4685,7 +4866,64 @@ void tst_QmlCppCodegen::structuredValueType()
     w.setStrings(QStringList({"one", "two", "three"}));
 
     QCOMPARE(o->property("w").value<WeatherModelUrl>(), w);
+
+    WeatherModelUrlDerived w1;
+    w1.setStrings(QStringList({u"four"_s, u"five"_s, u"six"_s}));
+    QCOMPARE(o->property("w1").value<WeatherModelUrlDerived>(), w1);
 }
+
+void tst_QmlCppCodegen::takeNumbers()
+{
+    QFETCH(QByteArray, method);
+    QFETCH(int, expectedInt);
+    QFETCH(qsizetype, expectedSizeType);
+    QFETCH(qlonglong, expectedLongLong);
+
+    QQmlEngine engine;
+    QQmlComponent c(&engine, QUrl(u"qrc:/qt/qml/TestTypes/takenumber.qml"_s));
+    QVERIFY2(c.isReady(), qPrintable(c.errorString()));
+    QScopedPointer<QObject> o(c.create());
+    QVERIFY(!o.isNull());
+
+    TakeNumber *takeNumber = qobject_cast<TakeNumber *>(o.data());
+    QVERIFY(takeNumber != nullptr);
+
+    o->metaObject()->invokeMethod(o.data(), method);
+
+    QCOMPARE(takeNumber->takenInt, expectedInt);
+    QCOMPARE(takeNumber->takenNegativeInt, -expectedInt);
+    QCOMPARE(takeNumber->takenQSizeType, expectedSizeType);
+    QCOMPARE(takeNumber->takenQLongLong, expectedLongLong);
+    QCOMPARE(takeNumber->takenNumbers,
+             (Numbers {expectedInt, -expectedInt, expectedSizeType, expectedLongLong}));
+    QCOMPARE(takeNumber->propertyInt, expectedInt);
+    QCOMPARE(takeNumber->propertyNegativeInt, -expectedInt);
+    QCOMPARE(takeNumber->propertyQSizeType, expectedSizeType);
+    QCOMPARE(takeNumber->propertyQLongLong, expectedLongLong);
+    QCOMPARE(takeNumber->propertyNumbers,
+             (Numbers {expectedInt, -expectedInt, expectedSizeType, expectedLongLong}));
+}
+
+void tst_QmlCppCodegen::takeNumbers_data()
+{
+    QTest::addColumn<QByteArray>("method");
+    QTest::addColumn<int>("expectedInt");
+    QTest::addColumn<qsizetype>("expectedSizeType");
+    QTest::addColumn<qlonglong>("expectedLongLong");
+
+    QTest::addRow("literal0") << "literal0"_ba << 0 << qsizetype(0) << 0ll;
+    QTest::addRow("literal56") << "literal56"_ba << 56 << qsizetype(56) << 56ll;
+
+    QTest::addRow("variable0") << "variable0"_ba << 0 << qsizetype(0) << 0ll;
+    QTest::addRow("variable484") << "variable484"_ba << 484 << qsizetype(484) << 484ll;
+
+    QTest::addRow("literal3B")
+            << "literal3B"_ba << int(3000000000ll) << qsizetype(3000000000ll) << 3000000000ll;
+    QTest::addRow("variable3B")
+            << "variable3B"_ba << int(3000000000ll) << qsizetype(3000000000ll) << 3000000000ll;
+
+}
+
 
 void tst_QmlCppCodegen::testIsnan()
 {

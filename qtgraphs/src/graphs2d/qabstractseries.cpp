@@ -190,7 +190,7 @@ QT_BEGIN_NAMESPACE
     \sa QLegendData
  */
 /*!
-    \qmlproperty list<LegendData> QAbstractSeries::legendData
+    \qmlproperty list<LegendData> AbstractSeries::legendData
     Contains information needed to create a legend marker for a data set in a graph.
 */
 

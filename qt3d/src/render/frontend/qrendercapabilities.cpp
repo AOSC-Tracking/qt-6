@@ -338,7 +338,7 @@ QStringList QRenderCapabilities::extensions() const
 }
 
 /*!
-\qmlproperty QString RenderCapabilities::vendor
+\qmlproperty string RenderCapabilities::vendor
 
 Returns the vendor identification string.
 
@@ -358,7 +358,7 @@ QString QRenderCapabilities::vendor() const
 }
 
 /*!
-\qmlproperty QString RenderCapabilities::renderer
+\qmlproperty string RenderCapabilities::renderer
 
 Returns the device identification string.
 
@@ -378,7 +378,7 @@ QString QRenderCapabilities::renderer() const
 }
 
 /*!
-\qmlproperty QString RenderCapabilities::driverVersion
+\qmlproperty string RenderCapabilities::driverVersion
 
 Returns the driver version string.
 
@@ -398,7 +398,7 @@ QString QRenderCapabilities::driverVersion() const
 }
 
 /*!
-\qmlproperty QString RenderCapabilities::glslVersion
+\qmlproperty string RenderCapabilities::glslVersion
 
 Returns the GLSL version string.
 

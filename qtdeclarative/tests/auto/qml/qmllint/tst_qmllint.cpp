@@ -71,10 +71,6 @@ private Q_SLOTS:
     void qmltypes_data();
     void qmltypes();
 
-#ifdef QT_QMLJSROOTGEN_PRESENT
-    void verifyJsRoot();
-#endif
-
     void autoqmltypes();
     void resources();
 
@@ -114,12 +110,16 @@ private Q_SLOTS:
 
 #if QT_CONFIG(library)
     void testPlugin();
+    void testPluginHelpCommandLine();
+    void testPluginCommandLine();
     void quickPlugin();
 #endif
 
 #if QT_CONFIG(process)
     void importRelScript();
 #endif
+
+    void replayImportWarnings();
 
 private:
     enum DefaultImportOption { NoDefaultImports, UseDefaultImports };
@@ -175,8 +175,6 @@ private:
                  QList<QQmlJS::LoggerCategory> *categories = nullptr);
 
     QString m_qmllintPath;
-    QString m_qmljsrootgenPath;
-    QString m_qmltyperegistrarPath;
 
     QStringList m_defaultImportPaths;
     QQmlJSLinter m_linter;
@@ -196,30 +194,14 @@ void TestQmllint::initTestCase()
 {
     QQmlDataTest::initTestCase();
     m_qmllintPath = QLibraryInfo::path(QLibraryInfo::BinariesPath) + QLatin1String("/qmllint");
-    m_qmljsrootgenPath = QLibraryInfo::path(QLibraryInfo::LibraryExecutablesPath)
-            + QLatin1String("/qmljsrootgen");
-    m_qmltyperegistrarPath = QLibraryInfo::path(QLibraryInfo::LibraryExecutablesPath)
-            + QLatin1String("/qmltyperegistrar");
+
 #ifdef Q_OS_WIN
     m_qmllintPath += QLatin1String(".exe");
-    m_qmljsrootgenPath += QLatin1String(".exe");
-    m_qmltyperegistrarPath += QLatin1String(".exe");
 #endif
     if (!QFileInfo(m_qmllintPath).exists()) {
         QString message = QStringLiteral("qmllint executable not found (looked for %0)").arg(m_qmllintPath);
         QFAIL(qPrintable(message));
     }
-
-#ifdef QT_QMLJSROOTGEN_PRESENT
-    if (!QFileInfo(m_qmljsrootgenPath).exists()) {
-        QString message = QStringLiteral("qmljsrootgen executable not found (looked for %0)").arg(m_qmljsrootgenPath);
-        QFAIL(qPrintable(message));
-    }
-    if (!QFileInfo(m_qmltyperegistrarPath).exists()) {
-        QString message = QStringLiteral("qmltypesregistrar executable not found (looked for %0)").arg(m_qmltyperegistrarPath);
-        QFAIL(qPrintable(message));
-    }
-#endif
 }
 
 void TestQmllint::testUnqualified()
@@ -367,70 +349,6 @@ void TestQmllint::qmltypes()
     callQmllint(file, true, &warnings);
 }
 
-#ifdef QT_QMLJSROOTGEN_PRESENT
-void TestQmllint::verifyJsRoot()
-{
-    QProcess process;
-
-    const QString importsPath = QLibraryInfo::path(QLibraryInfo::QmlImportsPath);
-    QDirIterator it(importsPath, { "jsroot.qmltypes" },
-                    QDir::Files, QDirIterator::Subdirectories);
-
-    QVERIFY(it.hasNext());
-
-    QString currentJsRootPath = it.next();
-
-    QTemporaryDir dir;
-
-    QProcess jsrootProcess;
-    connect(&jsrootProcess, &QProcess::errorOccurred, [&](QProcess::ProcessError error) {
-        qWarning() << error << jsrootProcess.errorString();
-    });
-    jsrootProcess.setWorkingDirectory(dir.path());
-    jsrootProcess.start(m_qmljsrootgenPath, {"jsroot.json"});
-
-    jsrootProcess.waitForFinished();
-
-    QCOMPARE(jsrootProcess.exitStatus(), QProcess::NormalExit);
-    QCOMPARE(jsrootProcess.exitCode(), 0);
-
-
-    QProcess typeregistrarProcess;
-    typeregistrarProcess.setWorkingDirectory(dir.path());
-    typeregistrarProcess.start(m_qmltyperegistrarPath, {"jsroot.json", "--generate-qmltypes", "jsroot.qmltypes"});
-
-    typeregistrarProcess.waitForFinished();
-
-    QCOMPARE(typeregistrarProcess.exitStatus(), QProcess::NormalExit);
-    QCOMPARE(typeregistrarProcess.exitCode(), 0);
-
-    QString currentJsRootContent, generatedJsRootContent;
-
-    QFile currentJsRoot(currentJsRootPath);
-    QVERIFY(currentJsRoot.open(QFile::ReadOnly | QIODevice::Text));
-    currentJsRootContent = QString::fromUtf8(currentJsRoot.readAll());
-    currentJsRoot.close();
-
-    QFile generatedJsRoot(dir.path() + QDir::separator() + "jsroot.qmltypes");
-    QVERIFY(generatedJsRoot.open(QFile::ReadOnly | QIODevice::Text));
-    generatedJsRootContent = QString::fromUtf8(generatedJsRoot.readAll());
-    generatedJsRoot.close();
-
-    // If any of the following asserts fail you need to update jsroot.qmltypes using the following commands:
-    //
-    // qmljsrootgen jsroot.json
-    // qmltyperegistrar jsroot.json --generate-qmltypes src/imports/builtins/jsroot.qmltypes
-    QStringList currentLines = currentJsRootContent.split(QLatin1Char('\n'));
-    QStringList generatedLines = generatedJsRootContent.split(QLatin1Char('\n'));
-
-    QCOMPARE(currentLines.size(), generatedLines.size());
-
-    for (qsizetype i = 0; i < currentLines.size(); i++) {
-        QCOMPARE(currentLines[i], generatedLines[i]);
-    }
-}
-#endif
-
 void TestQmllint::autoqmltypes()
 {
     QProcess process;
@@ -533,10 +451,10 @@ void TestQmllint::dirtyQmlCode_data()
                        25 } } };
     QTest::newRow("badAlias")
             << QStringLiteral("badAlias.qml")
-            << Result { { Message { QStringLiteral("Cannot resolve alias \"wrong\""), 3, 1 } } };
+            << Result { { Message { QStringLiteral("Cannot resolve alias \"wrong\""), 4, 5 } } };
     QTest::newRow("badAliasProperty1")
             << QStringLiteral("badAliasProperty.qml")
-            << Result { { Message { QStringLiteral("Cannot resolve alias \"wrong\""), 3, 1 } } };
+            << Result { { Message { QStringLiteral("Cannot resolve alias \"wrong\""), 5, 5 } } };
     QTest::newRow("badAliasExpression")
             << QStringLiteral("badAliasExpression.qml")
             << Result { { Message {
@@ -552,11 +470,11 @@ void TestQmllint::dirtyQmlCode_data()
     QTest::newRow("aliasCycle1") << QStringLiteral("aliasCycle.qml")
                                  << Result { { Message {
                                             QStringLiteral("Alias \"b\" is part of an alias cycle"),
-                                            3, 1 } } };
+                                            6, 5 } } };
     QTest::newRow("aliasCycle2") << QStringLiteral("aliasCycle.qml")
                                  << Result { { Message {
                                             QStringLiteral("Alias \"a\" is part of an alias cycle"),
-                                            3, 1 } } };
+                                            5, 5 } } };
     QTest::newRow("invalidAliasTarget1") << QStringLiteral("invalidAliasTarget.qml")
                                          << Result { { Message {
                                             QStringLiteral("Invalid alias expression – an initalizer is needed."),
@@ -767,7 +685,7 @@ void TestQmllint::dirtyQmlCode_data()
     QTest::newRow("InvalidImport")
             << QStringLiteral("invalidImport.qml")
             << Result { { Message { QStringLiteral(
-                       "Failed to import FooBar. Are your import paths set up properly?") } } };
+                       "Failed to import FooBar. Are your import paths set up properly?"), 2, 1 } } };
     QTest::newRow("Unused Import (simple)")
             << QStringLiteral("unused_simple.qml")
             << Result { { Message { QStringLiteral("Unused import"), 1, 1, QtInfoMsg } },
@@ -967,8 +885,26 @@ expression: \${expr} \${expr} \\\${expr} \\\${expr}`)",
             << Result { { Message { QStringLiteral("QML types file does not exist") } } };
     QTest::newRow("enumInvalid")
             << QStringLiteral("enumInvalid.qml")
-            << Result { { Message {
-                       QStringLiteral("Member \"red\" not found on type \"QtObject\"") } } };
+            << Result { {
+                Message { QStringLiteral("Member \"red\" not found on type \"QtObject\""), 5, 25 },
+                Message { QStringLiteral("Member \"red\" not found on type \"QtObject\""), 6, 25 },
+                Message {
+                    QStringLiteral("You cannot access unscoped enum \"Unscoped\" from here."),
+                    8, 32
+                },
+                Message {
+                    QStringLiteral("You cannot access unscoped enum \"Unscoped\" from here."),
+                    9, 38
+                },
+                Message {
+                    QStringLiteral("Member \"S2\" not found on type \"EnumTesterScoped\""),
+                    10, 38
+                },
+               }, {
+                Message { QStringLiteral("Did you mean \"S2\"?"), 0, 0, QtInfoMsg }
+               }, {
+                Message { QStringLiteral("Did you mean \"U2\"?"), 10, 38, QtInfoMsg }
+               } };
     QTest::newRow("inaccessibleId")
             << QStringLiteral("inaccessibleId.qml")
             << Result { { Message {
@@ -1413,6 +1349,13 @@ void TestQmllint::cleanQmlCode_data()
     QTest::newRow("jsonObjectIsRecognized") << QStringLiteral("jsonObjectIsRecognized.qml");
     QTest::newRow("jsonArrayIsRecognized") << QStringLiteral("jsonArrayIsRecognized.qml");
     QTest::newRow("itemviewattached") << QStringLiteral("itemViewAttached.qml");
+    QTest::newRow("scopedAndUnscopedEnums") << QStringLiteral("enumValid.qml");
+    QTest::newRow("dependsOnDuplicateType") << QStringLiteral("dependsOnDuplicateType.qml");
+#ifdef HAS_QC_BASIC
+    QTest::newRow("overlay") << QStringLiteral("overlayFromControls.qml");
+#endif
+    QTest::newRow("thisObject") << QStringLiteral("thisObject.qml");
+    QTest::newRow("aliasGroup") << QStringLiteral("aliasGroup.qml");
 }
 
 void TestQmllint::cleanQmlCode()
@@ -1654,7 +1597,6 @@ void TestQmllint::callQmllint(const QString &fileToLint, bool shouldSucceed, QJs
     }
 
     bool success = lintResult == QQmlJSLinter::LintSuccess;
-    QEXPECT_FAIL("qtquickdialog", "Will fail until QTBUG-104091 is implemented", Abort);
     QVERIFY2(success == shouldSucceed, QJsonDocument(jsonOutput).toJson());
 
     if (warnings) {
@@ -2141,6 +2083,42 @@ void TestQmllint::testPlugin()
                     .isEmpty());
 }
 
+void TestQmllint::testPluginHelpCommandLine()
+{
+    auto qmllintOutput = [this](const QString& filename, const QStringList& args) {
+        QString output;
+        QString errorOutput;
+        runQmllint(
+                filename,
+                [&](QProcess &process) {
+                    QVERIFY(process.waitForFinished());
+                    QCOMPARE(process.exitStatus(), QProcess::NormalExit);
+                    QCOMPARE(process.exitCode(), 0);
+                    output = process.readAllStandardOutput();
+                    errorOutput = process.readAllStandardError();
+                },
+                args);
+        return QPair<QString, QString>{ output, errorOutput };
+    };
+    {
+        // make sure plugin warnings are documented by --help
+        const auto [helpText, error] = qmllintOutput(u"nothing_pluginTest.qml"_s,
+                                                     QStringList{ u"--help"_s });
+        QVERIFY(helpText.contains(u"--Quick.property-changes-parsed"_s));
+    }
+}
+
+void TestQmllint::testPluginCommandLine()
+{
+    // make sure plugin warnings are accepted as options
+    const QString warnings =
+            runQmllint(testFile(u"nothing_pluginTest.qml"_s), true,
+                       QStringList{ u"--Quick.property-changes-parsed"_s, u"disable"_s });
+    // should not contain a warning about --Quick.property-changes-parsed being an unknown option
+    // and no warnings
+    QVERIFY(warnings.isEmpty());
+}
+
 // TODO: Eventually tests for (real) plugins need to be moved into a separate file
 void TestQmllint::quickPlugin()
 {
@@ -2360,6 +2338,21 @@ void TestQmllint::importRelScript()
     QVERIFY(proc.readAllStandardError().isEmpty());
 }
 #endif
+
+void TestQmllint::replayImportWarnings()
+{
+    QJsonArray warnings;
+    callQmllint(testFile(u"duplicateTypeUserUser.qml"_s), true, &warnings);
+
+    // No warning because the offending import is indirect.
+    QVERIFY2(warnings.isEmpty(), qPrintable(QJsonDocument(warnings).toJson()));
+
+    // No cache clearing here. We want the warnings restored.
+    callQmllint(testFile(u"DuplicateTypeUser.qml"_s), false, &warnings);
+
+    // Warning because the offending import is now direct.
+    searchWarnings(warnings, "Ambiguous type detected. T 1.0 is defined multiple times.");
+}
 
 QTEST_GUILESS_MAIN(TestQmllint)
 #include "tst_qmllint.moc"

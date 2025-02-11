@@ -28,6 +28,8 @@ QGraphsTheme *AxisRenderer::theme() {
 void AxisRenderer::initialize() {
     if (m_initialized)
         return;
+    if (!window())
+        return;
 
     if (m_axisGrid)
         m_axisGrid->componentComplete();
@@ -164,13 +166,14 @@ void AxisRenderer::updateAxis()
     float axisWidth = m_graph->m_axisWidth;
     float axisHeight = m_graph->m_axisHeight;
 
+    const bool gridVisible = theme()->isGridVisible();
     if (m_axisVertical) {
-        m_gridVerticalLinesVisible = m_axisVertical->isGridVisible();
-        m_gridVerticalSubLinesVisible = m_axisVertical->isSubGridVisible();
+        m_gridVerticalLinesVisible = gridVisible && m_axisVertical->isGridVisible();
+        m_gridVerticalSubLinesVisible = gridVisible && m_axisVertical->isSubGridVisible();
     }
     if (m_axisHorizontal) {
-        m_gridHorizontalLinesVisible = m_axisHorizontal->isGridVisible();
-        m_gridHorizontalSubLinesVisible = m_axisHorizontal->isSubGridVisible();
+        m_gridHorizontalLinesVisible = gridVisible && m_axisHorizontal->isGridVisible();
+        m_gridHorizontalSubLinesVisible = gridVisible && m_axisHorizontal->isSubGridVisible();
     }
 
     if (auto vaxis = qobject_cast<QValueAxis *>(m_axisVertical)) {
@@ -485,15 +488,17 @@ void AxisRenderer::updateAxisTickersShadow()
 
 void AxisRenderer::updateAxisGrid()
 {
-    //if (theme()->themeDirty()) {
-        m_axisGrid->setGridColor(theme()->grid().mainColor());
-        m_axisGrid->setSubGridColor(theme()->grid().subColor());
-        m_axisGrid->setSubGridLineWidth(theme()->grid().subWidth());
-        m_axisGrid->setGridLineWidth(theme()->grid().mainWidth());
-        const double minimumSmoothing = 0.05;
-        m_axisGrid->setSmoothing(m_graph->gridSmoothing() + minimumSmoothing);
+    m_axisGrid->setGridColor(theme()->grid().mainColor());
+    m_axisGrid->setSubGridColor(theme()->grid().subColor());
+    m_axisGrid->setSubGridLineWidth(theme()->grid().subWidth());
+    m_axisGrid->setGridLineWidth(theme()->grid().mainWidth());
+    const double minimumSmoothing = 0.05;
+    m_axisGrid->setSmoothing(m_graph->gridSmoothing() + minimumSmoothing);
+    if (theme()->isPlotAreaBackgroundVisible())
         m_axisGrid->setPlotAreaBackgroundColor(theme()->plotAreaBackgroundColor());
-    //}
+    else
+        m_axisGrid->setPlotAreaBackgroundColor(QColorConstants::Transparent);
+
     float topPadding = m_axisGrid->gridLineWidth() * 0.5;
     float bottomPadding = topPadding;
     float leftPadding = topPadding;
@@ -563,7 +568,10 @@ void AxisRenderer::updateAxisTitles(const QRectF xAxisRect, const QRectF yAxisRe
         m_xAxisTitle->setX((2 * xAxisRect.x() - m_xAxisTitle->contentWidth() + xAxisRect.width())
                            * 0.5);
         m_xAxisTitle->setY(xAxisRect.y() + xAxisRect.height());
-        m_xAxisTitle->setColor(m_axisHorizontal->titleColor());
+        if (m_axisHorizontal->titleColor().isValid())
+            m_xAxisTitle->setColor(m_axisHorizontal->titleColor());
+        else
+            m_xAxisTitle->setColor(theme()->labelTextColor());
         m_xAxisTitle->setFont(m_axisHorizontal->titleFont());
         m_xAxisTitle->setVisible(true);
     } else {
@@ -572,11 +580,14 @@ void AxisRenderer::updateAxisTitles(const QRectF xAxisRect, const QRectF yAxisRe
 
     if (m_axisVertical && m_axisVertical->isTitleVisible()) {
         m_yAxisTitle->setText(m_axisVertical->titleText());
-        m_yAxisTitle->setX(0 - m_yAxisTitle->height());
+        m_yAxisTitle->setX(0 + m_yAxisTitle->height() - m_yAxisTitle->contentWidth() * 0.5);
         m_yAxisTitle->setY((2 * yAxisRect.y() - m_yAxisTitle->contentHeight() + yAxisRect.height())
                            * 0.5);
         m_yAxisTitle->setRotation(-90);
-        m_yAxisTitle->setColor(m_axisVertical->titleColor());
+        if (m_axisVertical->titleColor().isValid())
+            m_yAxisTitle->setColor(m_axisVertical->titleColor());
+        else
+            m_yAxisTitle->setColor(theme()->labelTextColor());
         m_yAxisTitle->setFont(m_axisVertical->titleFont());
         m_yAxisTitle->setVisible(true);
     } else {

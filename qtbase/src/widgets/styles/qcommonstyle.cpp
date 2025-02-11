@@ -943,7 +943,7 @@ QString QCommonStylePrivate::calculateElidedText(const QString &text, const QTex
                     text.chop(1);
                 text += QChar(0x2026);
             }
-            const QStackTextEngine engine(text, font);
+            Q_DECL_UNINITIALIZED const QStackTextEngine engine(text, font);
             ret += engine.elidedText(textElideMode, textRect.width(), flags);
 
             // no newline for the last line (last visible or real)
@@ -1638,7 +1638,7 @@ void QCommonStyle::drawControl(ControlElement element, const QStyleOption *opt,
                 pbBits.palette = pal2;
                 int myY = pbBits.rect.y();
                 int myHeight = pbBits.rect.height();
-                pbBits.state = State_None;
+                pbBits.state &= QStyle::State_Horizontal;  // all other is irrelevant here
                 for (int i = 0; i < nu; ++i) {
                     pbBits.rect.setRect(x0 + x, myY, unit_width, myHeight);
                     pbBits.rect = m.mapRect(QRectF(pbBits.rect)).toRect();
@@ -1668,7 +1668,7 @@ void QCommonStyle::drawControl(ControlElement element, const QStyleOption *opt,
                     = header->icon.pixmap(QSize(iconExtent, iconExtent), p->device()->devicePixelRatio(), (header->state & State_Enabled) ? QIcon::Normal : QIcon::Disabled);
                 int pixw = pixmap.width() / pixmap.devicePixelRatio();
 
-                QRect aligned = alignedRect(header->direction, QFlag(header->iconAlignment), pixmap.size() / pixmap.devicePixelRatio(), rect);
+                QRect aligned = alignedRect(header->direction, header->iconAlignment, pixmap.size() / pixmap.devicePixelRatio(), rect);
                 QRect inter = aligned.intersected(rect);
                 p->drawPixmap(inter.x(), inter.y(), pixmap,
                               inter.x() - aligned.x(), inter.y() - aligned.y(),
@@ -2248,7 +2248,8 @@ void QCommonStyle::drawControl(ControlElement element, const QStyleOption *opt,
                     editRect.translate(cb->iconSize.width() + 4, 0);
             }
             if (!cb->currentText.isEmpty() && !cb->editable) {
-                proxy()->drawItemText(p, editRect.adjusted(1, 0, -1, 0),
+                // keep in sync with QLineEditPrivate::horizontalMargin = 2
+                proxy()->drawItemText(p, editRect.adjusted(2, 0, -2, 0),
                              visualAlignment(cb->direction, cb->textAlignment),
                              cb->palette, cb->state & State_Enabled, cb->currentText);
             }
@@ -5049,14 +5050,16 @@ QSize QCommonStyle::sizeFromContents(ContentsType contentsType, const QStyleOpti
 #if QT_CONFIG(spinbox)
     case CT_SpinBox:
         if (const auto *spinBoxOpt = qstyleoption_cast<const QStyleOptionSpinBox *>(opt)) {
-            // Add button + frame widths
-            const qreal dpi = QStyleHelper::dpi(opt);
+            const int frameWidth = spinBoxOpt->frame
+                ? proxy()->pixelMetric(PM_SpinBoxFrameWidth, spinBoxOpt, widget)
+                : 0;
+            size += QSize(2 * frameWidth, 2 * frameWidth);
             const bool hasButtons = (spinBoxOpt->buttonSymbols != QAbstractSpinBox::NoButtons);
-            const int buttonWidth = hasButtons ? qRound(QStyleHelper::dpiScaled(16, dpi)) : 0;
-            const int frameWidth = spinBoxOpt->frame ? proxy()->pixelMetric(PM_SpinBoxFrameWidth,
-                                                                         spinBoxOpt, widget) : 0;
-
-            size += QSize(buttonWidth + 2 * frameWidth, 2 * frameWidth);
+            if (hasButtons) {
+                const auto height = qMax(8, size.height() / 2 - frameWidth);
+                const auto buttonWidth = qMax(16, qMin(height * 8 / 5, size.width() / 3));
+                size.rwidth() += buttonWidth;
+            }
         }
         break;
 #endif

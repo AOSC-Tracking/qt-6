@@ -483,7 +483,8 @@ QWindowsTheme *QWindowsTheme::m_instance = nullptr;
 QWindowsTheme::QWindowsTheme()
 {
     m_instance = this;
-    s_colorScheme = QWindowsTheme::queryColorScheme();
+    s_colorScheme = Qt::ColorScheme::Unknown; // Used inside QWindowsTheme::effectiveColorScheme();
+    s_colorScheme = QWindowsTheme::effectiveColorScheme();
     std::fill(m_fonts, m_fonts + NFonts, nullptr);
     std::fill(m_palettes, m_palettes + NPalettes, nullptr);
     refresh();
@@ -578,12 +579,15 @@ Qt::ColorScheme QWindowsTheme::colorScheme() const
 
 Qt::ColorScheme QWindowsTheme::effectiveColorScheme()
 {
+    auto integration = QWindowsIntegration::instance();
     if (queryHighContrast())
         return Qt::ColorScheme::Unknown;
     if (s_colorSchemeOverride != Qt::ColorScheme::Unknown)
         return s_colorSchemeOverride;
     if (s_colorScheme != Qt::ColorScheme::Unknown)
         return s_colorScheme;
+    if (!integration->darkModeHandling().testFlag(QWindowsApplication::DarkModeStyle))
+        return Qt::ColorScheme::Light;
     return queryColorScheme();
 }
 
@@ -818,7 +822,6 @@ QPixmap QWindowsTheme::standardPixmap(StandardPixmap sp, const QSizeF &pixmapSiz
 {
     int resourceId = -1;
     SHSTOCKICONID stockId = SIID_INVALID;
-    UINT stockFlags = 0;
     LPCTSTR iconName = nullptr;
     switch (sp) {
     case DriveCDIcon:
@@ -842,14 +845,12 @@ QPixmap QWindowsTheme::standardPixmap(StandardPixmap sp, const QSizeF &pixmapSiz
         resourceId = 7;
         break;
     case FileLinkIcon:
-        stockFlags = SHGSI_LINKOVERLAY;
         Q_FALLTHROUGH();
     case FileIcon:
         stockId = SIID_DOCNOASSOC;
         resourceId = 1;
         break;
     case DirLinkIcon:
-        stockFlags = SHGSI_LINKOVERLAY;
         Q_FALLTHROUGH();
     case DirClosedIcon:
     case DirIcon:
@@ -863,7 +864,6 @@ QPixmap QWindowsTheme::standardPixmap(StandardPixmap sp, const QSizeF &pixmapSiz
         resourceId = 16;
         break;
     case DirLinkOpenIcon:
-        stockFlags = SHGSI_LINKOVERLAY;
         Q_FALLTHROUGH();
     case DirOpenIcon:
         stockId = SIID_FOLDEROPEN;
@@ -903,18 +903,34 @@ QPixmap QWindowsTheme::standardPixmap(StandardPixmap sp, const QSizeF &pixmapSiz
         break;
     }
 
+    // Even with SHGSI_LINKOVERLAY flag set, loaded Icon with SHDefExtractIcon doesn't have
+    // any overlay, so we avoid SHGSI_LINKOVERLAY flag and draw it manually (QTBUG-131843)
+    const auto drawLinkOverlayIconIfNeeded = [](StandardPixmap sp, QPixmap &pixmap, QSizeF pixmapSize) {
+        if (sp == FileLinkIcon || sp == DirLinkIcon || sp == DirLinkOpenIcon) {
+            QPainter painter(&pixmap);
+            const QSizeF linkSize = pixmapSize / (pixmapSize.height() >= 48 ? 3 : 2);
+            static constexpr auto LinkOverlayIconId = 16769;
+            const QPixmap link = loadIconFromShell32(LinkOverlayIconId, linkSize.toSize());
+            const int yPos = pixmap.height() - link.size().height();
+            painter.drawPixmap(0, yPos, int(linkSize.width()), int(linkSize.height()), link);
+        }
+    };
+
     if (stockId != SIID_INVALID) {
         SHSTOCKICONINFO iconInfo;
         memset(&iconInfo, 0, sizeof(iconInfo));
         iconInfo.cbSize = sizeof(iconInfo);
-        stockFlags |= SHGSI_ICONLOCATION;
+        constexpr UINT stockFlags = SHGSI_ICONLOCATION;
         if (SHGetStockIconInfo(stockId, stockFlags, &iconInfo) == S_OK) {
             const auto iconSize = pixmapSize.width();
             HICON icon;
             if (SHDefExtractIcon(iconInfo.szPath, iconInfo.iIcon, 0, &icon, nullptr, iconSize) == S_OK) {
                 QPixmap pixmap = qt_pixmapFromWinHICON(icon);
                 DestroyIcon(icon);
-                return pixmap;
+                if (!pixmap.isNull()) {
+                    drawLinkOverlayIconIfNeeded(sp, pixmap, pixmap.size());
+                    return pixmap;
+                }
             }
         }
     }
@@ -922,11 +938,7 @@ QPixmap QWindowsTheme::standardPixmap(StandardPixmap sp, const QSizeF &pixmapSiz
     if (resourceId != -1) {
         QPixmap pixmap = loadIconFromShell32(resourceId, pixmapSize);
         if (!pixmap.isNull()) {
-            if (sp == FileLinkIcon || sp == DirLinkIcon || sp == DirLinkOpenIcon) {
-                QPainter painter(&pixmap);
-                QPixmap link = loadIconFromShell32(30, pixmapSize);
-                painter.drawPixmap(0, 0, int(pixmapSize.width()), int(pixmapSize.height()), link);
-            }
+            drawLinkOverlayIconIfNeeded(sp, pixmap, pixmapSize);
             return pixmap;
         }
     }
@@ -1163,9 +1175,11 @@ Qt::ColorScheme QWindowsTheme::queryColorScheme()
     if (queryHighContrast())
         return Qt::ColorScheme::Unknown;
 
-    const auto setting = QWinRegistryKey(HKEY_CURRENT_USER, LR"(Software\Microsoft\Windows\CurrentVersion\Themes\Personalize)")
-                         .dwordValue(L"AppsUseLightTheme");
-    return setting.second && setting.first == 0 ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light;
+    QWinRegistryKey personalizeKey{
+        HKEY_CURRENT_USER, LR"(Software\Microsoft\Windows\CurrentVersion\Themes\Personalize)"
+    };
+    const bool useDarkTheme = personalizeKey.value<DWORD>(L"AppsUseLightTheme") == 0;
+    return useDarkTheme ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light;
 }
 
 bool QWindowsTheme::queryHighContrast()

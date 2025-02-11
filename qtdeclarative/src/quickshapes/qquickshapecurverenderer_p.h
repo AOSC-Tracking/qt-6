@@ -114,7 +114,6 @@ private:
         QPainterPath originalPath;
         QQuadPath path;
         QQuadPath fillPath;
-        QQuadPath strokePath;
 
         NodeList fillNodes;
         NodeList strokeNodes;
@@ -123,13 +122,13 @@ private:
         QQuickItem *fillTextureProviderItem = nullptr;
     };
 
-    void createRunner(PathData *pathData);
+    void setUpRunner(PathData *pathData);
     void maybeUpdateAsyncItem();
 
     static void processPath(PathData *pathData);
     static NodeList addFillNodes(const QQuadPath &path);
-    static NodeList addTriangulatingStrokerNodes(const PathData &pathData);
-    static NodeList addCurveStrokeNodes(const PathData &pathData);
+    static NodeList addTriangulatingStrokerNodes(const QQuadPath &path, const QPen &pen);
+    static NodeList addCurveStrokeNodes(const QQuadPath &path, const QPen &pen);
 
     QQuickItem *m_item;
     QSGNode *m_rootNode = nullptr;
@@ -149,6 +148,7 @@ public:
     ~QQuickShapeCurveRunnable() override;
     void run() override;
 
+    bool isInitialized = false;
     bool isAsync = false;
     bool isDone = false;
     bool orphaned = false;

@@ -20,10 +20,10 @@ public:
     QHash<int, QByteArray> roleNames() const override;
     QVariant data(const QModelIndex &index, int role) const override;
 
-    void append(const qtgrpc::examples::chat::ChatMessageRepeated &messages);
+    void append(const QList<qtgrpc::examples::chat::ChatMessage> &messages);
 
 private:
-    qtgrpc::examples::chat::ChatMessageRepeated m_container;
+    QList<qtgrpc::examples::chat::ChatMessage> m_container;
 };
 
 #endif // CHATMESSAGEMODEL_H

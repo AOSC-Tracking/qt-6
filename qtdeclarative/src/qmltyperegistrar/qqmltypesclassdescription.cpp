@@ -98,7 +98,9 @@ FoundType QmlTypesClassDescription::findType(
                             : FoundType::ForeignTypes;
                 } else {
                     warning(result.native)
-                            << "Multiple C++ types called" << qualifiedName << "found!"
+                            << "Multiple C++ types called" << qualifiedName << "found!\n"
+                            << "(other occurrence in :"
+                            << it->inputFile() << ":" << it->lineNumber() << ")\n"
                             << "This violates the One Definition Rule!";
                 }
             }
@@ -131,6 +133,7 @@ void QmlTypesClassDescription::collectSuperClasses(
         const QVector<MetaType> &foreign, CollectMode mode,  QTypeRevision defaultRevision)
 {
     const QList<QAnyStringView> namespaces = MetaTypesJsonProcessor::namespaces(classDef);
+    QAnyStringView superClassCandidate;
     for (const BaseType &superObject : std::as_const(classDef.superClasses())) {
         if (superObject.access == Access::Public) {
             const QAnyStringView superName = superObject.name;
@@ -141,17 +144,34 @@ void QmlTypesClassDescription::collectSuperClasses(
                 collect(other, types, foreign, superMode, defaultRevision);
                 if (mode == TopLevel && superClass.isEmpty())
                     superClass = other.qualifiedClassName();
+            } else {
+                // If we cannot resolve anything but find a correctly formed superObject,
+                // we can at least populate the name. Further tooling might locate the type
+                // in a different module.
+                superClassCandidate = superName;
             }
-
-            // If we cannot locate a type for it, there is no point in recording the superClass
         }
     }
+
+    if (mode == TopLevel && superClass.isEmpty())
+        superClass = superClassCandidate;
 }
 
 void QmlTypesClassDescription::collectInterfaces(const MetaType &classDef)
 {
     for (const Interface &iface : classDef.ifaces())
         implementsInterfaces << interfaceName(iface);
+}
+
+void QmlTypesClassDescription::handleRegisterEnumClassesUnscoped(
+        const MetaType &classDef, QAnyStringView value)
+{
+    if (value == S_FALSE)
+        enforcesScopedEnums = true;
+    else if (value == S_TRUE)
+        warning(classDef) << "Setting RegisterEnumClassesUnscoped to true has no effect.";
+    else
+        warning(classDef) << "Unrecognized value for RegisterEnumClassesUnscoped:" << value;
 }
 
 void QmlTypesClassDescription::collectLocalAnonymous(
@@ -181,8 +201,8 @@ void QmlTypesClassDescription::collectLocalAnonymous(
             defaultProp = obj.value;
         else if (obj.name == S_PARENT_PROPERTY)
             parentProp = obj.value;
-        else if (obj.name == S_REGISTER_ENUM_CLASSES_UNSCOPED && obj.value == S_FALSE)
-            registerEnumClassesScoped = true;
+        else if (obj.name == S_REGISTER_ENUM_CLASSES_UNSCOPED)
+            handleRegisterEnumClassesUnscoped(classDef, obj.value);
     }
 
     collectInterfaces(classDef);
@@ -219,8 +239,8 @@ void QmlTypesClassDescription::collect(
         }
 
         if (name == S_REGISTER_ENUM_CLASSES_UNSCOPED) {
-            if (mode != RelatedType && value == S_FALSE)
-                registerEnumClassesScoped = true;
+            if (mode != RelatedType)
+                handleRegisterEnumClassesUnscoped(classDef, value);
             continue;
         }
 
@@ -316,7 +336,7 @@ void QmlTypesClassDescription::collect(
 
             // Default properties and enum classes are always local.
             defaultProp = {};
-            registerEnumClassesScoped = false;
+            enforcesScopedEnums = false;
 
             // Foreign type can have a default property or an attached type,
             // or RegisterEnumClassesUnscoped classinfo.
@@ -328,8 +348,7 @@ void QmlTypesClassDescription::collect(
                 } else if (parentProp.isEmpty() && foreignName == S_PARENT_PROPERTY) {
                     parentProp = foreignValue;
                 } else if (foreignName == S_REGISTER_ENUM_CLASSES_UNSCOPED) {
-                    if (foreignValue == S_FALSE)
-                        registerEnumClassesScoped = true;
+                    handleRegisterEnumClassesUnscoped(resolved, foreignValue);
                 } else if (foreignName == S_ATTACHED) {
                     if (const FoundType attached = collectRelated(
                                 foreignValue, types, foreign, defaultRevision, namespaces)) {

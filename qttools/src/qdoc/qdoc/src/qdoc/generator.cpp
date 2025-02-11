@@ -164,13 +164,21 @@ int Generator::appendSortedNames(Text &text, const ClassNode *cn, const QList<Re
     return index;
 }
 
-int Generator::appendSortedQmlNames(Text &text, const Node *base, const NodeList &subs)
+int Generator::appendSortedQmlNames(Text &text, const Node *base, const QStringList &knownTypes,
+                                    const NodeList &subs)
 {
     QMap<QString, Text> classMap;
+
+    QStringList typeNames(knownTypes);
+    for (const auto sub : subs)
+        typeNames << sub->name();
 
     for (const auto sub : subs) {
         Text full_name;
         appendFullName(full_name, sub, base);
+        // Disambiguate with '(<QML module name>)' if there are clashing type names
+        if (typeNames.count(sub->name()) > 1)
+            full_name << Atom(Atom::String, " (%1)"_L1.arg(sub->logicalModuleName()));
         classMap[full_name.toString().toLower()] = full_name;
     }
 
@@ -1180,7 +1188,9 @@ void Generator::generateNoexceptNote(const Node* node, CodeMarker* marker) {
                 Text text;
                 text << Atom::NoteLeft
                         << (nodes.size() > 1 ? QString::fromStdString(" ("s + std::to_string(counter) + ")"s) : QString::fromStdString("This ") + typeString(node))
-                        << " does not throw any exception when " << "\"" << *exception_info << "\"" << " is true."
+                        << " is noexcept when "
+                        << Atom(Atom::C, marker->markedUpCode(*exception_info, nullptr, Location()))
+                        << " is " << Atom(Atom::C, "true") << "."
                     << Atom::NoteRight;
                 generateText(text, node, marker);
             }

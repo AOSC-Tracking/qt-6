@@ -21,7 +21,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlproperty float SphereShape::diameter
+    \qmlproperty real SphereShape::diameter
     This property defines the diameter of the sphere
 
     Default value: \c{100}

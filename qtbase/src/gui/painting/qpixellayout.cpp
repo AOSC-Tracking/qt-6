@@ -1087,12 +1087,10 @@ static inline void qConvertARGB32PMToRGBA64PM_neon(QRgba64 *buffer, const uint *
         return;
 
     const uint32x4_t amask = vdupq_n_u32(0xff000000);
-#if defined(Q_PROCESSOR_ARM_64) && defined(_MSC_VER)
-    const uint8x16_t rgbaMask  = { 0x0704050603000102ULL, 0x0F0C0D0E0B08090AULL };
-#elif defined(Q_PROCESSOR_ARM_64)
-    const uint8x16_t rgbaMask  = { 2, 1, 0, 3, 6, 5, 4, 7, 10, 9, 8, 11, 14, 13, 12, 15};
+#if defined(Q_PROCESSOR_ARM_64)
+    const uint8x16_t rgbaMask  = qvsetq_n_u8(2, 1, 0, 3, 6, 5, 4, 7, 10, 9, 8, 11, 14, 13, 12, 15);
 #else
-    const uint8x8_t rgbaMask  = { 2, 1, 0, 3, 6, 5, 4, 7 };
+    const uint8x8_t rgbaMask  = qvset_n_u8(2, 1, 0, 3, 6, 5, 4, 7);
 #endif
     int i = 0;
     for (; i < count-3; i += 4) {
@@ -1861,7 +1859,7 @@ template<QImage::Format format>
 static void QT_FASTCALL storeGenericFromRGBA64PM(uchar *dest, const QRgba64 *src, int index, int count,
                                                  const QList<QRgb> *clut, QDitherInfo *dither)
 {
-    uint buffer[BufferSize];
+    Q_DECL_UNINITIALIZED uint buffer[BufferSize];
     convertFromRgb64(buffer, src, count);
     qPixelLayouts[format].storeFromARGB32PM(dest, buffer, index, count, clut, dither);
 }
@@ -2044,7 +2042,7 @@ template<QImage::Format format>
 static const QRgbaFloat32 * QT_FASTCALL convertGenericToRGBA32F(QRgbaFloat32 *buffer, const uint *src, int count,
                                                             const QList<QRgb> *clut, QDitherInfo *)
 {
-    uint buffer32[BufferSize];
+    Q_DECL_UNINITIALIZED uint buffer32[BufferSize];
     memcpy(buffer32, src, count * sizeof(uint));
     qPixelLayouts[format].convertToARGB32PM(buffer32, count, clut);
     convertToRgbaF32(buffer, buffer32, count);
@@ -2255,7 +2253,7 @@ template<QImage::Format format>
 static void QT_FASTCALL storeGenericFromRGBA32F(uchar *dest, const QRgbaFloat32 *src, int index, int count,
                                                 const QList<QRgb> *clut, QDitherInfo *dither)
 {
-    uint buffer[BufferSize];
+    Q_DECL_UNINITIALIZED uint buffer[BufferSize];
     convertFromRgba32f(buffer, src, count);
     qPixelLayouts[format].storeFromARGB32PM(dest, buffer, index, count, clut, dither);
 }

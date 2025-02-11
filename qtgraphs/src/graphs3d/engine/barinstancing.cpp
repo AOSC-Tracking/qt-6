@@ -25,19 +25,19 @@ QByteArray BarInstancing::getInstanceBuffer(int *instanceCount)
                 setDepthSortingEnabled(false);
 
             if (!item->selectedBar) {
-                auto entry = calculateTableEntry(item->position,
-                                                 item->scale,
-                                                 item->eulerRotation,
-                                                 item->color);
+                auto entry = calculateTableEntryFromQuaternion(item->position,
+                                                               item->scale,
+                                                               item->rotation,
+                                                               item->color);
                 m_instanceData.append(reinterpret_cast<char *>(&entry), sizeof(entry));
             } else {
                 // Even selected bars need to be drawn in a very small scale.
                 // If this is not done, the program can't find the selected bars in the
                 // graph and detects the wrong bars as selected ones.
-                auto entry = calculateTableEntry(item->position,
-                                                 QVector3D{.001f, .001f, .001f},
-                                                 item->eulerRotation,
-                                                 QColor(Qt::white));
+                auto entry = calculateTableEntryFromQuaternion(item->position,
+                                                               QVector3D{.001f, .001f, .001f},
+                                                               item->rotation,
+                                                               QColor(Qt::white));
                 m_instanceData.append(reinterpret_cast<char *>(&entry), sizeof(entry));
             }
             instanceNumber++;

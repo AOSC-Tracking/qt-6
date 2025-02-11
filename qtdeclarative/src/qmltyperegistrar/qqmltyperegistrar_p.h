@@ -42,7 +42,7 @@ class QmlTypeRegistrar
 
 public:
     void write(QTextStream &os, QAnyStringView outFileName) const;
-    bool generatePluginTypes(const QString &pluginTypesFile);
+    bool generatePluginTypes(const QString &pluginTypesFile, bool generatingJSRoot = false);
     void setModuleNameAndNamespace(const QString &module, const QString &targetNamespace);
     void setModuleVersions(QTypeRevision moduleVersion, const QList<quint8> &pastMajorVersions,
                            bool followForeignVersioning);
@@ -53,7 +53,9 @@ public:
 
     static bool argumentsFromCommandLineAndFile(QStringList &allArguments,
                                                 const QStringList &arguments);
-    static int runExtract(const QString &baseName, const MetaTypesJsonProcessor &processor);
+    static int runExtract(
+            const QString &baseName, const QString &nameSpace,
+            const MetaTypesJsonProcessor &processor);
 };
 
 QT_END_NAMESPACE

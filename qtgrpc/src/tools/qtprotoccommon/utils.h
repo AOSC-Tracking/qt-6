@@ -29,6 +29,7 @@ void asciiToLower(std::string &str);
 void asciiToUpper(std::string &str);
 std::string removeFileSuffix(std::string fileName);
 std::string extractFileBasename(std::string fileName);
+std::string toValidIdentifier(std::string_view name);
 std::string capitalizeAsciiName(std::string name);
 std::string deCapitalizeAsciiName(std::string name);
 std::string &rtrim(std::string &s);

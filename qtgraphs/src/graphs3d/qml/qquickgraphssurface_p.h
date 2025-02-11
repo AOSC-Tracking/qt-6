@@ -24,7 +24,6 @@ QT_BEGIN_NAMESPACE
 class QValue3DAxis;
 class QSurface3DSeries;
 class QQuickGraphsSurface;
-class SurfaceSelectionInstancing;
 
 struct Surface3DChangeBitField
 {
@@ -233,11 +232,17 @@ private:
     void addModel(QSurface3DSeries *series);
     void addSliceModel(SurfaceModel *model);
 
+    void handleMeshTypeChanged(QAbstract3DSeries::Mesh mesh);
+    void handlePointerChanged(const QString &filename);
+    void changePointerMeshTypeForSeries(QAbstract3DSeries::Mesh mesh, QSurface3DSeries *series);
+    void changePointerForSeries(const QString &filename, QSurface3DSeries *series);
+    void changeSlicePointerMeshTypeForSeries(QAbstract3DSeries::Mesh mesh, QSurface3DSeries *series);
+    void changeSlicePointerForSeries(const QString &filename, QSurface3DSeries *series);
+    QString getMeshFileName(QAbstract3DSeries::Mesh mesh, QSurface3DSeries *series) const;
+
     QVector<SurfaceModel *> m_model;
-    QQuick3DModel *m_selectionPointer = nullptr;
-    SurfaceSelectionInstancing *m_instancing = nullptr;
-    QQuick3DModel *m_sliceSelectionPointer = nullptr;
-    SurfaceSelectionInstancing *m_sliceInstancing = nullptr;
+    QMap<QSurface3DSeries *, QQuick3DModel *> m_selectionPointers = {};
+    QMap<QSurface3DSeries *, QQuick3DModel *> m_sliceSelectionPointers = {};
 
     bool m_isIndexDirty = true;
     bool m_selectionDirty = false;

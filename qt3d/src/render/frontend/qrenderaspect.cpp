@@ -309,7 +309,7 @@ QRenderAspectPrivate *QRenderAspectPrivate::findPrivate(Qt3DCore::QAspectEngine 
     for (QAbstractAspect* aspect : aspects) {
         QRenderAspect *renderAspect = qobject_cast<QRenderAspect *>(aspect);
         if (renderAspect)
-            return static_cast<QRenderAspectPrivate *>(renderAspect->d_ptr.data());
+            return static_cast<QRenderAspectPrivate *>(renderAspect->d_ptr.get());
     }
     return nullptr;
 }

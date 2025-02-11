@@ -38,6 +38,8 @@
             \li \l {qtcharts-index.html}{Qt Charts}
             \li \l {qtcoap-index.html}{Qt CoAP}
             \li \l {qtdatavisualization-index.html}{Qt Data Visualization}
+            \li \l {qtgrpc-index.html}{Qt GRPC}
+            \li \l {qthttpserver-index.html}{Qt HTTP Server}
             \li \l {qtlottieanimation-index.html}{Qt Lottie Animation}
             \li \l {qtmqtt-index.html}{Qt MQTT}
             \li \l {qtnetworkauth-index.html}{Qt Network Authorization}
@@ -47,7 +49,6 @@
             \li \l {qtvirtualkeyboard-index.html}{Qt Virtual Keyboard}
             \li \l {qtwaylandcompositor-index.html}{Qt Wayland Compositor}
             \li \l {qtgraphicaleffects5-index.html}{Qt 5 Compatibility APIs: Graphical Effects}
-            \li \l {qtcore5-index.html}{Qt 5 Core Compatibility APIs}
         \endlist
     \enddetails
 
@@ -82,6 +83,18 @@
     \list
         \li \l {Third-Party Code Used in Qt}
     \endlist
+
+    \section1 Software Bill of Materials (SBOM)
+
+    Starting from Qt 6.8, Software Bill of Materials (SBOM) documents of
+    third-party components in Qt are available. Information such as copyrights,
+    licenses, versions, source repositories, and other relevant information are
+    declared in SPDX 2.3 format.
+
+    \list
+        \li \l {Software Bill of Materials}
+    \endlist
+
 */
 
 /*!
@@ -109,6 +122,12 @@
     \l{All Modules}{Qt module}. If the third-party component itself consists of
     parts that are of a different origin (so-called
     4th-party or Nth-party code), these are listed, too.
+
+    Starting from Qt 6.8, Software Bill of Materials (SBOM) documents of
+    third-party components in Qt are available. Information such as copyrights,
+    licenses, versions, source repositories, and other relevant information are
+    declared in SPDX 2.3 format. For more information, visit the
+    \l {Software Bill of Materials} page.
 
     \div {class="fixed"}
     \generatelist annotatedattributions

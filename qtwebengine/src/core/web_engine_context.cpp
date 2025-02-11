@@ -393,17 +393,9 @@ bool usingSoftwareDynamicGL()
 #endif
 }
 
-static bool openGLPlatformSupport()
-{
-    return QGuiApplicationPrivate::platformIntegration()->hasCapability(
-            QPlatformIntegration::OpenGL);
-}
-
 static std::string getGLType(bool enableGLSoftwareRendering, bool disableGpu)
 {
-    const bool tryGL =
-            usingSupportedSGBackend() && !usingSoftwareDynamicGL() && openGLPlatformSupport();
-    if (disableGpu || (!tryGL && !enableGLSoftwareRendering))
+    if (disableGpu || !usingSupportedSGBackend())
         return gl::kGLImplementationDisabledName;
 
 #if defined(Q_OS_MACOS)
@@ -415,6 +407,9 @@ static std::string getGLType(bool enableGLSoftwareRendering, bool disableGpu)
         return gl::kGLImplementationANGLEName;
     }
 #endif
+
+    if (usingSoftwareDynamicGL() && !enableGLSoftwareRendering)
+        return gl::kGLImplementationDisabledName;
 
     if (!qt_gl_global_share_context() || !qt_gl_global_share_context()->isValid()) {
         qWarning("WebEngineContext is used before QtWebEngineQuick::initialize() or OpenGL context "
@@ -448,8 +443,9 @@ static std::string getGLType(bool enableGLSoftwareRendering, bool disableGpu)
 #else
 static std::string getGLType(bool /*enableGLSoftwareRendering*/, bool disableGpu)
 {
-    if (disableGpu)
+    if (disableGpu || !usingSupportedSGBackend())
         return gl::kGLImplementationDisabledName;
+
 #if defined(Q_OS_MACOS)
     return gl::kGLImplementationANGLEName;
 #elif defined(Q_OS_WIN)
@@ -1272,7 +1268,7 @@ const char *qWebEngineChromiumVersion() noexcept
 
 const char *qWebEngineChromiumSecurityPatchVersion() noexcept
 {
-    return "129.0.6668.70"; // FIXME: Remember to update
+    return "132.0.6834.111"; // FIXME: Remember to update
 }
 
 QT_END_NAMESPACE

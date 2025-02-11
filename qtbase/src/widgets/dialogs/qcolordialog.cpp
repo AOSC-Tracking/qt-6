@@ -1610,7 +1610,7 @@ void QColorDialogPrivate::pickScreenColor()
     Q_Q(QColorDialog);
 
     auto *platformServices = QGuiApplicationPrivate::platformIntegration()->services();
-    if (platformServices->hasCapability(QPlatformServices::Capability::ColorPicking)) {
+    if (platformServices && platformServices->hasCapability(QPlatformServices::Capability::ColorPicking)) {
         if (auto *colorPicker = platformServices->colorPicker(q->windowHandle())) {
             q->connect(colorPicker, &QPlatformServiceColorPicker::colorPicked, q,
                        [q, colorPicker](const QColor &color) {
@@ -2197,13 +2197,19 @@ void QColorDialog::open(QObject *receiver, const char *member)
 QColor QColorDialog::getColor(const QColor &initial, QWidget *parent, const QString &title,
                               ColorDialogOptions options)
 {
-    QColorDialog dlg(parent);
+    QAutoPointer<QColorDialog> dlg(new QColorDialog(parent));
     if (!title.isEmpty())
-        dlg.setWindowTitle(title);
-    dlg.setOptions(options);
-    dlg.setCurrentColor(initial);
-    dlg.exec();
-    return dlg.selectedColor();
+        dlg->setWindowTitle(title);
+    dlg->setOptions(options);
+    dlg->setCurrentColor(initial);
+
+    // If the dlg was deleted with a parent window,
+    // dlg == nullptr after leaving the exec().
+    dlg->exec();
+    if (bool(dlg))
+        return dlg->selectedColor();
+    else
+        return QColor();
 }
 
 /*!

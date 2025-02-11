@@ -21,7 +21,9 @@ private Q_SLOTS:
     void propertyMetadata() const;
     void propertyDeadline() const;
     void propertySerializationFormat() const;
+#if QT_CONFIG(ssl)
     void propertySslConfiguration() const;
+#endif
     void streamsToDebug() const;
 };
 
@@ -30,7 +32,10 @@ void QGrpcChannelOptionsTest::hasSpecialMemberFunctions() const
     QGrpcChannelOptions o1;
     QVERIFY(!o1.deadlineTimeout());
     QVERIFY(o1.metadata().empty());
+
+#if QT_CONFIG(ssl)
     QVERIFY(!o1.sslConfiguration());
+#endif
 
     o1.setDeadlineTimeout(100ms);
 
@@ -126,6 +131,7 @@ void QGrpcChannelOptionsTest::propertySerializationFormat() const
     QCOMPARE_NE(o1.serializationFormat().suffix(), o1Detach.serializationFormat().suffix());
 }
 
+#if QT_CONFIG(ssl)
 void QGrpcChannelOptionsTest::propertySslConfiguration() const
 {
     QSslConfiguration sslConfig;
@@ -139,6 +145,7 @@ void QGrpcChannelOptionsTest::propertySslConfiguration() const
     QCOMPARE_EQ(o1.sslConfiguration()->sessionTicket(), sslConfig.sessionTicket());
     QCOMPARE_NE(o1.sslConfiguration(), o1Detach.sslConfiguration());
 }
+#endif
 
 void QGrpcChannelOptionsTest::streamsToDebug() const
 {

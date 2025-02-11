@@ -7,7 +7,7 @@
     \qtcmakepackage Grpc
     \since 6.5
 
-    \brief The Qt GRPC module provides support for communicating with gRPC services.
+    \brief The Qt GRPC module provides support for communicating with \gRPC services.
 */
 
 /*!
@@ -15,6 +15,6 @@
     \title Qt GRPC Examples
     \brief A collection of examples for \l {Qt GRPC C++ Classes}
 
-    These examples demonstrate how to generate code using the protobuf and gRPC schemas,
+    These examples demonstrate how to generate code using the protobuf and \gRPC schemas,
     and use it in your projects.
 */

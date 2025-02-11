@@ -25,7 +25,7 @@ int main(int argc, char *argv[])
 
     //! [1]
     // Enable antialiasing in direct rendering mode
-    viewer.setFormat(qDefaultSurfaceFormat(true));
+    viewer.setFormat(QQuick3D::idealSurfaceFormat(8));
     //! [1]
 
     // The following are needed to make examples run without having to install the

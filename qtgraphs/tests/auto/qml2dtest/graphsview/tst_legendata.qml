@@ -268,7 +268,7 @@ Item {
             graphsView.theme = myTheme
             waitForRendering(top)
             compare(lineInitial.legendData.length, 1)
-            // TODO: Change this to test fillcolor after QTBUG-122434
+
             compare(lineInitial.legendData[0].color, "#7be6b1")
             compare(lineInitial.legendData[0].borderColor, "#7be6b1")
             compare(lineInitial.legendData[0].label, "")
@@ -278,9 +278,9 @@ Item {
             waitForRendering(top)
 
             compare(lineInitial.legendData.length, 1)
-            // TODO: Change this to test fillcolor after QTBUG-122434
+
             compare(lineInitial.legendData[0].color, "#ff0000")
-            compare(lineInitial.legendData[0].borderColor, "#ff0000")
+            compare(lineInitial.legendData[0].borderColor, "#00ff00")
             compare(lineInitial.legendData[0].label, "")
         }
     }
@@ -292,9 +292,8 @@ Item {
             waitForRendering(top)
             compare(lineInitialized.legendData.length, 1)
 
-            // TODO: Change this to test fillcolor after QTBUG-122434
             compare(lineInitialized.legendData[0].color, "#ff0000")
-            compare(lineInitialized.legendData[0].borderColor, "#ff0000")
+            compare(lineInitialized.legendData[0].borderColor, "#00ff00")
             compare(lineInitialized.legendData[0].label, "Second")
         }
 
@@ -302,9 +301,9 @@ Item {
             graphsView.theme = theme2
             waitForRendering(top)
             compare(lineInitialized.legendData.length, 1)
-            // TODO: Change this to test fillcolor after QTBUG-122434
+
             compare(lineInitialized.legendData[0].color, "#ff00ff")
-            compare(lineInitialized.legendData[0].borderColor, "#ff00ff")
+            compare(lineInitialized.legendData[0].borderColor, "#ffff00")
             compare(lineInitialized.legendData[0].label, "Second")
         }
     }

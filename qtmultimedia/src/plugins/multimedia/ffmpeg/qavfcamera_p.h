@@ -38,7 +38,7 @@ Q_FORWARD_DECLARE_OBJC_CLASS(AVCaptureDeviceRotationCoordinator);
 QT_BEGIN_NAMESPACE
 
 class QFFmpegVideoSink;
-struct QAVFSampleBufferTransformation;
+struct VideoTransformation;
 
 class QAVFCamera : public QAVFCameraBase
 {
@@ -48,12 +48,8 @@ public:
     explicit QAVFCamera(QCamera *parent);
     ~QAVFCamera();
 
-    bool isActive() const override;
-    void setActive(bool active) override;
-
     void setCaptureSession(QPlatformMediaCaptureSession *) override;
 
-    void setCamera(const QCameraDevice &camera) override;
     bool setCameraFormat(const QCameraFormat &format) override;
 
     std::optional<int> ffmpegHWPixelFormat() const override;
@@ -63,14 +59,21 @@ public:
 
     QVideoFrameFormat frameFormat() const override;
 
+protected:
+    void onActiveChanged(bool active) override;
+    void onCameraDeviceChanged(const QCameraDevice &device) override;
+
 private:
-    bool checkCameraPermission();
     void updateCameraFormat();
     void updateVideoInput();
     void attachVideoInputDevice();
-    uint32_t setPixelFormat(QVideoFrameFormat::PixelFormat pixelFormat, uint32_t inputCvPixFormat);
+    void setPixelFormat(QVideoFrameFormat::PixelFormat pixelFormat, uint32_t inputCvPixFormat);
     QSize adjustedResolution() const;
-    QAVFSampleBufferTransformation surfaceTransform() const;
+    VideoTransformation surfaceTransform() const;
+
+    void updateRotationTracking();
+    int getCurrentRotationAngleDegrees() const;
+
     bool isFrontCamera() const;
 
     AVCaptureDevice *device() const;
@@ -82,9 +85,19 @@ private:
     QAVFSampleBufferDelegate *m_sampleBufferDelegate = nullptr;
     dispatch_queue_t m_delegateQueue;
     AVPixelFormat m_hwPixelFormat = AV_PIX_FMT_NONE;
+    uint32_t m_cvPixelFormat = 0;
 
+    // If running iOS 17+, we use AVCaptureDeviceRotationCoordinator
+    // to get the camera rotation directly from the camera-device.
+    //
     // Gives us rotational information about the camera-device.
-    AVCaptureDeviceRotationCoordinator *m_rotationCoordinator API_AVAILABLE(macos(14.0), ios(17.0)) = nullptr;
+    AVCaptureDeviceRotationCoordinator *m_rotationCoordinator = nullptr;
+#ifdef Q_OS_IOS
+    // If running iOS 16 or older, we use the UIDeviceOrientation
+    // and the AVCaptureCameraPosition to apply rotation metadata
+    // to the cameras frames.
+    bool m_receivingUiDeviceOrientationNotifications = false;
+#endif
 };
 
 QT_END_NAMESPACE

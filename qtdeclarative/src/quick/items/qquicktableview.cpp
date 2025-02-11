@@ -1509,6 +1509,8 @@
 
 QT_BEGIN_NAMESPACE
 
+QQuickSelectable::~QQuickSelectable() { }
+
 Q_LOGGING_CATEGORY(lcTableViewDelegateLifecycle, "qt.quick.tableview.lifecycle")
 
 #define Q_TABLEVIEW_UNREACHABLE(output) { dumpTable(); qWarning() << "output:" << output; Q_UNREACHABLE(); }
@@ -1725,6 +1727,11 @@ QQuickItem *QQuickTableViewPrivate::selectionPointerHandlerTarget() const
     return const_cast<QQuickTableView *>(q_func())->contentItem();
 }
 
+bool QQuickTableViewPrivate::hasSelection() const
+{
+    return selectionModel && selectionModel->hasSelection();
+}
+
 bool QQuickTableViewPrivate::startSelection(const QPointF &pos, Qt::KeyboardModifiers modifiers)
 {
     Q_Q(QQuickTableView);
@@ -1761,6 +1768,8 @@ bool QQuickTableViewPrivate::startSelection(const QPointF &pos, Qt::KeyboardModi
     selectionFlag = QItemSelectionModel::Select;
     if (modifiers & Qt::ControlModifier) {
         QPoint startCell = clampedCellAtPos(pos);
+        if (!cellIsValid(startCell))
+            return false;
         const QModelIndex startIndex = q->index(startCell.y(), startCell.x());
         if (selectionModel->isSelected(startIndex))
             selectionFlag = QItemSelectionModel::Deselect;
@@ -1889,6 +1898,9 @@ QPoint QQuickTableViewPrivate::clampedCellAtPos(const QPointF &pos) const
     if (cellIsValid(cell))
         return cell;
 
+    if (loadedTableOuterRect.width() == 0 || loadedTableOuterRect.height() == 0)
+        return QPoint(-1, -1);
+
     // Clamp the cell to the loaded table and the viewport, whichever is the smallest
     QPointF clampedPos(
                 qBound(loadedTableOuterRect.x(), pos.x(), loadedTableOuterRect.right() - 1),
@@ -2002,6 +2014,9 @@ void QQuickTableViewPrivate::normalizeSelection()
 QRectF QQuickTableViewPrivate::selectionRectangle() const
 {
     Q_Q(const QQuickTableView);
+
+    if (loadedColumns.isEmpty() || loadedRows.isEmpty())
+        return QRectF();
 
     QPoint topLeftCell = selectionStartCell;
     QPoint bottomRightCell = selectionEndCell;
@@ -4786,7 +4801,7 @@ void QQuickTableViewPrivate::positionViewAtRow(int row, Qt::Alignment alignment,
     Qt::Alignment verticalAlignment = alignment & (Qt::AlignTop | Qt::AlignVCenter | Qt::AlignBottom);
     Q_TABLEVIEW_ASSERT(verticalAlignment, alignment);
 
-    if (syncHorizontally) {
+    if (syncVertically) {
         syncView->d_func()->positionViewAtRow(row, verticalAlignment, offset, subRect);
     } else {
         if (!scrollToRow(row, verticalAlignment, offset, subRect)) {
@@ -4806,7 +4821,7 @@ void QQuickTableViewPrivate::positionViewAtColumn(int column, Qt::Alignment alig
     Qt::Alignment horizontalAlignment = alignment & (Qt::AlignLeft | Qt::AlignHCenter | Qt::AlignRight);
     Q_TABLEVIEW_ASSERT(horizontalAlignment, alignment);
 
-    if (syncVertically) {
+    if (syncHorizontally) {
         syncView->d_func()->positionViewAtColumn(column, horizontalAlignment, offset, subRect);
     } else {
         if (!scrollToColumn(column, horizontalAlignment, offset, subRect)) {
@@ -5207,11 +5222,13 @@ bool QQuickTableViewPrivate::setCurrentIndexFromKeyEvent(QKeyEvent *e)
         case Qt::Key_End:
         case Qt::Key_Tab:
         case Qt::Key_Backtab:
-            // Special case: the current index doesn't map to a cell in the view (perhaps
-            // because it isn't set yet). In that case, we set it to be the top-left cell.
-            const QModelIndex topLeftIndex = q->index(topRow(), leftColumn());
-            selectionModel->setCurrentIndex(topLeftIndex, QItemSelectionModel::NoUpdate);
-            return true;
+            if (!loadedRows.isEmpty() && !loadedColumns.isEmpty()) {
+                // Special case: the current index doesn't map to a cell in the view (perhaps
+                // because it isn't set yet). In that case, we set it to be the top-left cell.
+                const QModelIndex topLeftIndex = q->index(topRow(), leftColumn());
+                selectionModel->setCurrentIndex(topLeftIndex, QItemSelectionModel::NoUpdate);
+                return true;
+            }
         }
         return false;
     }
@@ -6674,7 +6691,7 @@ void QQuickTableView::edit(const QModelIndex &index)
     d->editModel->setModel(d->tableModel->model());
     d->editModel->setDelegate(attached->editDelegate());
 
-    const int cellIndex = d->modelIndexToCellIndex(index, false);
+    const int cellIndex = d->getEditCellIndex(index);
     QObject* object = d->editModel->object(cellIndex, QQmlIncubator::Synchronous);
     if (!object) {
         d->editIndex = QModelIndex();
@@ -6725,7 +6742,7 @@ void QQuickTableView::closeEditor()
     d->editItem = nullptr;
 
     cellItem->setZ(1);
-    const int cellIndex = d->modelIndexToCellIndex(d->editIndex, false);
+    const int cellIndex = d->getEditCellIndex(d->editIndex);
     d->setRequiredProperty(kRequiredProperty_editing, QVariant::fromValue(false), cellIndex, cellItem, false);
     // Remove the extra reference we sat on the cell item from edit()
     d->model->release(cellItem, QQmlInstanceModel::NotReusable);
@@ -7152,6 +7169,8 @@ void QQuickTableViewResizeHandler::updateDrag(QPointerEvent *event, QEventPoint 
 }
 
 // ----------------------------------------------
+#if QT_CONFIG(quick_draganddrop)
+
 QQuickTableViewSectionDragHandler::QQuickTableViewSectionDragHandler(QQuickTableView *view)
     : QQuickTableViewPointerHandler(view)
 {
@@ -7226,6 +7245,7 @@ void QQuickTableViewSectionDragHandler::handleDrop(QQuickDragEvent *event)
         resetSectionOverlay();
         if (m_scrollTimer.isActive())
             m_scrollTimer.stop();
+        event->accept();
     }
 }
 
@@ -7398,9 +7418,12 @@ void QQuickTableViewPrivate::initSectionDragHandler(Qt::Orientation orientation)
 
 void QQuickTableViewPrivate::destroySectionDragHandler()
 {
-    if (sectionDragHandler)
+    if (sectionDragHandler) {
         delete sectionDragHandler;
+        sectionDragHandler = nullptr;
+    }
 }
+#endif // quick_draganddrop
 
 void QQuickTableViewPrivate::initializeIndexMapping()
 {
@@ -7465,6 +7488,14 @@ int QQuickTableViewPrivate::visualColumnIndex(const int logicalIndex) const
     if (visualIndices[0].isEmpty() || logicalIndex < 0)
         return logicalIndex;
     return visualIndices[0].constData()[logicalIndex].index;
+}
+
+int QQuickTableViewPrivate::getEditCellIndex(const QModelIndex &index) const
+{
+    // With subclasses that use a proxy model (e.g. TreeView),
+    // always edit the cell at visual index.
+    const bool hasProxyModel = (modelImpl() != assignedModel);
+    return modelIndexToCellIndex(index, hasProxyModel);
 }
 
 // ----------------------------------------------

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
 #include <QtCore/qdebug.h>
+#include <QtCore/qfileinfo.h>
 #include "qheightmapsurfacedataproxy_p.h"
 #include "qsurface3dseries_p.h"
 
@@ -296,9 +297,18 @@ QImage QHeightMapSurfaceDataProxy::heightMap() const
 void QHeightMapSurfaceDataProxy::setHeightMapFile(const QString &filename)
 {
     Q_D(QHeightMapSurfaceDataProxy);
-    d->m_heightMapFile = filename;
-    setHeightMap(QImage(filename));
-    emit heightMapFileChanged(filename);
+    QFileInfo validfile(filename);
+    // Check if the filename is empty, in which case we should clear the height map,
+    // or if not, it's an actual file that can be found
+    if (!filename.isEmpty() && (!validfile.exists() || !validfile.isFile())) {
+        qWarning("Height map file %ls does not exist.", qUtf16Printable(filename));
+        return;
+    }
+    if (d->m_heightMapFile != filename) {
+        d->m_heightMapFile = filename;
+        setHeightMap(QImage(filename));
+        emit heightMapFileChanged(filename);
+    }
 }
 
 QString QHeightMapSurfaceDataProxy::heightMapFile() const

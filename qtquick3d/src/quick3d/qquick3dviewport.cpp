@@ -247,7 +247,6 @@ QQuick3DViewport::QQuick3DViewport(QQuickItem *parent)
     setFlag(ItemHasContents);
     m_camera = nullptr;
     m_sceneRoot = new QQuick3DSceneRootNode(this);
-    m_environment = new QQuick3DSceneEnvironment(m_sceneRoot);
     m_renderStats = new QQuick3DRenderStats();
     QQuick3DSceneManager *sceneManager = new QQuick3DSceneManager();
     QQuick3DObjectPrivate::get(m_sceneRoot)->refSceneManager(*sceneManager);
@@ -370,10 +369,21 @@ QQuick3DCamera *QQuick3DViewport::camera() const
 
     This property specifies the SceneEnvironment used to render the scene.
 
+    \note Setting this property to \c null will reset the SceneEnvironment to the default.
+
     \sa SceneEnvironment
 */
 QQuick3DSceneEnvironment *QQuick3DViewport::environment() const
 {
+    if (!m_environment) {
+        if (!m_builtInEnvironment) {
+            m_builtInEnvironment = new QQuick3DSceneEnvironment(m_sceneRoot);
+            m_builtInEnvironment->setParentItem(m_sceneRoot);
+        }
+
+        return m_builtInEnvironment;
+    }
+
     return m_environment;
 }
 
@@ -381,7 +391,19 @@ QQuick3DSceneEnvironment *QQuick3DViewport::environment() const
     \qmlproperty QtQuick3D::Node QtQuick3D::View3D::scene
     \readonly
 
-    Holds the root \l Node of the View3D's scene.
+    Returns the root \l Node of the View3D's scene.
+
+    To define the 3D scene that is visualized in the View3D:
+
+    \list
+    \li  Define a hierarchy of \l{Node}{Node-based} items as children of
+        the View3D directly, then this will become the implicit \l scene of the
+        View3D.
+    \li Reference an existing scene by using the \l importScene property and
+        set it to the root \l Node of the scene you want to visualize. This
+        \l Node does not have to be an ancestor of the View3D, and you can have
+        multiple View3Ds that import the same scene.
+    \endlist
 
     \sa importScene
 */
@@ -393,12 +415,19 @@ QQuick3DNode *QQuick3DViewport::scene() const
 /*!
     \qmlproperty QtQuick3D::Node QtQuick3D::View3D::importScene
 
-    This property defines the reference node of the scene to render to the viewport.
-    The node does not have to be a child of the View3D. This referenced node becomes
-    a sibling with child nodes of View3D, if there are any.
+    This property defines the reference node of the scene to render to the
+    viewport. The node does not have to be a child of the View3D. This
+    referenced node becomes a sibling with child nodes of View3D, if there are
+    any.
 
-    \note This property can only be set once, and subsequent changes will have no
-    effect.
+    \note This property can only be set once, and subsequent changes will have
+    no effect.
+
+    You can also define a hierarchy of \l{Node}{Node-based} items as children of
+    the View3D directly, then this will become the implicit scene of the
+    View3D.
+
+    To return the current scene of the View3D, use the \l scene property.
 
     \sa Node
 */
@@ -736,6 +765,9 @@ void QQuick3DViewport::setEnvironment(QQuick3DSceneEnvironment *environment)
     m_environment = environment;
     if (m_environment && !m_environment->parentItem())
         m_environment->setParentItem(m_sceneRoot);
+
+    QQuick3DObjectPrivate::attachWatcherPriv(m_sceneRoot, this, &QQuick3DViewport::setEnvironment, environment, m_environment);
+
     emit environmentChanged();
     update();
 }
@@ -1209,7 +1241,7 @@ QList<QQuick3DPickResult> QQuick3DViewport::rayPickAll(const QVector3D &origin, 
     return processedResultList;
 }
 
-void QQuick3DViewport::processPointerEventFromRay(const QVector3D &origin, const QVector3D &direction, QPointerEvent *event)
+void QQuick3DViewport::processPointerEventFromRay(const QVector3D &origin, const QVector3D &direction, QPointerEvent *event) const
 {
     internalPick(event, origin, direction);
 }
@@ -2054,6 +2086,18 @@ void QQuick3DViewport::rebuildExtensionList()
 {
     m_extensionListDirty = true;
     update();
+}
+
+/*!
+    \internal
+
+    Private constructor for the QQuick3DViewport class so we can differentiate between
+    a regular QQuick3DViewport and one created for a specific usage, like XR.
+ */
+QQuick3DViewport::QQuick3DViewport(PrivateInstanceType type, QQuickItem *parent)
+    : QQuick3DViewport(parent)
+{
+    m_isXrViewInstance = type == PrivateInstanceType::XrViewInstance;
 }
 
 QT_END_NAMESPACE

@@ -90,7 +90,7 @@ const char *CommonTemplates::FooterTemplate()
 
 const char *CommonTemplates::InternalIncludeTemplate()
 {
-    return "#include \"$include$.h\"\n";
+    return "#include \"$include$\"\n";
 }
 const char *CommonTemplates::ExternalIncludeTemplate()
 {
@@ -126,7 +126,7 @@ const char *CommonTemplates::MetaTypeRegistrationGlobalEnumTemplate()
     return "qRegisterMetaType<$type$>();\n"
            "qRegisterMetaType<$full_type$>();\n";
 }
-const char *CommonTemplates::UsingMessageTemplate()
+const char *CommonTemplates::UsingListTemplate()
 {
     return "using $classname$Repeated = QList<$classname$>;\n";
 }
@@ -136,16 +136,11 @@ const char *CommonTemplates::UsingMapTemplate()
 }
 const char *CommonTemplates::UsingNestedMessageTemplate()
 {
-    return "using $type$ = $scope_namespaces$::$type$;\n"
-           "using $list_type$ = $scope_namespaces$::$list_type$;\n";
+    return "using $type$ = $scope_namespaces$::$type$;\n";
 }
 const char *CommonTemplates::UsingEnumTemplate()
 {
     return "using $type$ = $scope_namespaces$::$type$;\n";
-}
-const char *CommonTemplates::UsingRepeatedEnumTemplate()
-{
-    return "using $list_type$ = QList<$type$>;\n";
 }
 
 const char *CommonTemplates::NamespaceTemplate()
@@ -175,8 +170,7 @@ const char *CommonTemplates::ClassMessageForwardDeclarationTemplate()
 
 const char *CommonTemplates::EnumForwardDeclarationTemplate()
 {
-    return "enum class $type$ : int32_t;\n"
-           "using $list_type$ = QList<$type$>;\n";
+    return "enum class $type$ : int32_t;\n";
 }
 
 const char *CommonTemplates::EnumClassForwardDeclarationTemplate()
@@ -945,11 +939,6 @@ const char *CommonTemplates::QDateTimeExtrasTemplate()
            "$export_macro$QDateTime toDateTime() const;\n";
 }
 
-const char *CommonTemplates::RepeatedSuffix()
-{
-    return "Repeated";
-}
-
 // Those marked "Limited" have limited usage in QML, since QML only supports signed integers.
 // See https://doc.qt.io/qt-6/qtqml-typesystem-valuetypes.html for types that are supported by the
 // QML JS engine.
@@ -974,6 +963,11 @@ const std::unordered_map<::google::protobuf::FieldDescriptor::Type, std::string>
         { ::google::protobuf::FieldDescriptor::TYPE_SINT64, "sint64" } // Limited
     };
     return map;
+}
+
+const char *CommonTemplates::HeaderSuffix()
+{
+    return ".h";
 }
 
 const char *CommonTemplates::ProtoFileSuffix()

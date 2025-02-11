@@ -1,15 +1,12 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QT_NO_HTTP
-
 #include <qabstractoauth.h>
 #include <qabstractoauthreplyhandler.h>
 
 #include <private/qabstractoauth_p.h>
 
 #include <QtCore/qurl.h>
-#include <QtCore/qpair.h>
 #include <QtCore/qstring.h>
 #include <QtCore/qurlquery.h>
 #include <QtCore/qjsondocument.h>
@@ -21,6 +18,8 @@
 
 #include <QtCore/qrandom.h>
 #include <QtCore/private/qlocking_p.h>
+
+#include <utility>
 
 QT_BEGIN_NAMESPACE
 
@@ -296,6 +295,16 @@ QByteArray QAbstractOAuthPrivate::generateRandomString(quint8 length)
     return ba;
 }
 
+void QAbstractOAuthPrivate::setExtraTokens(const QVariantMap &tokens)
+{
+    if (extraTokens == tokens)
+        return;
+    Q_Q(QAbstractOAuth);
+    extraTokens = tokens;
+    emit q->extraTokensChanged(extraTokens);
+}
+
+// ### Qt 7 remove when removing HTTP method support (QTBUG-124329)
 QByteArray QAbstractOAuthPrivate::convertParameters(const QVariantMap &parameters)
 {
     QByteArray data;
@@ -616,5 +625,3 @@ QByteArray QAbstractOAuth::generateRandomString(quint8 length)
 }
 
 QT_END_NAMESPACE
-
-#endif // QT_NO_HTTP

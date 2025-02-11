@@ -195,6 +195,11 @@ function(_qt_internal_protoc_generate target generator output_directory)
         GENERATED TRUE
     )
 
+    get_target_property(proto_files ${target} _qt_internal_proto_files)
+    list(APPEND proto_files "${arg_PROTO_FILES}")
+    list(REMOVE_DUPLICATES proto_files)
+    set_target_properties(${target} PROPERTIES _qt_internal_proto_files "${proto_files}")
+
     target_include_directories(${target} PUBLIC "$<BUILD_INTERFACE:${output_directory}>")
 endfunction()
 
@@ -523,10 +528,22 @@ function(qt6_add_protobuf target)
 
     target_sources(${target} PRIVATE ${cpp_sources} ${qml_sources})
 
+    get_property(is_use_protobuf_list_aliases_set TARGET ${target}
+        PROPERTY QT_USE_PROTOBUF_LIST_ALIASES SET)
+    if(NOT is_use_protobuf_list_aliases_set)
+        set_target_properties(${target}
+            PROPERTIES
+                QT_USE_PROTOBUF_LIST_ALIASES TRUE
+        )
+    endif()
+
     set_target_properties(${target}
         PROPERTIES
             AUTOMOC ON
     )
+
+    target_compile_definitions(${target} PUBLIC
+        $<$<BOOL:$<TARGET_PROPERTY:QT_USE_PROTOBUF_LIST_ALIASES>>:QT_USE_PROTOBUF_LIST_ALIASES>)
 
     if(WIN32)
         if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
@@ -629,6 +646,12 @@ function(qt6_add_protobuf target)
             )
         endif()
 
+        if(NOT TARGET ${QT_CMAKE_EXPORT_NAMESPACE}::ProtobufQuick)
+            message(FATAL_ERROR "QML option of the qt_add_protobuf command requires"
+                " ${QT_CMAKE_EXPORT_NAMESPACE}::ProtobufQuick target. Please make sure that you"
+                " have the respective Qt component found by adding it to the find_package call:"
+                "   find_package(${QT_CMAKE_EXPORT_NAMESPACE} COMPONENTS ProtobufQuick)")
+        endif()
         target_link_libraries(${target} PRIVATE
             ${QT_CMAKE_EXPORT_NAMESPACE}::ProtobufQuick
         )

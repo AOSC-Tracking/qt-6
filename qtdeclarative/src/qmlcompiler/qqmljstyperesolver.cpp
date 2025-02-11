@@ -176,7 +176,7 @@ void QQmlJSTypeResolver::init(QQmlJSImportVisitor *visitor, QQmlJS::AST::Node *p
 
     m_objectsById.clear();
     m_objectsByLocation.clear();
-    m_imports.clearTypes();
+    m_imports.clear();
     m_signalHandlers.clear();
 
     if (program)
@@ -340,13 +340,12 @@ bool QQmlJSTypeResolver::isIntegral(const QQmlJSRegisterContent &type) const
 
 bool QQmlJSTypeResolver::isIntegral(const QQmlJSScope::ConstPtr &type) const
 {
-    // Only types of length <= 32bit count as integral
     return isSignedInteger(type) || isUnsignedInteger(type);
 }
 
 bool QQmlJSTypeResolver::isPrimitive(const QQmlJSScope::ConstPtr &type) const
 {
-    return isNumeric(type)
+    return (isNumeric(type) && !equals(type, m_int64Type) && !equals(type, m_uint64Type))
             || equals(type, m_boolType) || equals(type, m_voidType) || equals(type, m_nullType)
             || equals(type, m_stringType) || equals(type, m_jsPrimitiveType);
 }
@@ -791,14 +790,18 @@ QQmlJSScope::ConstPtr QQmlJSTypeResolver::merge(const QQmlJSScope::ConstPtr &a,
         return b;
 
     const auto isInt32Compatible = [&](const QQmlJSScope::ConstPtr &type) {
-        return (isIntegral(type) && !equals(type, uint32Type())) || equals(type, boolType());
+        return (isIntegral(type)
+                    && !equals(type, uint32Type())
+                    && !equals(type, int64Type())
+                    && !equals(type, uint64Type()))
+                || equals(type, boolType());
     };
 
     if (isInt32Compatible(a) && isInt32Compatible(b))
         return int32Type();
 
     const auto isUInt32Compatible = [&](const QQmlJSScope::ConstPtr &type) {
-        return isUnsignedInteger(type) || equals(type, boolType());
+        return (isUnsignedInteger(type) && !equals(type, uint64Type())) || equals(type, boolType());
     };
 
     if (isUInt32Compatible(a) && isUInt32Compatible(b))
@@ -1143,7 +1146,8 @@ bool QQmlJSTypeResolver::checkEnums(const QQmlJSScope::ConstPtr &scope, const QS
             return true;
         }
 
-        if (!enumeration.isScoped() && enumeration.hasKey(name)) {
+        if ((!enumeration.isScoped() || enumeration.isQml() || !scope->enforcesScopedEnums())
+                && enumeration.hasKey(name)) {
             *result = QQmlJSRegisterContent::create(
                     storedType(enumeration.type()), enumeration, name,
                     inExtension ? QQmlJSRegisterContent::ExtensionObjectEnum

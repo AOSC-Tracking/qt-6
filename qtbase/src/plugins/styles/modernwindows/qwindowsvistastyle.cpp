@@ -23,11 +23,11 @@ QT_BEGIN_NAMESPACE
 
 using namespace Qt::StringLiterals;
 
-static const int windowsItemFrame        =  2; // menu item frame width
-static const int windowsItemHMargin      =  3; // menu item hor text margin
-static const int windowsItemVMargin      =  4; // menu item ver text margin
-static const int windowsArrowHMargin     =  6; // arrow horizontal margin
-static const int windowsRightBorder      = 15; // right border on windows
+static constexpr int windowsItemFrame        =  2; // menu item frame width
+static constexpr int windowsItemHMargin      =  3; // menu item hor text margin
+static constexpr int windowsItemVMargin      =  4; // menu item ver text margin
+static constexpr int windowsArrowHMargin     =  6; // arrow horizontal margin
+static constexpr int windowsRightBorder      = 15; // right border on windows
 
 #ifndef TMT_CONTENTMARGINS
 #  define TMT_CONTENTMARGINS 3602
@@ -106,8 +106,8 @@ static inline HWND createTreeViewHelperWindow(const QScreen *screen)
 
     HWND result = nullptr;
     if (auto nativeWindowsApp = dynamic_cast<QWindowsApplication *>(QGuiApplicationPrivate::platformIntegration()))
-        result = nativeWindowsApp->createMessageWindow(QStringLiteral("QTreeViewThemeHelperWindowClass"),
-                                                       QStringLiteral("QTreeViewThemeHelperWindow"));
+        result = nativeWindowsApp->createMessageWindow(QStringLiteral(u"QTreeViewThemeHelperWindowClass"),
+                                                       QStringLiteral(u"QTreeViewThemeHelperWindow"));
     const auto topLeft = screen->geometry().topLeft();
     // make it a top-level window and move it the the correct screen to paint with the correct dpr later on
     SetParent(result, NULL);
@@ -750,7 +750,7 @@ bool QWindowsVistaStylePrivate::drawBackgroundThruNativeBuffer(QWindowsThemeData
     bool partIsTransparent;
     bool potentialInvalidAlpha;
 
-    QString pixmapCacheKey = QStringLiteral("$qt_xp_");
+    QString pixmapCacheKey = QStringLiteral(u"$qt_xp_");
     pixmapCacheKey.append(themeName(themeData.theme));
     pixmapCacheKey.append(QLatin1Char('p'));
     pixmapCacheKey.append(QString::number(partId));
@@ -2107,7 +2107,7 @@ void QWindowsVistaStyle::drawPrimitive(PrimitiveElement element, const QStyleOpt
 
             if (hover || selected) {
                 if (sectionSize.width() > 0 && sectionSize.height() > 0) {
-                    QString key = QString::fromLatin1("qvdelegate-%1-%2-%3-%4-%5").arg(sectionSize.width())
+                    QString key = QStringLiteral(u"qvdelegate-%1-%2-%3-%4-%5").arg(sectionSize.width())
                             .arg(sectionSize.height()).arg(selected).arg(active).arg(hover);
                     if (!QPixmapCache::find(key, &pixmap)) {
                         pixmap = QPixmap(sectionSize);
@@ -2692,7 +2692,7 @@ void QWindowsVistaStyle::drawControl(ControlElement element, const QStyleOption 
                                                       option->rect, animRect);
                         pixmapSize.setWidth(animRect.width());
                     }
-                    QString name = QString::fromLatin1("qiprogress-%1-%2").arg(pixmapSize.width()).arg(pixmapSize.height());
+                    QString name = QStringLiteral(u"qiprogress-%1-%2").arg(pixmapSize.width()).arg(pixmapSize.height());
                     QPixmap pixmap;
                     if (!QPixmapCache::find(name, &pixmap)) {
                         QImage image(pixmapSize, QImage::Format_ARGB32);
@@ -2835,6 +2835,11 @@ void QWindowsVistaStyle::drawControl(ControlElement element, const QStyleOption 
                 checkcol = qMax(menuitem->maxIconWidth, qRound(gutterWidth + size.width() + margins.left() + margins.right()));
             }
             QRect rect = option->rect;
+
+            //fill popup background
+            QWindowsThemeData popupbackgroundTheme(widget, painter, QWindowsVistaStylePrivate::MenuTheme,
+                             MENU_POPUPBACKGROUND, stateId, option->rect);
+            d->drawBackground(popupbackgroundTheme);
 
             //draw vertical menu line
             if (option->direction == Qt::LeftToRight)
@@ -4777,6 +4782,9 @@ void QWindowsVistaStyle::polish(QPalette &pal)
         d->groupBoxTextColor = qRgb(GetRValue(cref), GetGValue(cref), GetBValue(cref));
         GetThemeColor(theme.handle(), BP_GROUPBOX, GBS_DISABLED, TMT_TEXTCOLOR, &cref);
         d->groupBoxTextColorDisabled = qRgb(GetRValue(cref), GetGValue(cref), GetBValue(cref));
+        //Work around Windows API returning the same color for enabled and disabled group boxes
+        if (d->groupBoxTextColor == d->groupBoxTextColorDisabled)
+             d->groupBoxTextColorDisabled = pal.color(QPalette::Disabled, QPalette::ButtonText).rgb();
         // Where does this color come from?
         //GetThemeColor(theme.handle(), TKP_TICS, TSS_NORMAL, TMT_COLOR, &cref);
         d->sliderTickColor = qRgb(165, 162, 148);
@@ -4794,7 +4802,7 @@ void QWindowsVistaStyle::polish(QApplication *app)
 {
     // Override windows theme palettes to light
     if (qApp->styleHints()->colorScheme() == Qt::ColorScheme::Dark) {
-        static const char* themedWidgets[] = {
+        static constexpr const char* themedWidgets[] = {
             "QToolButton",
             "QAbstractButton",
             "QCheckBox",

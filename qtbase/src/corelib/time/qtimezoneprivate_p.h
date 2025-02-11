@@ -125,7 +125,7 @@ public:
     { return (std::numeric_limits<qint64>::min)() + 1; }
     [[nodiscard]] static constexpr qint64 invalidMSecs()
     { return (std::numeric_limits<qint64>::min)(); }
-    [[nodiscard]] static constexpr qint64 invalidSeconds()
+    [[nodiscard]] static constexpr int invalidSeconds()
     { return (std::numeric_limits<int>::min)(); }
     static QTimeZone::OffsetData invalidOffsetData();
     static QTimeZone::OffsetData toOffsetData(const Data &data);
@@ -152,6 +152,12 @@ public:
     {
         return QByteArrayLiteral("UTC");
     }
+
+protected:
+    // Zones CLDR data says match a condition.
+    // Use to filter what the backend has available.
+    QList<QByteArrayView> matchingTimeZoneIds(QLocale::Territory territory) const;
+    QList<QByteArrayView> matchingTimeZoneIds(int utcOffset) const;
 
 #if QT_CONFIG(timezone_locale)
 private:

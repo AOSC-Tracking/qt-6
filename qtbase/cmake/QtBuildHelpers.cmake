@@ -213,6 +213,7 @@ function(qt_internal_get_qt_build_private_helpers out_var)
         QtToolchainHelpers
         QtUnityBuildHelpers
         QtWasmHelpers
+        QtWindowsHelpers
         QtWrapperScriptHelpers
         PARENT_SCOPE
     )
@@ -229,6 +230,7 @@ function(qt_internal_get_qt_build_private_files_to_install out_var)
         QtBaseTopLevelHelpers.cmake
         QtBuild.cmake
         QtBuildHelpers.cmake
+        QtBuildStaticDocToolsScript.cmake
         QtCMakePackageVersionFile.cmake.in
         QtCompilerFlags.cmake
         QtCompilerOptimization.cmake
@@ -286,8 +288,17 @@ function(qt_internal_get_qt_build_public_helpers out_var)
         QtPublicFindPackageHelpers
         QtPublicGitHelpers
         QtPublicPluginHelpers
+        QtPublicSbomAttributionHelpers
+        QtPublicSbomCpeHelpers
+        QtPublicSbomDepHelpers
+        QtPublicSbomFileHelpers
         QtPublicSbomGenerationHelpers
         QtPublicSbomHelpers
+        QtPublicSbomLicenseHelpers
+        QtPublicSbomOpsHelpers
+        QtPublicSbomPurlHelpers
+        QtPublicSbomPythonHelpers
+        QtPublicSbomSystemDepHelpers
         QtPublicTargetHelpers
         QtPublicTestHelpers
         QtPublicToolHelpers
@@ -419,10 +430,14 @@ macro(qt_internal_setup_build_and_global_variables)
 
     qt_internal_setup_build_tools()
 
+    qt_internal_setup_sbom()
+
     # Depends on qt_internal_setup_default_install_prefix
     qt_internal_setup_build_examples()
 
     qt_internal_set_qt_host_path()
+
+    qt_internal_setup_build_docs()
 
     qt_internal_include_qt_platform_android()
 
@@ -439,6 +454,7 @@ macro(qt_internal_setup_build_and_global_variables)
 
     qt_internal_check_macos_host_version()
     _qt_internal_check_apple_sdk_and_xcode_versions()
+    qt_internal_check_msvc_versions()
     qt_internal_check_host_path_set_for_cross_compiling()
     qt_internal_setup_android_platform_specifics()
     qt_internal_setup_find_host_info_package()

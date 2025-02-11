@@ -4,14 +4,13 @@
 //! [0]
 \snippet qt-add-grpc-example.cmake 0
 
-The example above calls the \c{qt_add_grpc()}
-CMake function to generate a library called \c{MyGrpcClient}.
+The example above calls the \c{qt_add_grpc()} CMake function to start Qt GRPC
+code generation for \c service sections within the provided protobuf schema.
 
-\note if the \c .proto file API contains messages, then
-the \c {qt_add_protobuf()} CMake function should be called
-to generate protobuf message classes for the project.
+\note If the protobuf schema also contains \c message definitions, the
+\c{qt_add_protobuf()} CMake function should also be called to start Qt Protobuf
+code generation.
 
-Finally, the example creates a target for an executable called
-\e{MyApp} which links to the \e{MyGrpcClient} and
-\e{MyProtoMessageLib} libraries.
+Since we reuse the executable target, all generated files will be appended to
+the target, and the include directories will be updated accordingly.
 //! [0]

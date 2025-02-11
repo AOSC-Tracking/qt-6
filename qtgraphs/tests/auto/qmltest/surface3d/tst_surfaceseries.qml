@@ -93,7 +93,7 @@ Item {
         name: "series1"
         singleHighlightColor: "red"
         singleHighlightGradient: gradient3
-        userDefinedMesh: ":/customitem.obj"
+        userDefinedMesh: ":/customitem.mesh"
         visible: false
     }
 
@@ -189,7 +189,7 @@ Item {
             compare(initialized.name, "series1")
             compare(initialized.singleHighlightColor, "#ff0000")
             compare(initialized.singleHighlightGradient, gradient3)
-            compare(initialized.userDefinedMesh, ":/customitem.obj")
+            compare(initialized.userDefinedMesh, ":/customitem.mesh")
             compare(initialized.visible, false)
         }
     }
@@ -213,6 +213,17 @@ Item {
             compare(change.selectedPoint, Qt.point(0, 0))
             compare(change.textureFile, ":\customtexture.jpg")
             compare(change.wireframeColor, "#008000")
+
+            // Signals
+            compare(dataProxySpy.count, 1)
+            compare(selectedPointSpy.count, 1)
+            compare(flatShadingSupportedSpy.count, 0)
+            compare(drawModeSpy.count, 1)
+            compare(shadingSpy.count, 1)
+            compare(textureSpy.count, 1)
+            compare(textureFileSpy.count, 1)
+            compare(wireFrameColorSpy.count, 1)
+            compare(dataArraySpy.count, 1)
         }
 
         function test_3_change_common() {
@@ -229,7 +240,7 @@ Item {
             change.name = "series1"
             change.singleHighlightColor = "red"
             change.singleHighlightGradient = gradient3
-            change.userDefinedMesh = ":/customitem.obj"
+            change.userDefinedMesh = ":/customitem.mesh"
             change.visible = false
 
             compare(change.baseColor, "#0000ff")
@@ -245,7 +256,7 @@ Item {
             compare(change.name, "series1")
             compare(change.singleHighlightColor, "#ff0000")
             compare(change.singleHighlightGradient, gradient3)
-            compare(change.userDefinedMesh, ":/customitem.obj")
+            compare(change.userDefinedMesh, ":/customitem.mesh")
             compare(change.visible, false)
         }
 
@@ -253,5 +264,58 @@ Item {
             gradient1.stops[0].color = "yellow"
             compare(change.baseGradient.stops[0].color, "#ffff00")
         }
+    }
+    SignalSpy {
+        id: dataProxySpy
+        target: change
+        signalName: "dataProxyChanged"
+    }
+
+    SignalSpy {
+        id: selectedPointSpy
+        target: change
+        signalName: "selectedPointChanged"
+    }
+
+    SignalSpy {
+        id: flatShadingSupportedSpy
+        target: change
+        signalName: "flatShadingSupportedChanged"
+    }
+
+    SignalSpy {
+        id: drawModeSpy
+        target: change
+        signalName: "drawModeChanged"
+    }
+
+    SignalSpy {
+        id: shadingSpy
+        target: change
+        signalName: "shadingChanged"
+    }
+
+    SignalSpy {
+        id: textureSpy
+        target: change
+        signalName: "textureChanged"
+    }
+
+    SignalSpy {
+        id: textureFileSpy
+        target: change
+        signalName: "textureFileChanged"
+    }
+
+    SignalSpy {
+        id: wireFrameColorSpy
+        target: change
+        signalName: "wireframeColorChanged"
+    }
+
+    SignalSpy {
+        id: dataArraySpy
+        target: change
+        signalName: "dataArrayChanged"
     }
 }

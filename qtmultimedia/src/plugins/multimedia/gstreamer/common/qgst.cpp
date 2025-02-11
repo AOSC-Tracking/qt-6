@@ -451,7 +451,6 @@ std::optional<std::pair<QVideoFrameFormat, GstVideoInfo>> QGstCaps::formatAndVid
     case GST_VIDEO_TRANSFER_LOG100:
     case GST_VIDEO_TRANSFER_LOG316:
         break;
-#if GST_CHECK_VERSION(1, 18, 0)
     case GST_VIDEO_TRANSFER_SMPTE2084:
         transfer = QVideoFrameFormat::ColorTransfer_ST2084;
         break;
@@ -464,7 +463,6 @@ std::optional<std::pair<QVideoFrameFormat, GstVideoInfo>> QGstCaps::formatAndVid
     case GST_VIDEO_TRANSFER_BT601:
         transfer = QVideoFrameFormat::ColorTransfer_BT601;
         break;
-#endif
     }
     format.setColorTransfer(transfer);
 
@@ -594,22 +592,22 @@ void QGstObject::set(const char *property, bool b)
     g_object_set(get(), property, gboolean(b), nullptr);
 }
 
-void QGstObject::set(const char *property, uint i)
+void QGstObject::set(const char *property, uint32_t i)
 {
     g_object_set(get(), property, guint(i), nullptr);
 }
 
-void QGstObject::set(const char *property, int i)
+void QGstObject::set(const char *property, int32_t i)
 {
     g_object_set(get(), property, gint(i), nullptr);
 }
 
-void QGstObject::set(const char *property, qint64 i)
+void QGstObject::set(const char *property, int64_t i)
 {
     g_object_set(get(), property, gint64(i), nullptr);
 }
 
-void QGstObject::set(const char *property, quint64 i)
+void QGstObject::set(const char *property, uint64_t i)
 {
     g_object_set(get(), property, guint64(i), nullptr);
 }
@@ -858,7 +856,11 @@ bool QGstPad::unlink(const QGstPad &sink) const
 
 bool QGstPad::unlinkPeer() const
 {
-    return unlink(peer());
+    QGstPad peerPad = peer();
+    if (peerPad)
+        return GST_PAD_IS_SRC(pad()) ? unlink(peerPad) : peerPad.unlink(*this);
+
+    return true;
 }
 
 QGstPad QGstPad::peer() const
@@ -1044,11 +1046,7 @@ QGstPad QGstElement::sink() const
 
 QGstPad QGstElement::getRequestPad(const char *name) const
 {
-#if GST_CHECK_VERSION(1, 19, 1)
     return QGstPad(gst_element_request_pad_simple(element(), name), HasRef);
-#else
-    return QGstPad(gst_element_get_request_pad(element(), name), HasRef);
-#endif
 }
 
 void QGstElement::releaseRequestPad(const QGstPad &pad) const
@@ -1078,15 +1076,6 @@ GstStateChangeReturn QGstElement::setState(GstState state)
 
 bool QGstElement::setStateSync(GstState state, std::chrono::nanoseconds timeout)
 {
-    if (state == GST_STATE_NULL) {
-        // QTBUG-125251: when changing pipeline state too quickly between NULL->PAUSED->NULL there
-        // may be a pending task to activate pads while we try to switch to NULL. This can cause an
-        // assertion failure in gstreamer. we therefore finish the state change when called on a bin
-        // or pipeline.
-        if (qIsGstObjectOfType<GstBin>(element()))
-            finishStateChange();
-    }
-
     GstStateChangeReturn change = gst_element_set_state(element(), state);
     if (change == GST_STATE_CHANGE_ASYNC)
         change = gst_element_get_state(element(), nullptr, &state, timeout.count());
@@ -1239,6 +1228,14 @@ QGstElement QGstElement::getParent() const
     };
 }
 
+QGstBin QGstElement::getParentBin() const
+{
+    return QGstBin{
+        qGstCheckedCast<GstBin>(gst_element_get_parent(object())),
+        QGstElement::HasRef,
+    };
+}
+
 QGstPipeline QGstElement::getPipeline() const
 {
     QGstElement ancestor = *this;
@@ -1254,6 +1251,12 @@ QGstPipeline QGstElement::getPipeline() const
             QGstPipeline::NeedsRef,
         };
     }
+}
+
+void QGstElement::removeFromParent()
+{
+    if (QGstBin parent = getParentBin())
+        parent.remove(*this);
 }
 
 void QGstElement::dumpPipelineGraph(const char *filename) const
@@ -1345,6 +1348,23 @@ void QGstBin::addGhostPad(const QGstElement &child, const char *name)
 void QGstBin::addGhostPad(const char *name, const QGstPad &pad)
 {
     gst_element_add_pad(element(), gst_ghost_pad_new(name, pad.pad()));
+}
+
+void QGstBin::addUnlinkedGhostPads(GstPadDirection direction)
+{
+    Q_ASSERT(direction != GstPadDirection::GST_PAD_UNKNOWN);
+
+    for (;;) {
+        QGstPad unlinkedPad{
+            gst_bin_find_unlinked_pad(bin(), direction),
+            QGstPad::HasRef,
+        };
+
+        if (!unlinkedPad)
+            return;
+
+        addGhostPad(unlinkedPad.name().constData(), unlinkedPad);
+    }
 }
 
 bool QGstBin::syncChildrenState()

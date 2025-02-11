@@ -95,7 +95,12 @@ bool QQmlTypeData::tryLoadFromDiskCache()
         return true;
     }
 
-    m_compiledData = std::move(unit);
+    return loadFromDiskCache(unit);
+}
+
+bool QQmlTypeData::loadFromDiskCache(const QQmlRefPointer<QV4::CompiledData::CompilationUnit> &unit)
+{
+    m_compiledData = unit;
 
     QVector<QV4::CompiledData::InlineComponent> ics;
     for (int i = 0, count = m_compiledData->objectCount(); i < count; ++i) {
@@ -450,7 +455,12 @@ void QQmlTypeData::done()
 
     QV4::CompiledData::ResolvedTypeReferenceMap resolvedTypeCache;
     QQmlRefPointer<QQmlTypeNameCache> typeNameCache;
-    {
+
+    // If we've pulled the CU from the memory cache, we don't need to do any verification.
+    const bool verifyCaches = !m_compiledData
+            || (m_compiledData->resolvedTypes.isEmpty() && !m_compiledData->typeNameCache);
+
+    if (verifyCaches) {
         QQmlError error = buildTypeResolutionCaches(&typeNameCache, &resolvedTypeCache);
         if (error.isValid()) {
             setError(error);
@@ -469,7 +479,7 @@ void QQmlTypeData::done()
     };
 
     // verify if any dependencies changed if we're using a cache
-    if (m_document.isNull()) {
+    if (m_document.isNull() && verifyCaches) {
         const QQmlError error = createTypeAndPropertyCaches(typeNameCache, resolvedTypeCache);
         if (!error.isValid() && m_compiledData->verifyChecksum(dependencyHasher)) {
             setCompileUnit(m_compiledData);
@@ -512,6 +522,7 @@ void QQmlTypeData::done()
     }
 
     if (!m_document.isNull()) {
+        Q_ASSERT(verifyCaches);
         // Compile component
         compile(typeNameCache, &resolvedTypeCache, dependencyHasher);
         if (isError())
@@ -521,11 +532,10 @@ void QQmlTypeData::done()
     }
 
     {
-        QQmlEnginePrivate *const enginePrivate = QQmlEnginePrivate::get(typeLoader()->engine());
         m_compiledData->inlineComponentData = m_inlineComponentData;
         {
             // Sanity check property bindings
-            QQmlPropertyValidator validator(enginePrivate, m_importCache.data(), m_compiledData);
+            QQmlPropertyValidator validator(typeLoader(), m_importCache.data(), m_compiledData);
             QVector<QQmlError> errors = validator.validate();
             if (!errors.isEmpty()) {
                 setError(errors);
@@ -656,6 +666,16 @@ void QQmlTypeData::dataReceived(const SourceCodeData &data)
 
 void QQmlTypeData::initializeFromCachedUnit(const QQmlPrivate::CachedQmlUnit *unit)
 {
+    if (auto cu = QQmlMetaType::obtainCompilationUnit(finalUrl())) {
+        if (loadFromDiskCache(cu))
+            return;
+    }
+
+    if (unit->qmlData->qmlUnit()->nObjects == 0) {
+        setError(QQmlTypeLoader::tr("Cached QML Unit has no objects"));
+        return;
+    }
+
     m_document.reset(new QmlIR::Document(isDebugging()));
     QQmlIRLoader loader(unit->qmlData, m_document.data());
     loader.load();
@@ -870,7 +890,8 @@ void QQmlTypeData::resolveTypes()
     // Add any imported scripts to our resolved set
     const auto resolvedScripts = m_importCache->resolvedScripts();
     for (const QQmlImports::ScriptReference &script : resolvedScripts) {
-        QQmlRefPointer<QQmlScriptBlob> blob = typeLoader()->getScript(script.location);
+        QQmlRefPointer<QQmlScriptBlob> blob
+                = typeLoader()->getScript(script.location, script.fileName);
         addDependency(blob.data());
 
         ScriptReference ref;

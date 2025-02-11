@@ -2438,6 +2438,20 @@ bool QQuickItemPrivate::canAcceptTabFocus(QQuickItem *item)
     if (item == item->window()->contentItem())
         return true;
 
+    const auto tabFocus = QGuiApplication::styleHints()->tabFocusBehavior();
+    if (tabFocus == Qt::NoTabFocus)
+        return false;
+    if (tabFocus == Qt::TabFocusAllControls)
+        return true;
+
+    QVariant editable = item->property("editable");
+    if (editable.isValid())
+        return editable.toBool();
+
+    QVariant readonly = item->property("readOnly");
+    if (readonly.isValid())
+        return !readonly.toBool() && item->property("text").isValid();
+
 #if QT_CONFIG(accessibility)
     QAccessible::Role role = QQuickItemPrivate::get(item)->effectiveAccessibleRole();
     if (role == QAccessible::EditableText || role == QAccessible::Table || role == QAccessible::List) {
@@ -2447,14 +2461,6 @@ bool QQuickItemPrivate::canAcceptTabFocus(QQuickItem *item)
             return iface->state().editable;
     }
 #endif
-
-    QVariant editable = item->property("editable");
-    if (editable.isValid())
-        return editable.toBool();
-
-    QVariant readonly = item->property("readOnly");
-    if (readonly.isValid() && !readonly.toBool() && item->property("text").isValid())
-        return true;
 
     return false;
 }
@@ -2556,8 +2562,6 @@ QQuickItem* QQuickItemPrivate::nextPrevItemInTabFocusChain(QQuickItem *item, boo
     if (!contentItem)
         return item;
 
-    bool all = QGuiApplication::styleHints()->tabFocusBehavior() == Qt::TabFocusAllControls;
-
     QQuickItem *from = nullptr;
     bool isTabFence = item->d_func()->isTabFence;
     if (forward) {
@@ -2639,11 +2643,10 @@ QQuickItem* QQuickItemPrivate::nextPrevItemInTabFocusChain(QQuickItem *item, boo
             }
             current = parent;
         } else if (hasChildren) {
-            if (!wrap && (forward || firstFromItem != from)) {
+            if (!wrap) {
                 qCDebug(lcFocus) << "QQuickItemPrivate::nextPrevItemInTabFocusChain:"
-                                 << "Focus chain about to wrap.";
-                // If focus chain wraps, we should give the parent window
-                // a chance to get focus, so we should stop here
+                                 << "Focus chain about to wrap but wrapping was set to false."
+                                 << "Returning.";
                 return nullptr;
             }
 
@@ -2685,7 +2688,7 @@ QQuickItem* QQuickItemPrivate::nextPrevItemInTabFocusChain(QQuickItem *item, boo
             }
         }
     } while (skip || !current->activeFocusOnTab() || !current->isEnabled() || !current->isVisible()
-                  || !(all || QQuickItemPrivate::canAcceptTabFocus(current)));
+                  || !(QQuickItemPrivate::canAcceptTabFocus(current)));
 
     return current;
 }
@@ -2764,9 +2767,10 @@ void QQuickItem::setParentItem(QQuickItem *parentItem)
             while (!scopeItem->isFocusScope() && scopeItem->parentItem())
                 scopeItem = scopeItem->parentItem();
             if (d->window) {
-                d->deliveryAgentPrivate()->
-                        clearFocusInScope(scopeItem, scopeFocusedItem, Qt::OtherFocusReason,
+                if (QQuickDeliveryAgentPrivate *da = d->deliveryAgentPrivate()) {
+                    da->clearFocusInScope(scopeItem, scopeFocusedItem, Qt::OtherFocusReason,
                                           QQuickDeliveryAgentPrivate::DontChangeFocusProperty);
+                }
                 if (scopeFocusedItem != this)
                     QQuickItemPrivate::get(scopeFocusedItem)->updateSubFocusItem(this, true);
             } else {
@@ -2840,9 +2844,10 @@ void QQuickItem::setParentItem(QQuickItem *parentItem)
                 emit scopeFocusedItem->focusChanged(false);
             } else {
                 if (d->window) {
-                    d->deliveryAgentPrivate()->
-                            setFocusInScope(scopeItem, scopeFocusedItem, Qt::OtherFocusReason,
+                    if (QQuickDeliveryAgentPrivate *da = d->deliveryAgentPrivate()) {
+                        da->setFocusInScope(scopeItem, scopeFocusedItem, Qt::OtherFocusReason,
                                             QQuickDeliveryAgentPrivate::DontChangeFocusProperty);
+                    }
                 } else {
                     QQuickItemPrivate::get(scopeFocusedItem)->updateSubFocusItem(scopeItem, true);
                 }
@@ -6607,9 +6612,10 @@ bool QQuickItemPrivate::setEffectiveVisibleRecur(bool newEffectiveVisible)
     dirty(Visible);
     if (parentItem)
         QQuickItemPrivate::get(parentItem)->dirty(ChildrenStackingChanged);
-    if (window)
-        if (auto agent = deliveryAgentPrivate(); agent)
+    if (window) {
+        if (auto agent = deliveryAgentPrivate())
             agent->removeGrabber(q, true, true, true);
+    }
 
     bool childVisibilityChanged = false;
     for (int ii = 0; ii < childItems.size(); ++ii)
@@ -6956,12 +6962,26 @@ void QQuickItem::setSmooth(bool smooth)
     key events used by Keys or KeyNavigation have precedence over
     focus chain behavior; ignore the events in other key handlers
     to allow it to propagate.
+
+    \note {QStyleHints::tabFocusBehavior}{tabFocusBehavior} can further limit focus
+    to only specific types of controls, such as only text or list controls. This is
+    the case on macOS, where focus to particular controls may be restricted based on
+    system settings.
+
+    \sa QStyleHints::tabFocusBehavior, focusPolicy
 */
 /*!
     \property QQuickItem::activeFocusOnTab
 
     This property holds whether the item wants to be in the tab focus
     chain. By default, this is set to \c false.
+
+    \note {QStyleHints::tabFocusBehavior}{tabFocusBehavior} can further limit focus
+    to only specific types of controls, such as only text or list controls. This is
+    the case on macOS, where focus to particular controls may be restricted based on
+    system settings.
+
+    \sa QStyleHints::tabFocusBehavior, focusPolicy
 */
 // TODO FOCUS: Deprecate
 bool QQuickItem::activeFocusOnTab() const
@@ -8489,7 +8509,7 @@ void QQuickItem::ungrabMouse()
 /*!
     Returns whether mouse input should exclusively remain with this item.
 
-    \sa setKeepMouseGrab()
+    \sa setKeepMouseGrab(), QEvent::accept(), QEvent::ignore()
  */
 bool QQuickItem::keepMouseGrab() const
 {
@@ -8551,14 +8571,15 @@ void QQuickItem::ungrabTouchPoints()
     Q_D(QQuickItem);
     if (!d->window)
         return;
-    d->deliveryAgentPrivate()->removeGrabber(this, false, true);
+    if (QQuickDeliveryAgentPrivate *da = d->deliveryAgentPrivate())
+        da->removeGrabber(this, false, true);
 }
 
 /*!
     Returns whether the touch points grabbed by this item should exclusively
     remain with this item.
 
-    \sa setKeepTouchGrab(), keepMouseGrab()
+    \sa setKeepTouchGrab(), keepMouseGrab(), QEvent::accept(), QEvent::ignore()
 */
 bool QQuickItem::keepTouchGrab() const
 {
@@ -8756,9 +8777,10 @@ QPointF QQuickItem::mapToItem(const QQuickItem *item, const QPointF &point) cons
 {
     QPointF p = mapToScene(point);
     if (item) {
-        const QQuickWindow *itemWindow = item->window();
-        if (itemWindow != nullptr && itemWindow != window())
-            p = itemWindow->mapFromGlobal(window()->mapToGlobal(p));
+        const auto *itemWindow = item->window();
+        const auto *thisWindow = window();
+        if (thisWindow && itemWindow && itemWindow != thisWindow)
+            p = itemWindow->mapFromGlobal(thisWindow->mapToGlobal(p));
 
         p = item->mapFromScene(p);
     }
@@ -8863,9 +8885,10 @@ QPointF QQuickItem::mapFromItem(const QQuickItem *item, const QPointF &point) co
     QPointF p = point;
     if (item) {
         p = item->mapToScene(point);
-
-        if (item->window() != window())
-            p = window()->mapFromGlobal(item->window()->mapToGlobal(p));
+        const auto *itemWindow = item->window();
+        const auto *thisWindow = window();
+        if (thisWindow && itemWindow && itemWindow != thisWindow)
+            p = thisWindow->mapFromGlobal(itemWindow->mapToGlobal(p));
     }
     return mapFromScene(p);
 }
@@ -10067,7 +10090,7 @@ QRectF QQuickItem::mapFromItem(const QQuickItem *item, qreal x, qreal y, qreal w
 
 //! \internal
 QPointF QQuickItem::mapToItem(const QQuickItem *item, qreal x, qreal y)
-{ return mapToItem(item, QPoint(x, y)); }
+{ return mapToItem(item, QPointF(x, y)); }
 
 //! \internal
 QRectF QQuickItem::mapToItem(const QQuickItem *item, const QRectF &rect) const

@@ -38,9 +38,32 @@ private Q_SLOTS:
     void setSslConfig();
     void tlsAuthentication();
 #endif
+    void extraTokens();
+    void expirationAt();
 
 private:
     QString testDataDir;
+    [[nodiscard]] auto useTemporaryKeychain()
+    {
+#ifndef QT_NO_SSL
+        // Set the same environment value as CI uses, so that it's possible
+        // to run autotests locally without macOS asking for permission to use
+        // a private key in keychain (with TLS sockets)
+        auto value = qEnvironmentVariable("QT_SSL_USE_TEMPORARY_KEYCHAIN");
+        qputenv("QT_SSL_USE_TEMPORARY_KEYCHAIN", "1");
+        auto envRollback = qScopeGuard([value](){
+            if (value.isEmpty())
+                qunsetenv("QT_SSL_USE_TEMPORARY_KEYCHAIN");
+            else
+                qputenv("QT_SSL_USE_TEMPORARY_KEYCHAIN", value.toUtf8());
+        });
+        return envRollback;
+#else
+        // avoid maybe-unused warnings from callers
+        return qScopeGuard([]{});
+#endif // QT_NO_SSL
+    }
+
 };
 
 struct ReplyHandler : QAbstractOAuthReplyHandler
@@ -68,6 +91,11 @@ struct ReplyHandler : QAbstractOAuthReplyHandler
     void emitCallbackReceived(const QVariantMap &data)
     {
         Q_EMIT callbackReceived(data);
+    }
+
+    void emitTokensReceived(const QVariantMap &data)
+    {
+        Q_EMIT tokensReceived(data);
     }
 };
 
@@ -653,6 +681,8 @@ void tst_OAuth2::tlsAuthentication()
     if (!QSslSocket::supportsSsl())
         QSKIP("This test will fail because the backend does not support TLS");
 
+    auto rollback = useTemporaryKeychain();
+
     // erros may vary, depending on backend
     const QSet<QSslError::SslError> expectedErrors{ QSslError::SelfSignedCertificate,
                                                     QSslError::CertificateUntrusted,
@@ -694,7 +724,10 @@ void tst_OAuth2::tlsAuthentication()
     });
     connect(&nam, &QNetworkAccessManager::sslErrors, this,
         [&expectedErrors](QNetworkReply *r, const QList<QSslError> &errors) {
-            QCOMPARE(errors.size(), 2);
+            // On some Windows machines the test might report all
+            // three expected errors.
+            QCOMPARE_GE(errors.size(), 2);
+            QCOMPARE_LE(errors.size(), 3);
             for (const auto &err : errors)
                 QVERIFY(expectedErrors.contains(err.error()));
             r->ignoreSslErrors();
@@ -706,6 +739,141 @@ void tst_OAuth2::tlsAuthentication()
     QCOMPARE(oauth2.token(), QLatin1String("token"));
 }
 #endif // !QT_NO_SSL
+
+void tst_OAuth2::extraTokens()
+{
+    QOAuth2AuthorizationCodeFlow oauth2;
+    oauth2.setAuthorizationUrl({"authorizationUrl"_L1});
+    oauth2.setAccessTokenUrl({"accessTokenUrl"_L1});
+    oauth2.setState("a_state"_L1);
+    ReplyHandler replyHandler;
+    oauth2.setReplyHandler(&replyHandler);
+    QSignalSpy extraTokensSpy(&oauth2, &QAbstractOAuth::extraTokensChanged);
+    QVERIFY(oauth2.extraTokens().isEmpty());
+
+    constexpr auto name1 = "name1"_L1;
+    constexpr auto value1 = "value1"_L1;
+    constexpr auto name2 = "name2"_L1;
+    constexpr auto value2 = "value2"_L1;
+
+    // Conclude authorization stage without extra tokens
+    oauth2.grant();
+    replyHandler.emitCallbackReceived({{"code"_L1, "acode"_L1}, {"state"_L1, "a_state"_L1}});
+    QCOMPARE(extraTokensSpy.size(), 1); // 'state'
+
+    // Conclude authorization stage with extra tokens
+    extraTokensSpy.clear();
+    oauth2.grant();
+    replyHandler.emitCallbackReceived({{"code"_L1, "acode"_L1}, {"state"_L1, "a_state"_L1},
+                                       {name1, value1}});
+    QTRY_COMPARE(extraTokensSpy.size(), 1);
+    QVariantMap extraTokens = oauth2.extraTokens();
+    QCOMPARE(extraTokens, extraTokensSpy.at(0).at(0).toMap());
+    QCOMPARE(extraTokens.size(), 2);
+    QCOMPARE(extraTokens.value("state"_L1).toString(), "a_state"_L1);
+    QCOMPARE(extraTokens.value(name1).toString(), value1);
+
+    // Conclude token stage without additional extra tokens
+    extraTokensSpy.clear();
+    replyHandler.emitTokensReceived({{"access_token"_L1, "at"_L1}});
+    QCOMPARE(extraTokensSpy.size(), 0);
+    extraTokens = oauth2.extraTokens();
+    QCOMPARE(extraTokens.size(), 2);
+    QCOMPARE(extraTokens.value("state"_L1).toString(), "a_state"_L1);
+    QCOMPARE(extraTokens.value(name1).toString(), value1);
+
+    // Conclude token stage with additional extra tokens
+    extraTokensSpy.clear();
+    replyHandler.emitTokensReceived({{"access_token"_L1, "at"_L1}, {name2, value2}});
+    QTRY_COMPARE(extraTokensSpy.size(), 1);
+    extraTokens = oauth2.extraTokens();
+    QCOMPARE(extraTokens, extraTokensSpy.at(0).at(0).toMap());
+    QCOMPARE(extraTokens.size(), 3);
+    QCOMPARE(extraTokens.value("state"_L1).toString(), "a_state"_L1);
+    QCOMPARE(extraTokens.value(name1).toString(), value1);
+    QCOMPARE(extraTokens.value(name2).toString(), value2);
+}
+
+void tst_OAuth2::expirationAt()
+{
+    QOAuth2AuthorizationCodeFlow oauth2;
+    oauth2.setAuthorizationUrl({"authorizationEndpoint"_L1});
+    oauth2.setAccessTokenUrl({"tokenEndpoint"_L1});
+    oauth2.setState("a_state"_L1);
+    ReplyHandler replyHandler;
+    oauth2.setReplyHandler(&replyHandler);
+    QSignalSpy expirationAtSpy(&oauth2, &QAbstractOAuth2::expirationAtChanged);
+
+    const auto expiresAtIsInSecondsFromNow = [&](int fromNow) -> bool {
+        // For test robustness check that the time is within +/- 2 seconds
+        return qAbs(
+            oauth2.expirationAt().secsTo(QDateTime::currentDateTime().addSecs(fromNow))) <= 2;
+    };
+    // Initial value
+    QVERIFY(!oauth2.expirationAt().isValid());
+
+    // Conclude authorization stage
+    oauth2.grant();
+    replyHandler.emitCallbackReceived({{"code"_L1, "acode"_L1}, {"state"_L1, "a_state"_L1}});
+    QVERIFY(expirationAtSpy.isEmpty());
+
+    // Test expiration in 50 seconds from now
+    int expires_in = 50;
+    replyHandler.emitTokensReceived({{"access_token"_L1, "at"_L1}, {"expires_in", expires_in}});
+    QCOMPARE(expirationAtSpy.size(), 1);
+    QCOMPARE(expirationAtSpy.at(0).at(0).toDateTime(), oauth2.expirationAt());
+    QVERIFY(expiresAtIsInSecondsFromNow(expires_in));
+    expirationAtSpy.clear();
+
+    // Changes to 100 seconds from now
+    expires_in = 100;
+    replyHandler.emitTokensReceived({{"access_token"_L1, "at"_L1}, {"expires_in", expires_in}});
+    QCOMPARE(expirationAtSpy.size(), 1);
+    QCOMPARE(expirationAtSpy.at(0).at(0).toDateTime(), oauth2.expirationAt());
+    QVERIFY(expiresAtIsInSecondsFromNow(expires_in));
+    expirationAtSpy.clear();
+
+    // Zero expires_in value, expiresAt should become invalid
+    expires_in = 0;
+    replyHandler.emitTokensReceived({{"access_token"_L1, "at"_L1}, {"expires_in", expires_in}});
+    QCOMPARE(expirationAtSpy.size(), 1);
+    QCOMPARE(expirationAtSpy.at(0).at(0).toDateTime(), oauth2.expirationAt());
+    QVERIFY(!oauth2.expirationAt().isValid());
+    expirationAtSpy.clear();
+
+    // Negative expires_in value, expiresAt should remain invalid
+    expires_in = -10;
+    replyHandler.emitTokensReceived({{"access_token"_L1, "at"_L1}, {"expires_in", expires_in}});
+    QCOMPARE(expirationAtSpy.size(), 0);
+    QVERIFY(!oauth2.expirationAt().isValid());
+    expirationAtSpy.clear();
+
+    // Non-number expires_in value, expiresAt should remain invalid
+    replyHandler.emitTokensReceived({{"access_token"_L1, "at"_L1}, {"expires_in", "garbage"}});
+    QCOMPARE(expirationAtSpy.size(), 0);
+    QVERIFY(!oauth2.expirationAt().isValid());
+    expirationAtSpy.clear();
+
+    // Expiration goes back to valid
+    expires_in = 70;
+    replyHandler.emitTokensReceived({{"access_token"_L1, "at"_L1}, {"expires_in", expires_in}});
+    QCOMPARE(expirationAtSpy.size(), 1);
+    QCOMPARE(expirationAtSpy.at(0).at(0).toDateTime(), oauth2.expirationAt());
+    QVERIFY(expiresAtIsInSecondsFromNow(expires_in));
+    expirationAtSpy.clear();
+
+    // Expiration is not provided, expiresAt should become invalid
+    replyHandler.emitTokensReceived({{"access_token"_L1, "at"_L1}});
+    QCOMPARE(expirationAtSpy.size(), 1);
+    QCOMPARE(expirationAtSpy.at(0).at(0).toDateTime(), oauth2.expirationAt());
+    QVERIFY(!oauth2.expirationAt().isValid());
+    expirationAtSpy.clear();
+
+    // Expiration is still not provided, expiresAt should remain unchanged
+    replyHandler.emitTokensReceived({{"access_token"_L1, "at"_L1}});
+    QCOMPARE(expirationAtSpy.size(), 0);
+    QVERIFY(!oauth2.expirationAt().isValid());
+}
 
 QTEST_MAIN(tst_OAuth2)
 #include "tst_oauth2.moc"

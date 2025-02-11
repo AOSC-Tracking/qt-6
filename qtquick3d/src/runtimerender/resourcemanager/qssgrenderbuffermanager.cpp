@@ -945,7 +945,7 @@ bool QSSGBufferManager::setRhiTexture(QSSGRenderImageTexture &texture,
         qWarning() << "Could not use 0 sized texture";
         return false;
     } else if (!rhi->isTextureFormatSupported(rhiFormat)) {
-        qWarning() << "Unsupported texture format";
+        qWarning() << "Unsupported texture format" << rhiFormat;
         return false;
     }
 
@@ -1877,8 +1877,8 @@ void QSSGBufferManager::registerExtensionResult(const QSSGRenderExtension &exten
                                                 QRhiTexture *texture)
 {
     if (texture) {
-        texture->flags().testFlag(QRhiTexture::Flag::MipMapped);
-        const auto mipLevels = QRhi::mipLevelsForSize(texture->pixelSize());
+        const bool isMipMapped = texture->flags().testFlag(QRhiTexture::Flag::MipMapped);
+        const auto mipLevels = isMipMapped ? QRhi::mipLevelsForSize(texture->pixelSize()) : 0;
         QSSGRenderImageTextureFlags flags;
         const bool isSRGB = texture->flags().testFlag(QRhiTexture::Flag::sRGB);
         flags.setLinear(!isSRGB);

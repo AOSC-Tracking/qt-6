@@ -40,7 +40,7 @@
            additional call options.
 
     Provides a set of properties to access the call options
-    that are used by gRPC channels to communicate with the services.
+    that are used by \gRPC channels to communicate with the services.
     \sa QGrpcCallOptions
 */
 
@@ -64,7 +64,7 @@
             additional channel options.
 
     Provides a set of properties to access the channel
-    options that are used by gRPC channels to communicate with the services.
+    options that are used by \gRPC channels to communicate with the services.
     \sa QGrpcChannelOptions
 */
 
@@ -105,7 +105,7 @@
     \brief  The GrpcMetadata is a class that stores metadata in unordered
             multimap container.
 
-    Metadata is information about a particular gRPC call or channel
+    Metadata is information about a particular \gRPC call or channel
     (such as authentication details) in the form of a list of key-value pairs,
     where the keys are strings and the values are typically strings, but can
     be binary data.

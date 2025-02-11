@@ -60,8 +60,6 @@ static HWND createMessageOnlyWindow()
 QWindowsVideoDevices::QWindowsVideoDevices(QPlatformMediaIntegration *integration)
     : QPlatformVideoDevices(integration)
 {
-    CoInitialize(nullptr);
-
     m_videoDeviceMsgWindow = createMessageOnlyWindow();
     if (m_videoDeviceMsgWindow) {
         SetWindowLongPtr(m_videoDeviceMsgWindow, GWLP_USERDATA, (LONG_PTR)this);
@@ -96,8 +94,6 @@ QWindowsVideoDevices::~QWindowsVideoDevices()
         DestroyWindow(m_videoDeviceMsgWindow);
         UnregisterClass(windowClassName, GetModuleHandle(nullptr));
     }
-
-    CoUninitialize();
 }
 
 static std::optional<QCameraFormat> createCameraFormat(IMFMediaType *mediaFormat)
@@ -202,7 +198,7 @@ static QList<QCameraDevice> readCameraDevices(IMFAttributes *attr)
     return cameras;
 }
 
-QList<QCameraDevice> QWindowsVideoDevices::videoDevices() const
+QList<QCameraDevice> QWindowsVideoDevices::videoInputs() const
 {
     QList<QCameraDevice> cameras;
 

@@ -6,20 +6,18 @@
 
 #include <QtCore/qcoreapplication.h>
 #include <QtGui/qsurfaceformat.h>
+#include <QtQuick3D/qquick3d.h>
 
 QT_BEGIN_NAMESPACE
 
 [[maybe_unused]] static inline QSurfaceFormat qDefaultSurfaceFormat(bool antialias)
 {
     QSurfaceFormat surfaceFormat;
-    surfaceFormat.setDepthBufferSize(24);
-    surfaceFormat.setStencilBufferSize(8);
-    surfaceFormat.setSwapBehavior(QSurfaceFormat::DoubleBuffer);
-    surfaceFormat.setRenderableType(QSurfaceFormat::DefaultRenderableType);
+
     if (antialias)
-        surfaceFormat.setSamples(8);
+        surfaceFormat = QQuick3D::idealSurfaceFormat(8);
     else
-        surfaceFormat.setSamples(0);
+        surfaceFormat = QQuick3D::idealSurfaceFormat();
 
     return surfaceFormat;
 }

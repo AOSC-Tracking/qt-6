@@ -74,15 +74,23 @@ if(QT_FEATURE_private_tests)
         QT_NO_FOREACH
     )
 
-    qt_internal_extend_target(OpenGLRendererLib CONDITION NOT INTEGRITY
-        SOURCES
+    set(openGLRendererImguiSources
             debug/imguirenderer.cpp debug/imguirenderer_p.h
             ${PROJECT_SOURCE_DIR}/src/3rdparty/imgui/imgui.cpp
             ${PROJECT_SOURCE_DIR}/src/3rdparty/imgui/imgui_draw.cpp
             ${PROJECT_SOURCE_DIR}/src/3rdparty/imgui/imgui_tables.cpp
             ${PROJECT_SOURCE_DIR}/src/3rdparty/imgui/imgui_widgets.cpp
+    )
+
+    qt_internal_extend_target(OpenGLRendererLib CONDITION NOT INTEGRITY
+        SOURCES
+            ${openGLRendererImguiSources}
+        NO_PCH_SOURCES
+            ${openGLRendererImguiSources} # various defines (e.g. IMGUI_DEFINE_MATH_OPERATORS)
         INCLUDE_DIRECTORIES
             debug
+            ${PROJECT_SOURCE_DIR}/src/3rdparty/imgui
+        ATTRIBUTION_FILE_DIR_PATHS
             ${PROJECT_SOURCE_DIR}/src/3rdparty/imgui
     )
 
@@ -134,6 +142,8 @@ qt_internal_extend_target(OpenGLRendererPlugin CONDITION NOT INTEGRITY
         ${PROJECT_SOURCE_DIR}/src/3rdparty/imgui/imgui_widgets.cpp
     INCLUDE_DIRECTORIES
         debug
+        ${PROJECT_SOURCE_DIR}/src/3rdparty/imgui
+    ATTRIBUTION_FILE_DIR_PATHS
         ${PROJECT_SOURCE_DIR}/src/3rdparty/imgui
 )
 

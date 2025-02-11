@@ -335,6 +335,7 @@ void QBarSet::append(qreal value)
     qsizetype index = d->m_values.size();
     d->append(QPointF(d->m_values.size(), value));
     emit valuesAdded(index, 1);
+    emit countChanged();
     emit update();
 }
 
@@ -355,6 +356,7 @@ void QBarSet::append(const QList<qreal> &values)
     qsizetype index = d->m_values.size();
     d->append(values);
     emit valuesAdded(index, values.size());
+    emit countChanged();
     emit update();
 }
 
@@ -393,6 +395,7 @@ void QBarSet::insert(qsizetype index, qreal value)
     }
 
     emit valuesAdded(index, 1);
+    emit countChanged();
     if (callSignal)
         emit selectedBarsChanged(selectedBars());
 }
@@ -415,6 +418,7 @@ void QBarSet::remove(qsizetype index, qsizetype count)
     qsizetype removedCount = d->remove(index, count);
     if (removedCount > 0) {
         emit valuesRemoved(index, removedCount);
+        emit countChanged();
         emit update();
     }
 }

@@ -1223,9 +1223,8 @@ QRhiDepthStencilClearValue::QRhiDepthStencilClearValue(float d, quint32 s)
 */
 
 /*!
-    \fn size_t QRhiDepthStencilClearValue::qHash(const QRhiDepthStencilClearValue &v, size_t seed = 0) noexcept
-
-    \return the hash value for \a v, using \a seed to seed the calculation.
+    \fn size_t QRhiDepthStencilClearValue::qHash(const QRhiDepthStencilClearValue &key, size_t seed)
+    \qhash{QRhiDepthStencilClearValue}
  */
 
 #ifndef QT_NO_DEBUG_STREAM
@@ -1344,9 +1343,8 @@ QRhiViewport::QRhiViewport(float x, float y, float w, float h, float minDepth, f
 */
 
 /*!
-    \fn size_t QRhiViewport::qHash(const QRhiViewport &v, size_t seed = 0) noexcept
-
-    \return the hash value for \a v, using \a seed to seed the calculation.
+    \fn size_t QRhiViewport::qHash(const QRhiViewport &key, size_t seed)
+    \qhash{QRhiViewport}
  */
 
 #ifndef QT_NO_DEBUG_STREAM
@@ -1438,9 +1436,8 @@ QRhiScissor::QRhiScissor(int x, int y, int w, int h)
 */
 
 /*!
-    \fn size_t QRhiScissor::qHash(const QRhiScissor &v, size_t seed = 0) noexcept
-
-    \return the hash value for \a v, using \a seed to seed the calculation.
+    \fn size_t QRhiScissor::qHash(const QRhiScissor &key, size_t seed)
+    \qhash{QRhiScissor}
  */
 
 #ifndef QT_NO_DEBUG_STREAM
@@ -1591,9 +1588,8 @@ QRhiVertexInputBinding::QRhiVertexInputBinding(quint32 stride, Classification cl
 */
 
 /*!
-    \fn size_t QRhiVertexInputBinding::qHash(const QRhiVertexInputBinding &v, size_t seed = 0) noexcept
-
-    \return the hash value for \a v, using \a seed to seed the calculation.
+    \fn size_t QRhiVertexInputBinding::qHash(const QRhiVertexInputBinding &key, size_t seed)
+    \qhash{QRhiVertexInputBinding}
  */
 
 #ifndef QT_NO_DEBUG_STREAM
@@ -1830,9 +1826,8 @@ QRhiVertexInputAttribute::QRhiVertexInputAttribute(int binding, int location, Fo
 */
 
 /*!
-    \fn size_t QRhiVertexInputAttribute::qHash(const QRhiVertexInputAttribute &v, size_t seed = 0) noexcept
-
-    \return the hash value for \a v, using \a seed to seed the calculation.
+    \fn size_t QRhiVertexInputAttribute::qHash(const QRhiVertexInputAttribute &key, size_t seed)
+    \qhash{QRhiVertexInputAttribute}
  */
 
 #ifndef QT_NO_DEBUG_STREAM
@@ -2074,9 +2069,8 @@ quint32 QRhiImplementation::byteSizePerVertexForVertexInputFormat(QRhiVertexInpu
 */
 
 /*!
-    \fn size_t QRhiVertexInputLayout::qHash(const QRhiVertexInputLayout &v, size_t seed = 0) noexcept
-
-    \return the hash value for \a v, using \a seed to seed the calculation.
+    \fn size_t QRhiVertexInputLayout::qHash(const QRhiVertexInputLayout &key, size_t seed)
+    \qhash{QRhiVertexInputLayout}
  */
 
 #ifndef QT_NO_DEBUG_STREAM
@@ -2220,9 +2214,8 @@ QRhiShaderStage::QRhiShaderStage(Type type, const QShader &shader, QShader::Vari
 */
 
 /*!
-    \fn size_t QRhiShaderStage::qHash(const QRhiShaderStage &v, size_t seed = 0) noexcept
-
-    \return the hash value for \a v, using \a seed to seed the calculation.
+    \fn size_t QRhiShaderStage::qHash(const QRhiShaderStage &key, size_t seed)
+    \qhash{QRhiShaderStage}
  */
 
 #ifndef QT_NO_DEBUG_STREAM
@@ -4005,11 +3998,11 @@ void QRhiBuffer::endFullDynamicBufferUpdateForCurrentFrame()
 /*!
     \internal
  */
-void QRhiBuffer::fullDynamicBufferUpdateForCurrentFrame(const void *data)
+void QRhiBuffer::fullDynamicBufferUpdateForCurrentFrame(const void *data, quint32 size)
 {
     char *p = beginFullDynamicBufferUpdateForCurrentFrame();
     if (p) {
-        memcpy(p, data, m_size);
+        memcpy(p, data, size > 0 ? size : m_size);
         endFullDynamicBufferUpdateForCurrentFrame();
     }
 }
@@ -5134,7 +5127,7 @@ QRhiResource::Type QRhiSwapChainRenderTarget::resourceType() const
         texture->create();
         QRhiTextureRenderTarget *rt = rhi->newTextureRenderTarget({ texture });
         rp = rt->newCompatibleRenderPassDescriptor();
-        rt->setRenderPassDescriptor(rt);
+        rt->setRenderPassDescriptor(rp);
         rt->create();
         // rt can now be used with beginPass()
     \endcode
@@ -6274,9 +6267,8 @@ bool operator!=(const QRhiShaderResourceBinding &a, const QRhiShaderResourceBind
 }
 
 /*!
-    \return the hash value for \a b, using \a seed to seed the calculation.
-
-    \relates QRhiShaderResourceBinding
+    \fn size_t qHash(const QRhiShaderResourceBinding &key, size_t seed)
+    \qhashold{QRhiShaderResourceBinding}
  */
 size_t qHash(const QRhiShaderResourceBinding &b, size_t seed) noexcept
 {
@@ -9285,7 +9277,7 @@ void QRhiResourceUpdateBatch::generateMips(QRhiTexture *tex)
    destroyed. Instead, the batch is returned the pool for reuse by passing
    it to QRhiCommandBuffer::beginPass(), QRhiCommandBuffer::endPass(), or
    QRhiCommandBuffer::resourceUpdate(), or by calling
-   QRhiResourceUpdateBatch::destroy() on it.
+   QRhiResourceUpdateBatch::release() on it.
 
    \note Can be called outside beginFrame() - endFrame() as well since a batch
    instance just collects data on its own, it does not perform any operations.
@@ -9439,8 +9431,8 @@ void QRhiResourceUpdateBatchPrivate::merge(QRhiResourceUpdateBatchPrivate *other
 
 bool QRhiResourceUpdateBatchPrivate::hasOptimalCapacity() const
 {
-    return activeBufferOpCount < BUFFER_OPS_STATIC_ALLOC - 16
-            && activeTextureOpCount < TEXTURE_OPS_STATIC_ALLOC - 16;
+    return activeBufferOpCount < BUFFER_OPS_STATIC_ALLOC - 4
+            && activeTextureOpCount < TEXTURE_OPS_STATIC_ALLOC - 4;
 }
 
 void QRhiResourceUpdateBatchPrivate::trimOpLists()

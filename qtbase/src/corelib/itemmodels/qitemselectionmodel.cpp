@@ -77,9 +77,7 @@ QT_IMPL_METATYPE_EXTERN(QItemSelection)
 /*!
     \fn QItemSelectionRange::swap(QItemSelectionRange &other)
     \since 5.6
-
-    Swaps this selection range's contents with \a other.
-    This function is very fast and never fails.
+    \memberswap{selection range's contents}
 */
 
 /*!
@@ -549,6 +547,8 @@ void QItemSelection::split(const QItemSelectionRange &range,
     }
 }
 
+QItemSelectionModelPrivate::~QItemSelectionModelPrivate()
+    = default;
 
 void QItemSelectionModelPrivate::initModel(QAbstractItemModel *m)
 {

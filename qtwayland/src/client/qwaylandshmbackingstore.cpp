@@ -16,6 +16,8 @@
 
 #include <QtWaylandClient/private/wayland-wayland-client-protocol.h>
 
+#include <memory>
+
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/mman.h>
@@ -59,20 +61,22 @@ QWaylandShmBuffer::QWaylandShmBuffer(QWaylandDisplay *display,
         fcntl(fd, F_ADD_SEALS, F_SEAL_SHRINK | F_SEAL_SEAL);
 #endif
 
-    QScopedPointer<QFile> filePointer;
+    std::unique_ptr<QFile> filePointer;
+    bool opened;
 
     if (fd == -1) {
-        auto tmpFile = new QTemporaryFile (QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation) +
+        auto tmpFile =
+            std::make_unique<QTemporaryFile>(QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation) +
                                        QLatin1String("/wayland-shm-XXXXXX"));
-        tmpFile->open();
-        filePointer.reset(tmpFile);
+        opened = tmpFile->open();
+        filePointer = std::move(tmpFile);
     } else {
-        auto file = new QFile;
-        file->open(fd, QIODevice::ReadWrite | QIODevice::Unbuffered, QFile::AutoCloseHandle);
-        filePointer.reset(file);
+        auto file = std::make_unique<QFile>();
+        opened = file->open(fd, QIODevice::ReadWrite | QIODevice::Unbuffered, QFile::AutoCloseHandle);
+        filePointer = std::move(file);
     }
     // NOTE beginPaint assumes a new buffer be all zeroes, which QFile::resize does.
-    if (!filePointer->isOpen() || !filePointer->resize(alloc)) {
+    if (!opened || !filePointer->resize(alloc)) {
         qWarning("QWaylandShmBuffer: failed: %s", qUtf8Printable(filePointer->errorString()));
         return;
     }
@@ -208,16 +212,23 @@ void QWaylandShmBackingStore::endPaint()
 
 void QWaylandShmBackingStore::flush(QWindow *window, const QRegion &region, const QPoint &offset)
 {
+    Q_UNUSED(offset)
     // Invoked when the window is of type RasterSurface or when the window is
     // RasterGLSurface and there are no child widgets requiring OpenGL composition.
 
     // For the case of RasterGLSurface + having to compose, the composeAndFlush() is
     // called instead. The default implementation from QPlatformBackingStore is sufficient
     // however so no need to reimplement that.
-
-
-    Q_UNUSED(window);
-    Q_UNUSED(offset);
+    if (window != this->window()) {
+        auto waylandWindow = static_cast<QWaylandWindow *>(window->handle());
+        auto newBuffer = new QWaylandShmBuffer(mDisplay, window->size(), mBackBuffer->image()->format(), mBackBuffer->scale());
+        newBuffer->setDeleteOnRelease(true);
+        QRect sourceRect(window->position(), window->size());
+        QPainter painter(newBuffer->image());
+        painter.drawImage(QPoint(0, 0), *mBackBuffer->image(), sourceRect);
+        waylandWindow->safeCommit(newBuffer, region);
+        return;
+    }
 
     if (mPainting) {
         mPendingRegion |= region;
@@ -306,17 +317,11 @@ bool QWaylandShmBackingStore::recreateBackBufferIfNeeded()
         QPainter painter(targetImage);
         painter.setCompositionMode(QPainter::CompositionMode_Source);
 
-        // Let painter operate in device pixels, to make it easier to compare coordinates
         const qreal sourceDevicePixelRatio = sourceImage->devicePixelRatio();
-        const qreal targetDevicePixelRatio = painter.device()->devicePixelRatio();
-        painter.scale(1.0 / targetDevicePixelRatio, 1.0 / targetDevicePixelRatio);
-
         for (const QRect &rect : buffer->dirtyRegion()) {
             QRectF sourceRect(QPointF(rect.topLeft()) * sourceDevicePixelRatio,
                               QSizeF(rect.size()) * sourceDevicePixelRatio);
-            QRectF targetRect(QPointF(rect.topLeft()) * targetDevicePixelRatio,
-                              QSizeF(rect.size()) * targetDevicePixelRatio);
-            painter.drawImage(targetRect, *sourceImage, sourceRect);
+            painter.drawImage(rect, *sourceImage, sourceRect);
         }
     }
 

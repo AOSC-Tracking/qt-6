@@ -84,6 +84,15 @@ private:
 
     qreal defaultSize(QXYSeries *series = nullptr);
 
+    struct SeriesStyle {
+        QColor color;
+        QColor selectedColor;
+        QColor borderColor;
+        qreal borderWidth;
+    };
+
+    SeriesStyle getSeriesStyle(PointGroup *group);
+
     void calculateRenderCoordinates(
         AxisRenderer *axisRenderer, qreal origX, qreal origY, qreal *renderX, qreal *renderY);
     void reverseRenderCoordinates(

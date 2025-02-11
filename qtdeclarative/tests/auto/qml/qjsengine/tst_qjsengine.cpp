@@ -334,6 +334,8 @@ private slots:
     void setDeleteDuringForEach();
     void mapDeleteDuringForEach();
 
+    void multiMatchingRegularExpression();
+
 public:
     Q_INVOKABLE QJSValue throwingCppMethod1();
     Q_INVOKABLE void throwingCppMethod2();
@@ -5146,11 +5148,11 @@ void tst_QJSEngine::mathMinMax()
 
     QJSValue result = engine.evaluate("var a = .5; Math.min(1, 2, 3.5 + a, '5')");
     QCOMPARE(result.toNumber(), 1.0);
-    QVERIFY(QV4::Value(QJSValuePrivate::asReturnedValue(&result)).isInteger());
+    QVERIFY(QV4::Value::fromReturnedValue(QJSValuePrivate::asReturnedValue(&result)).isInteger());
 
     result = engine.evaluate("var a = .5; Math.max('0', 1, 2, 3.5 + a)");
     QCOMPARE(result.toNumber(), 4.0);
-    QVERIFY(QV4::Value(QJSValuePrivate::asReturnedValue(&result)).isInteger());
+    QVERIFY(QV4::Value::fromReturnedValue(QJSValuePrivate::asReturnedValue(&result)).isInteger());
 }
 
 void tst_QJSEngine::mathNegativeZero()
@@ -5253,7 +5255,7 @@ void tst_QJSEngine::registerModule()
     ret = engine.registerModule("qt_info", obj);
     QVERIFY2(ret, "Error registering qt_info");
     QJSValue result = engine.importModule(QStringLiteral(":/testregister.mjs"));
-    QVERIFY(!result.isError());
+    QVERIFY2(!result.isError(), qPrintable(result.toString()));
 
     QJSValue nameVal = result.property("getName").call();
     QJSValue magicVal = result.property("getMagic").call();
@@ -5303,7 +5305,7 @@ void tst_QJSEngine::registerModuleNamedError() {
     QVERIFY(ret);
 
     QJSValue result = engine.importModule(QStringLiteral(":/testregister3.mjs"));
-    QCOMPARE(result.toString(), QString("ReferenceError: Unable to resolve import reference subval because notanobject is not an object"));
+    QCOMPARE(result.toString(), QString("ReferenceError: Unable to resolve import reference subval"));
 }
 
 void tst_QJSEngine::equality()
@@ -6600,6 +6602,24 @@ void tst_QJSEngine::mapDeleteDuringForEach() {
 
   QJsonArray visited = engine.fromScriptValue<QJsonArray>(result);
   QCOMPARE(visited, QJsonArray({1, 2, 3}));
+}
+
+void tst_QJSEngine::multiMatchingRegularExpression()
+{
+    QJSEngine engine;
+    const QJSValue result = engine.evaluate(R"(
+        "33312345.897".replace(/\./g, ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".")
+    )");
+
+    QVERIFY(result.isString());
+    QCOMPARE(result.toString(), "33.312.345,897"_L1);
+
+    const QJSValue result2 = engine.evaluate(R"(
+        "4F159D7AD40255D94A5B7EB9AAACD7408C79245D".replace(/(....)/g, '$1 ')
+    )");
+
+    QVERIFY(result2.isString());
+    QCOMPARE(result2.toString(), "4F15 9D7A D402 55D9 4A5B 7EB9 AAAC D740 8C79 245D "_L1);
 }
 
 QTEST_MAIN(tst_QJSEngine)

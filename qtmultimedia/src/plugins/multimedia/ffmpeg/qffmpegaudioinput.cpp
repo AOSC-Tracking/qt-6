@@ -15,7 +15,7 @@ class AudioSourceIO : public QIODevice
 {
     Q_OBJECT
 public:
-    AudioSourceIO(QFFmpegAudioInput *audioInput) : QIODevice(), m_input(audioInput)
+    AudioSourceIO(QFFmpegAudioInput *audioInput) : m_input(audioInput)
     {
         m_muted = m_input->muted;
         m_volume = m_input->volume;
@@ -23,7 +23,13 @@ public:
         open(QIODevice::WriteOnly);
     }
 
-    ~AudioSourceIO() override = default;
+    ~AudioSourceIO() override
+    {
+        // QAudioSource may invoke QIODevice::writeData in the destructor.
+        // Let's reset the audio source to get around the case.
+        if (m_src)
+            m_src->reset();
+    }
 
     void setDevice(const QAudioDevice &device)
     {
@@ -67,6 +73,8 @@ protected:
     }
     qint64 writeData(const char *data, qint64 len) override
     {
+        Q_ASSERT(m_src);
+
         int l = len;
         while (len > 0) {
             const auto bufferSize = m_bufferSize.loadAcquire();
@@ -136,7 +144,7 @@ private:
     QByteArray m_pcm;
 };
 
-}
+} // namespace QFFmpeg
 
 QFFmpegAudioInput::QFFmpegAudioInput(QAudioInput *qq)
     : QPlatformAudioInput(qq)

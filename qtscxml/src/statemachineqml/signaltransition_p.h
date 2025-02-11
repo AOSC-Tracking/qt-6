@@ -86,8 +86,12 @@ private:
 class SignalTransitionParser : public QQmlCustomParser
 {
 public:
-    void verifyBindings(const QQmlRefPointer<QV4::ExecutableCompilationUnit> &compilationUnit, const QList<const QV4::CompiledData::Binding *> &props) override;
-    void applyBindings(QObject *object, const QQmlRefPointer<QV4::ExecutableCompilationUnit> &compilationUnit, const QList<const QV4::CompiledData::Binding *> &bindings) override;
+    void verifyBindings(
+            const QQmlRefPointer<QV4::CompiledData::CompilationUnit> &compilationUnit,
+            const QList<const QV4::CompiledData::Binding *> &props) override;
+    void applyBindings(
+            QObject *object, const QQmlRefPointer<QV4::ExecutableCompilationUnit> &compilationUnit,
+            const QList<const QV4::CompiledData::Binding *> &bindings) override;
 };
 
 template<>

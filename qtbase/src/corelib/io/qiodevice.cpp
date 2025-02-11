@@ -1430,6 +1430,12 @@ qint64 QIODevicePrivate::readLine(char *data, qint64 maxSize)
     Reads a line from the device, but no more than \a maxSize characters,
     and returns the result as a byte array.
 
+    If \a maxSize is 0 or not specified, the line can be of any length,
+    thereby enabling unlimited reading.
+
+    The resulting line can have trailing end-of-line characters ("\n" or "\r\n"),
+    so calling QByteArray::trimmed() may be necessary.
+
     This function has no way of reporting errors; returning an empty
     QByteArray can mean either that no data was currently available
     for reading, or that an error occurred.
@@ -1450,12 +1456,10 @@ QByteArray QIODevice::readLine(qint64 maxSize)
         // Size is unknown, read incrementally.
         maxSize = QByteArray::maxSize() - 1;
 
-        // The first iteration needs to leave an extra byte for the terminating null
-        result.resize(1);
-
         qint64 readResult;
         do {
-            result.resize(qsizetype(qMin(maxSize, qint64(result.size() + d->buffer.chunkSize()))));
+            // +1 since d->readLine() actually _writes_ a terminating NUL (### why does it?)
+            result.resize(qsizetype(qMin(maxSize, 1 + readBytes + d->buffer.chunkSize())));
             readResult = d->readLine(result.data() + readBytes, result.size() - readBytes);
             if (readResult > 0 || readBytes == 0)
                 readBytes += readResult;

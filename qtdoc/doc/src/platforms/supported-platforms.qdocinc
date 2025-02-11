@@ -19,7 +19,15 @@
         \li \c x86_64
         \li GCC 10 (toolset)
         \li
+    \row \li Red Hat 8.10
+        \li \c x86_64
+        \li GCC 10 (toolset)
+        \li
     \row \li Red Hat 9.2
+        \li \c x86_64
+        \li GCC 11
+        \li
+    \row \li Red Hat 9.4
         \li \c x86_64
         \li GCC 11
         \li
@@ -59,11 +67,14 @@
 \section2 \l{Qt for macOS}{\macos}
 //! [macos]
 \table 80%
-    \header \li Target Platform \li Architecture \li Build Environment \li Notes
-    \row \li \macos 12, 13, 14, 15
-        \li \c x86_64, \c x86_64h, and \c arm64
-        \li Xcode 15 (\macos 14 SDK), Xcode 16 (\macos 15 SDK)
+    \header \li Build Environment \li Target Platform \li Architecture
+    \row
+        \li Xcode \macOSMinXcodeVersion (\macos \macOSMinSdkVersion SDK) or higher
+        \li \macos \macOSMinVersion or higher (including \macos \macOSMaxVersionTested)
+        \li \c x86_64, \c x86_64h, \c arm64
 \endtable
+
+\include apple-common.qdocinc {forward-compatibility} {\macos}
 //! [macos]
 
 \section2 \l{Qt for Windows}{Windows}
@@ -72,20 +83,19 @@
     \header \li Operating System \li Architecture \li Compiler \li Notes
     \row \li Windows 10 (1809 or later)
         \li \c x86_64
-        \li MSVC 2022, MSVC 2019, Mingw-w64 13.1
+        \li MSVC 2022, Mingw-w64 13.1
         \li
     \row \li Windows 11
         \li \c x86_64
-        \li MSVC 2022, MSVC 2019, Mingw-w64 13.1
+        \li MSVC 2022, Mingw-w64 13.1
         \li
     \row \li Windows on ARM
-        \li \c arm64
-        \li MSVC 2019/2022
-        \li Technology Preview
+        \li \c ARM64
+        \li MSVC 2022
+        \li
 \endtable
 
-\note Windows on ARM is only supported as a deployment target. Applications have
-      to be cross-compiled from an x86-64 Windows machine and deployed to target.
+\note Currently Qt does not support ARM64EC on Windows on ARM devices.
 
 //! [windows]
 
@@ -135,11 +145,14 @@ For more information on the supported Android versions, see
 \section2 \l{Qt for iOS}{iOS}
 //! [ios]
 \table 80%
-    \header \li Target Platform \li Architecture \li Build Environment
-    \row \li iOS 16, 17, 18
-        \li \c armv8 (\c arm64)
-        \li Xcode 15 (iOS 17 SDK), \li Xcode 16 (iOS 18 SDK)
+    \header \li Build Environment \li Target Platform \li Architecture
+    \row
+        \li Xcode \iOSMinXcodeVersion (iOS \iOSMinSdkVersion SDK) or higher
+        \li iOS \iOSMinVersion or higher (including iOS \iOSMaxVersionTested)
+        \li \c armv8, \c arm64
 \endtable
+
+\include apple-common.qdocinc {forward-compatibility} {iOS}
 //! [ios]
 
 For information about support of WebAssembly on mobile platforms, see notes

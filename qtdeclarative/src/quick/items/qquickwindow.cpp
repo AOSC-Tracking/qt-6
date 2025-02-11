@@ -850,13 +850,17 @@ void QQuickWindow::handleApplicationStateChanged(Qt::ApplicationState state)
 
 QQmlListProperty<QObject> QQuickWindowPrivate::data()
 {
-    return QQmlListProperty<QObject>(q_func(), nullptr,
-                                     QQuickWindowPrivate::data_append,
-                                     QQuickWindowPrivate::data_count,
-                                     QQuickWindowPrivate::data_at,
-                                     QQuickWindowPrivate::data_clear,
-                                     QQuickWindowPrivate::data_replace,
-                                     QQuickWindowPrivate::data_removeLast);
+    QQmlListProperty<QObject> ret;
+
+    ret.object = q_func();
+    ret.append = QQuickWindowPrivate::data_append;
+    ret.count = QQuickWindowPrivate::data_count;
+    ret.at = QQuickWindowPrivate::data_at;
+    ret.clear = QQuickWindowPrivate::data_clear;
+    // replace is not supported by QQuickItem. Don't synthesize it.
+    ret.removeLast = QQuickWindowPrivate::data_removeLast;
+
+    return ret;
 }
 
 void QQuickWindowPrivate::dirtyItem(QQuickItem *item)
@@ -1527,8 +1531,10 @@ bool QQuickWindow::event(QEvent *event)
                     }
                 }
 
-                if (ret)
+                if (ret) {
+                    d->deliveryAgentPrivate()->clearGrabbers(pe);
                     return true;
+                }
             } else if (!synthMouse) {
                 // clear passive grabbers unless it's a system synth-mouse event
                 // QTBUG-104890: Windows sends synth mouse events (which should be ignored) after touch events
@@ -1912,13 +1918,6 @@ void QQuickWindowPrivate::data_clear(QQmlListProperty<QObject> *property)
     QQuickWindow *win = static_cast<QQuickWindow*>(property->object);
     QQmlListProperty<QObject> itemProperty = QQuickItemPrivate::get(win->contentItem())->data();
     itemProperty.clear(&itemProperty);
-}
-
-void QQuickWindowPrivate::data_replace(QQmlListProperty<QObject> *property, qsizetype i, QObject *o)
-{
-    QQuickWindow *win = static_cast<QQuickWindow*>(property->object);
-    QQmlListProperty<QObject> itemProperty = QQuickItemPrivate::get(win->contentItem())->data();
-    itemProperty.replace(&itemProperty, i, o);
 }
 
 void QQuickWindowPrivate::data_removeLast(QQmlListProperty<QObject> *property)
@@ -4344,8 +4343,8 @@ void QQuickWindow::setGraphicsConfiguration(const QQuickGraphicsConfiguration &c
 }
 
 /*!
-    \return the QQuickGraphicsDevice passed to setGraphicsDevice(), or a
-    default constructed one otherwise
+    \return the QQuickGraphicsConfiguration passed to
+    setGraphicsConfiguration(), or a default constructed one otherwise.
 
     \since 6.0
 

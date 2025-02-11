@@ -16,34 +16,24 @@
 #include <QtCore/qlatin1stringview.h>
 
 #include <optional>
+#include <type_traits>
 
 QT_BEGIN_NAMESPACE
 
 /*!
     \class QGrpcClientBase
     \inmodule QtGrpc
-    \brief The QGrpcClientBase class is bridge between gRPC clients
-    and channels.
+    \brief The QGrpcClientBase class serves as base for generated client
+    interfaces.
 
-    QGrpcClientBase provides a set of functions for client classes
-    generated out of protobuf services.
-    QGrpcClientBase enforces thread safety for startStream() and call() methods
-    of generated clients.
-    The methods QGrpcClientBase::call() and QGrpcClientBase::startStream()
-    should only be called by the generated client classes.
-*/
+    The QGrpcClientBase class provides a common set of functionalities for the
+    generated client interface of the \gRPC service definition.
 
-/*!
-    \fn template <typename StreamType, QGrpcClientBase::if_qtgrpc_stream<StreamType> = true> std::shared_ptr<StreamType> QGrpcClientBase::startStream(QLatin1StringView method, const QProtobufMessage &arg, const QGrpcCallOptions &options)
+    The RPC methods of this class should not be called directly.
 
-    Starts the stream \a method of the \e StreamType type with the message
-    argument \a arg to the attached channel.
-
-    Uses \a options argument to set additional parameter in the stream
-    communication.
-
-    The implementation is only available for \e StreamType:
-    QGrpcServerStream, QGrpcClientStream, and QGrpcBidiStream.
+    \note Thread safety is enforced for the non-const member functions. These
+    functions must be called from the same \l{QObject::} {thread} in which the
+    object was created.
 */
 
 /*!
@@ -53,16 +43,16 @@ QT_BEGIN_NAMESPACE
     Indicates that a new channel is attached to the client.
 */
 
-/*!
-    \fn void QGrpcClientBase::errorOccurred(const QGrpcStatus &status);
-
-    Indicates that an error occurred during serialization.
-
-    This signal is emitted when an error with \a status occurs in the channel
-    or during serialization.
-
-    \sa QGrpcOperation::errorOccurred
-*/
+namespace {
+template <typename Operation>
+inline constexpr bool IsStream = false;
+template <>
+inline constexpr bool IsStream<QGrpcServerStream> = true;
+template <>
+inline constexpr bool IsStream<QGrpcClientStream> = true;
+template <>
+inline constexpr bool IsStream<QGrpcBidiStream> = true;
+}
 
 class QGrpcClientBasePrivate : public QObjectPrivate
 {
@@ -77,6 +67,44 @@ public:
     std::shared_ptr<QAbstractProtobufSerializer> serializer() const
     {
         return channel ? channel->serializer() : nullptr;
+    }
+
+    template <typename T>
+    [[nodiscard]] std::unique_ptr<T> initOperation(QLatin1StringView method,
+                                                   const QProtobufMessage &arg,
+                                                   const QGrpcCallOptions &options)
+    {
+        if (!isReady())
+            return {};
+
+        const auto argData = trySerialize(arg);
+        if (!argData)
+            return {};
+
+        using ChannelFn = std::unique_ptr<T> (QAbstractGrpcChannel::*)(QLatin1StringView,
+                                                                       QLatin1StringView,
+                                                                       QByteArrayView,
+                                                                       const QGrpcCallOptions &);
+        constexpr ChannelFn initializer = [&]() -> ChannelFn {
+            if constexpr (std::is_same_v<T, QGrpcServerStream>) {
+                return &QAbstractGrpcChannel::serverStream;
+            } else if constexpr (std::is_same_v<T, QGrpcClientStream>) {
+                return &QAbstractGrpcChannel::clientStream;
+            } else if constexpr (std::is_same_v<T, QGrpcBidiStream>) {
+                return &QAbstractGrpcChannel::bidiStream;
+            } else if constexpr (std::is_same_v<T, QGrpcCallReply>) {
+                return &QAbstractGrpcChannel::call;
+            } else {
+                Q_UNREACHABLE_RETURN(nullptr);
+            }
+        }();
+
+        std::unique_ptr<T> operation = ((*channel).*(initializer))(method, service, *argData,
+                                                                   options);
+
+        if constexpr (IsStream<T>)
+            addStream(operation.get());
+        return operation;
     }
 
     std::shared_ptr<QAbstractGrpcChannel> channel;
@@ -131,18 +159,28 @@ bool QGrpcClientBasePrivate::isReady() const
     return true;
 }
 
+/*!
+    \internal
+    Constructs a QGrpcClientBase using \a service name from the protobuf schema
+    and sets \a parent as the owner.
+*/
 QGrpcClientBase::QGrpcClientBase(QLatin1StringView service, QObject *parent)
     : QObject(*new QGrpcClientBasePrivate(service), parent)
 {
 }
 
+/*!
+    Destroys the QGrpcClientBase.
+*/
 QGrpcClientBase::~QGrpcClientBase() = default;
 
 /*!
-    Attaches \a channel to client as transport layer for gRPC.
+    Attaches \a channel to the client as transport layer for \gRPC operations.
+    Returns \c true if the channel successfully attached; otherwise, returns \c
+    false.
 
-    Parameters and return values will be serialized to the channel
-    in a format it supports.
+    Request and response messages will be serialized in a format that the
+    channel supports.
 
     \note \b Warning: Qt GRPC doesn't guarantee thread safety on the channel level.
     You have to invoke the channel-related functions on the same thread as
@@ -177,70 +215,56 @@ std::shared_ptr<QAbstractGrpcChannel> QGrpcClientBase::channel() const
     return d->channel;
 }
 
+/*!
+    \internal
+//! [rpc-init-desc]
+    Initializes the RPC with \a method name and initial argument \a arg by
+    calling the corresponding QAbstractGrpcChannel method. The RPC is
+    customized through the provided \a options.
+//! [rpc-init-desc]
+*/
 std::unique_ptr<QGrpcCallReply> QGrpcClientBase::call(QLatin1StringView method,
                                                       const QProtobufMessage &arg,
                                                       const QGrpcCallOptions &options)
 {
     Q_D(QGrpcClientBase);
-    if (!d->isReady())
-        return {};
-
-    const auto argData = d->trySerialize(arg);
-    if (!argData)
-        return {};
-
-    return d->channel->call(method, d->service, *argData, options);
+    return d->initOperation<QGrpcCallReply>(method, arg, options);
 }
 
+/*!
+    \internal
+    \include qgrpcclientbase.cpp rpc-init-desc
+*/
 std::unique_ptr<QGrpcServerStream> QGrpcClientBase::serverStream(QLatin1StringView method,
                                                                  const QProtobufMessage &arg,
                                                                  const QGrpcCallOptions &options)
 {
     Q_D(QGrpcClientBase);
-    if (!d->isReady())
-        return {};
-
-    const auto argData = d->trySerialize(arg);
-    if (!argData)
-        return {};
-
-    auto grpcStream = d->channel->serverStream(method, d->service, *argData, options);
-    d->addStream(grpcStream.get());
-    return grpcStream;
+    return d->initOperation<QGrpcServerStream>(method, arg, options);
 }
 
+/*!
+    \internal
+    \include qgrpcclientbase.cpp rpc-init-desc
+*/
 std::unique_ptr<QGrpcClientStream> QGrpcClientBase::clientStream(QLatin1StringView method,
                                                                  const QProtobufMessage &arg,
                                                                  const QGrpcCallOptions &options)
 {
     Q_D(QGrpcClientBase);
-    if (!d->isReady())
-        return {};
-
-    const auto argData = d->trySerialize(arg);
-    if (!argData)
-        return {};
-
-    auto grpcStream = d->channel->clientStream(method, d->service, *argData, options);
-    d->addStream(grpcStream.get());
-    return grpcStream;
+    return d->initOperation<QGrpcClientStream>(method, arg, options);
 }
 
+/*!
+    \internal
+    \include qgrpcclientbase.cpp rpc-init-desc
+*/
 std::unique_ptr<QGrpcBidiStream> QGrpcClientBase::bidiStream(QLatin1StringView method,
                                                              const QProtobufMessage &arg,
                                                              const QGrpcCallOptions &options)
 {
     Q_D(QGrpcClientBase);
-    if (!d->isReady())
-        return {};
-
-    const auto argData = d->trySerialize(arg);
-    if (!argData)
-        return {};
-
-    auto grpcStream = d->channel->bidiStream(method, d->service, *argData, options);
-    d->addStream(grpcStream.get());
-    return grpcStream;
+    return d->initOperation<QGrpcBidiStream>(method, arg, options);
 }
 
 bool QGrpcClientBase::event(QEvent *event)

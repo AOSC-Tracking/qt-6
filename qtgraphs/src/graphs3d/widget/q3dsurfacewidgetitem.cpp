@@ -9,7 +9,7 @@ QT_BEGIN_NAMESPACE
 
 /*!
  * \class Q3DSurfaceWidgetItem
- * \inmodule QtGraphs
+ * \inmodule QtGraphsWidgets
  * \ingroup graphs_3D_widgets
  * \brief The Q3DSurfaceWidgetItem class provides methods for rendering 3D surface plots.
  *
@@ -214,6 +214,7 @@ QValue3DAxis *Q3DSurfaceWidgetItem::axisZ() const
 
 /*!
  * \property Q3DSurfaceWidgetItem::selectedSeries
+ * \readonly
  *
  * \brief The selected series or null.
  *

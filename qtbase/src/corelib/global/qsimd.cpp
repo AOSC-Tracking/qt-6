@@ -138,7 +138,8 @@ static inline quint64 detectProcessorFeatures()
         features |= feature ? CpuFeatureNEON : 0;
     if (sysctlbyname("hw.optional.armv8_crc32", &feature, &len, nullptr, 0) == 0)
         features |= feature ? CpuFeatureCRC32 : 0;
-    // There is currently no optional value for crypto/AES.
+    if (sysctlbyname("hw.optional.arm.FEAT_AES", &feature, &len, nullptr, 0) == 0)
+        features |= feature ? CpuFeatureAES : 0;
 #if defined(__ARM_FEATURE_CRYPTO)
     features |= CpuFeatureAES;
 #endif
@@ -718,6 +719,12 @@ static bool checkRdrndWorks() noexcept
      */
     constexpr qsizetype TestBufferSize = 4;
     unsigned testBuffer[TestBufferSize] = {};
+
+    // But if the RDRND feature was statically enabled by the compiler, we
+    // assume that the RNG works. That's because the calls to qRandomCpu() will
+    // be guarded by qCpuHasFeature(RDRND) and that will be a constant true.
+    if (_compilerCpuFeatures & CpuFeatureRDRND)
+        return true;
 
     unsigned *end = qt_random_rdrnd(testBuffer, testBuffer + TestBufferSize);
     if (end < testBuffer + 3) {

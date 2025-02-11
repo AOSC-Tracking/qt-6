@@ -32,6 +32,7 @@ static constexpr QLatin1StringView S_BINDABLE                     { "bindable" }
 static constexpr QLatin1StringView S_COMPONENT                    { "Component" };
 static constexpr QLatin1StringView S_DEFAULT_PROPERTY             { "defaultProperty" };
 static constexpr QLatin1StringView S_DEFERRED_NAMES               { "deferredNames" };
+static constexpr QLatin1StringView S_ENFORCES_SCOPED_ENUMS        { "enforcesScopedEnums" };
 static constexpr QLatin1StringView S_ENUM                         { "Enum" };
 static constexpr QLatin1StringView S_EXPORTS                      { "exports" };
 static constexpr QLatin1StringView S_EXPORT_META_OBJECT_REVISIONS { "exportMetaObjectRevisions" };
@@ -50,6 +51,7 @@ static constexpr QLatin1StringView S_IS_CREATABLE                 { "isCreatable
 static constexpr QLatin1StringView S_IS_FINAL                     { "isFinal" };
 static constexpr QLatin1StringView S_IS_FLAG                      { "isFlag" };
 static constexpr QLatin1StringView S_IS_JAVASCRIPT_FUNCTION       { "isJavaScriptFunction" };
+static constexpr QLatin1StringView S_IS_JAVASCRIPT_BUILTIN        { "isJavaScriptBuiltin" };
 static constexpr QLatin1StringView S_IS_LIST                      { "isList" };
 static constexpr QLatin1StringView S_IS_POINTER                   { "isPointer" };
 static constexpr QLatin1StringView S_IS_READONLY                  { "isReadonly" };
@@ -109,6 +111,7 @@ static constexpr QLatin1StringView S_IS_CLONED                    { "isCloned" }
 static constexpr QLatin1StringView S_IS_CONSTRUCTOR               { "isConstructor" };
 static constexpr QLatin1StringView S_IS_FLAG                      { "isFlag" };
 static constexpr QLatin1StringView S_IS_JAVASCRIPT_FUNCTION       { "isJavaScriptFunction" };
+static constexpr QLatin1StringView S_LINENUMBER                   { "lineNumber" };
 static constexpr QLatin1StringView S_MEMBER                       { "member" };
 static constexpr QLatin1StringView S_METHOD                       { "method" };
 static constexpr QLatin1StringView S_METHODS                      { "methods" };

@@ -52,6 +52,33 @@ QT_BEGIN_NAMESPACE
     A full pie is 360 degrees, where 0 is at 12 o'clock.
 
     The following QML example shows how to create a simple pie graph.
+    \qml
+    import QtQuick
+    import QtGraphs
+
+    Item {
+        id: mainView
+        width: 1280
+        height: 720
+
+        GraphsView {
+            anchors.fill: parent
+            theme: GraphsTheme {
+                 colorScheme: GraphsTheme.ColorScheme.Dark
+                 theme: GraphsTheme.Theme.QtGreen
+            }
+            PieSeries {
+                id: pieSeries
+                PieSlice {
+                    value: 1
+                }
+                PieSlice {
+                    value: 2
+                }
+            }
+        }
+    }
+    \endqml
 
     \sa PieSlice, GraphsView
 */

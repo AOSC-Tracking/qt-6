@@ -197,7 +197,8 @@ All warnings can be set to three levels:
             "count"
             );
     parser.addOption(maxWarnings);
-    settings.addOption("MaxWarnings", -1);
+    const QString maxWarningsSetting = QLatin1String("MaxWarnings");
+    settings.addOption(maxWarningsSetting, -1);
 
     auto addCategory = [&](const QQmlJS::LoggerCategory &category) {
         categories.push_back(category);
@@ -229,21 +230,12 @@ All warnings can be set to three levels:
         return 1;
     }
 
-    if (!parser.parse(arguments)) {
-        qWarning().noquote() << parser.errorText();
-        return 1;
-    }
+    parser.parse(arguments); // parse but ignore unknown options temporarily: plugins might add some
+                             // later
 
     // Since we can't use QCommandLineParser::process(), we need to handle version and help manually
     if (parser.isSet("version"))
         parser.showVersion();
-
-    if (parser.isSet("help") || parser.isSet("help-all"))
-        parser.showHelp(0);
-
-    if (parser.isSet(writeDefaultsOption)) {
-        return settings.writeDefaults() ? 0 : 1;
-    }
 
     auto updateLogLevels = [&]() {
         QQmlJS::LoggingUtils::updateLogLevels(categories, settings, &parser);
@@ -303,6 +295,13 @@ All warnings can be set to three levels:
         for (const QQmlJS::LoggerCategory &category : plugin.categories())
             addCategory(category);
     }
+
+    if (parser.isSet(writeDefaultsOption)) {
+        return settings.writeDefaults() ? 0 : 1;
+    }
+
+    if (parser.isSet("help") || parser.isSet("help-all"))
+        parser.showHelp(0);
 
     if (!parser.unknownOptionNames().isEmpty())
         parser.process(app);
@@ -430,9 +429,10 @@ All warnings can be set to three levels:
                                          qmldirFiles, resourceFiles, categories);
         }
         success &= (lintResult == QQmlJSLinter::LintSuccess || lintResult == QQmlJSLinter::HasWarnings);
-        if (success && parser.isSet(maxWarnings))
+        if (success)
         {
-            int value = parser.value(maxWarnings).toInt();
+            int value = parser.isSet(maxWarnings) ? parser.value(maxWarnings).toInt()
+                                                  : settings.value(maxWarningsSetting).toInt();
             if (value != -1 && value < linter.logger()->warnings().size())
                 success = false;
         }

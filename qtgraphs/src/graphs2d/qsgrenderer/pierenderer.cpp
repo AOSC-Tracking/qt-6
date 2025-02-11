@@ -91,12 +91,16 @@ void PieRenderer::handlePolish(QPieSeries *series)
         m_colorIndex = m_graph->graphSeriesCount();
     m_graph->setGraphSeriesCount(m_colorIndex + series->slices().size());
 
+    qreal sliceAngle = series->startAngle();
     int sliceIndex = 0;
     QList<QLegendData> legendDataList;
     for (QPieSlice *slice : series->slices()) {
         m_painterPath.clear();
 
         QPieSlicePrivate *d = slice->d_func();
+        d->setStartAngle(sliceAngle);
+        d->setAngleSpan((series->endAngle() - series->startAngle()) * slice->percentage()
+                        * series->valuesMultiplier());
 
         // update slice
         QQuickShapePath *shapePath = d->m_shapePath;
@@ -107,7 +111,7 @@ void PieRenderer::handlePolish(QPieSeries *series)
         if (d->m_borderColor.isValid())
             borderColor = d->m_borderColor;
         qreal borderWidth = theme->borderWidth();
-        if (d->m_borderWidth > 0.0)
+        if (d->m_borderWidth >= 1.0)
             borderWidth = d->m_borderWidth;
         const auto &seriesColors = theme->seriesColors();
         index = sliceIndex % seriesColors.size();
@@ -117,6 +121,12 @@ void PieRenderer::handlePolish(QPieSeries *series)
         shapePath->setStrokeWidth(borderWidth);
         shapePath->setStrokeColor(borderColor);
         shapePath->setFillColor(color);
+
+        QColor labelTextColor = theme->labelTextColor();
+        if (d->m_labelColor.isValid())
+            labelTextColor = d->m_labelColor;
+        d->m_labelItem->setColor(labelTextColor);
+        d->m_labelPath->setStrokeColor(labelTextColor);
 
         if (!m_activeSlices.contains(slice))
             return;
@@ -135,50 +145,43 @@ void PieRenderer::handlePolish(QPieSeries *series)
         qreal xShift = center.x() + (explodeDistance * qSin(radian));
         qreal yShift = center.y() - (explodeDistance * qCos(radian));
 
-        shapePath->setStartX(xShift + startBigX);
-        shapePath->setStartY(yShift - startBigY);
-        m_painterPath.moveTo(xShift + startBigX, yShift - startBigY);
-
-        radian = qDegreesToRadians(slice->angleSpan());
         qreal pointX = startBigY * qSin(radian) + startBigX * qCos(radian);
         qreal pointY = startBigY * qCos(radian) - startBigX * qSin(radian);
 
-        // Big arc
-        auto start = m_painterPath.currentPosition();
-        QQuickSvgParser::pathArc(m_painterPath,
-                                 radius,
-                                 radius,
-                                 0,
-                                 slice->angleSpan() > 180,
-                                 1,
-                                 xShift + pointX,
-                                 yShift - pointY,
-                                 start.x(),
-                                 start.y());
+        QRectF rect(center.x() - radius + (explodeDistance * qSin(radian)),
+                    center.y() - radius - (explodeDistance * qCos(radian)),
+                    radius * 2,
+                    radius * 2);
 
-        d->m_largeArc = {xShift + pointX, yShift - pointY};
+        shapePath->setStartX(center.x());
+        shapePath->setStartY(center.y());
+
+        if (series->holeSize() > 0) {
+            QRectF insideRect(center.x() - series->holeSize() * radius
+                                  + (explodeDistance * qSin(radian)),
+                              center.y() - series->holeSize() * radius
+                                  - (explodeDistance * qCos(radian)),
+                              series->holeSize() * radius * 2,
+                              series->holeSize() * radius * 2);
+
+            m_painterPath.arcMoveTo(rect, -slice->startAngle() + 90);
+            m_painterPath.arcTo(rect, -slice->startAngle() + 90, -slice->angleSpan());
+            m_painterPath.arcTo(insideRect,
+                                -slice->startAngle() + 90 - slice->angleSpan(),
+                                slice->angleSpan());
+            m_painterPath.closeSubpath();
+        } else {
+            m_painterPath.moveTo(rect.center());
+            m_painterPath.arcTo(rect, -slice->startAngle() + 90, -slice->angleSpan());
+            m_painterPath.closeSubpath();
+        }
+
+        radian = qDegreesToRadians(slice->angleSpan());
 
         pointX = startSmallY * qSin(radian) + startSmallX * qCos(radian);
         pointY = startSmallY * qCos(radian) - startSmallX * qSin(radian);
 
-        m_painterPath.lineTo(xShift + pointX, yShift - pointY);
-
-        d->m_centerLine = {xShift + pointX, yShift - pointY};
-
-        // Small arc
-        start = m_painterPath.currentPosition();
-        QQuickSvgParser::pathArc(m_painterPath,
-                                 radius * series->holeSize(),
-                                 radius * series->holeSize(),
-                                 0,
-                                 slice->angleSpan() > 180,
-                                 0,
-                                 xShift + startSmallX,
-                                 yShift - startSmallY,
-                                 start.x(),
-                                 start.y());
-
-        m_painterPath.lineTo(xShift + startBigX, yShift - startBigY);
+        d->m_largeArc = {xShift + pointX, yShift - pointY};
 
         shapePath->setPath(m_painterPath);
         m_painterPath.clear();
@@ -190,9 +193,10 @@ void PieRenderer::handlePolish(QPieSeries *series)
         pointX = radius * (1.0 + d->m_labelArmLengthFactor) * qSin(radian);
         pointY = radius * (1.0 + d->m_labelArmLengthFactor) * qCos(radian);
 
-        start = m_painterPath.currentPosition();
         m_painterPath.moveTo(xShift + startBigX, yShift - startBigY);
         m_painterPath.lineTo(xShift + pointX, yShift - pointY);
+
+        d->m_centerLine = {xShift + pointX, yShift - pointY};
 
         d->m_labelArm = {xShift + pointX, yShift - pointY};
 
@@ -202,9 +206,11 @@ void PieRenderer::handlePolish(QPieSeries *series)
         d->setLabelPosition(d->m_labelPosition);
         d->m_labelPath->setPath(m_painterPath);
 
+        sliceAngle += slice->angleSpan();
         sliceIndex++;
         legendDataList.push_back({color, borderColor, d->m_labelText});
     }
+
     series->d_func()->setLegendData(legendDataList);
 }
 

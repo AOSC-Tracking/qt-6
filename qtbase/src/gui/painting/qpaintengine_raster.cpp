@@ -1410,7 +1410,7 @@ static void fillRect_normalized(const QRect &r, QSpanData *data,
     ProcessSpans blend = isUnclipped ? data->unclipped_blend : data->blend;
 
     const int nspans = 512;
-    QT_FT_Span spans[nspans];
+    Q_DECL_UNINITIALIZED QT_FT_Span spans[nspans];
 
     Q_ASSERT(data->blend);
     int y = y1;
@@ -2221,21 +2221,11 @@ void QRasterPaintEngine::drawImage(const QRectF &r, const QImage &img, const QRe
 
         // Do whatever fillRect() does, but without premultiplying the color if it's already premultiplied.
         QRgb color = img.pixel(sr_l, sr_t);
-        switch (img.format()) {
-        case QImage::Format_ARGB32_Premultiplied:
-        case QImage::Format_ARGB8565_Premultiplied:
-        case QImage::Format_ARGB6666_Premultiplied:
-        case QImage::Format_ARGB8555_Premultiplied:
-        case QImage::Format_ARGB4444_Premultiplied:
-        case QImage::Format_RGBA8888_Premultiplied:
-        case QImage::Format_A2BGR30_Premultiplied:
-        case QImage::Format_A2RGB30_Premultiplied:
+        if (img.pixelFormat().premultiplied() == QPixelFormat::Premultiplied) {
             // Combine premultiplied color with the opacity set on the painter.
             d->solid_color_filler.solidColor = multiplyAlpha256(QRgba64::fromArgb32(color), s->intOpacity);
-            break;
-        default:
+        } else {
             d->solid_color_filler.solidColor = qPremultiply(combineAlpha256(QRgba64::fromArgb32(color), s->intOpacity));
-            break;
         }
 
         if (d->solid_color_filler.solidColor.alphaF() <= 0.0f && s->composition_mode == QPainter::CompositionMode_SourceOver)
@@ -3597,7 +3587,7 @@ void QRasterPaintEnginePrivate::rasterize(QT_FT_Outline *outline,
     // raster pool is changed for lower value, reallocations will
     // occur normally.
     int rasterPoolSize = MINIMUM_POOL_SIZE;
-    uchar rasterPoolOnStack[MINIMUM_POOL_SIZE + 0xf];
+    Q_DECL_UNINITIALIZED uchar rasterPoolOnStack[MINIMUM_POOL_SIZE + 0xf];
     uchar *rasterPoolBase = alignAddress(rasterPoolOnStack, 0xf);
     uchar *rasterPoolOnHeap = nullptr;
 
@@ -4087,7 +4077,7 @@ static void qt_span_fill_clipped(int spanCount, const QT_FT_Span *spans, void *u
     Q_ASSERT(fillData->blend && fillData->unclipped_blend);
 
     const int NSPANS = 512;
-    QT_FT_Span cspans[NSPANS];
+    Q_DECL_UNINITIALIZED QT_FT_Span cspans[NSPANS];
     int currentClip = 0;
     const QT_FT_Span *end = spans + spanCount;
     while (spans < end) {

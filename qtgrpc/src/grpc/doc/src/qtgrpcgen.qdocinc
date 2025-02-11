@@ -3,5 +3,5 @@
 
 //! [qml-li]
 \li \c {QML}
-    enables the generation of a QML client for the gRPC service.
+    enables the generation of a QML client for the \gRPC service.
 //! [qml-li]

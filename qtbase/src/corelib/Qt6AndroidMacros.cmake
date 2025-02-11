@@ -464,11 +464,11 @@ function(qt6_android_add_apk_target target)
         "${apk_final_dir}/${target_file_copy_relative_path}"
     )
     add_custom_target(${target}_prepare_apk_dir ALL
-        DEPENDS ${target} ${extra_deps}
         COMMAND ${copy_command}
         COMMENT "Copying ${target} binary to apk folder"
         ${uses_terminal}
     )
+    add_dependencies(${target}_prepare_apk_dir ${target} ${extra_deps})
 
     set(sign_apk "")
     if(QT_ANDROID_SIGN_APK)
@@ -524,9 +524,6 @@ function(qt6_android_add_apk_target target)
         # Add custom command that creates the apk and triggers rebuild if files listed in
         # ${dep_file_path} are changed.
         add_custom_command(OUTPUT "${apk_final_file_path}"
-            COMMAND ${CMAKE_COMMAND}
-                -E copy "$<TARGET_FILE:${target}>"
-                "${apk_final_dir}/${target_file_copy_relative_path}"
             COMMAND "${deployment_tool}"
                 --input "${deployment_file}"
                 --output "${apk_final_dir}"
@@ -536,7 +533,7 @@ function(qt6_android_add_apk_target target)
                 ${extra_args}
                 ${sign_apk}
             COMMENT "Creating APK for ${target}"
-            DEPENDS "${target}" "${deployment_file}" ${extra_deps}
+            DEPENDS "${target}" "${deployment_file}" ${extra_deps} ${target}_prepare_apk_dir
             DEPFILE "${dep_file_path}"
             VERBATIM
             ${uses_terminal}
@@ -545,9 +542,6 @@ function(qt6_android_add_apk_target target)
         # Add custom command that creates the aar and triggers rebuild if files listed in
         # ${dep_file_path} are changed.
         add_custom_command(OUTPUT "${aar_final_file_path}"
-            COMMAND ${CMAKE_COMMAND}
-                -E copy "$<TARGET_FILE:${target}>"
-                "${apk_final_dir}/${target_file_copy_relative_path}"
             COMMAND "${deployment_tool}"
                 --input "${deployment_file}"
                 --output "${apk_final_dir}"
@@ -557,7 +551,7 @@ function(qt6_android_add_apk_target target)
                 --build-aar
                 ${extra_args}
             COMMENT "Creating AAR for ${target}"
-            DEPENDS "${target}" "${deployment_file}" ${extra_deps}
+            DEPENDS "${target}" "${deployment_file}" ${extra_deps} ${target}_prepare_apk_dir
             DEPFILE "${dep_file_path}"
             VERBATIM
             ${uses_terminal}
@@ -570,7 +564,6 @@ function(qt6_android_add_apk_target target)
         add_custom_target(${target}_make_aar DEPENDS "${aar_final_file_path}")
     else()
         add_custom_target(${target}_make_apk
-            DEPENDS ${target}_prepare_apk_dir
             COMMAND  ${deployment_tool}
                 --input ${deployment_file}
                 --output ${apk_final_dir}
@@ -583,7 +576,6 @@ function(qt6_android_add_apk_target target)
         )
 
         add_custom_target(${target}_make_aar
-            DEPENDS ${target}_prepare_apk_dir
             COMMAND  ${deployment_tool}
                 --input ${deployment_file}
                 --output ${apk_final_dir}
@@ -594,13 +586,15 @@ function(qt6_android_add_apk_target target)
             VERBATIM
             ${uses_terminal}
         )
+
+        add_dependencies(${target}_make_apk ${target}_prepare_apk_dir)
+        add_dependencies(${target}_make_aar ${target}_prepare_apk_dir)
     endif()
 
     # Add target triggering AAB creation. Since the _make_aab target is not added to the ALL
     # set, we may avoid dependency check for it and admit that the target is "always out
     # of date".
     add_custom_target(${target}_make_aab
-        DEPENDS ${target}_prepare_apk_dir
         COMMAND  ${deployment_tool}
             --input ${deployment_file}
             --output ${apk_final_dir}
@@ -611,6 +605,7 @@ function(qt6_android_add_apk_target target)
         COMMENT "Creating AAB for ${target}"
         ${uses_terminal}
     )
+    add_dependencies(${target}_make_aab ${target}_prepare_apk_dir)
 
     if(QT_IS_ANDROID_MULTI_ABI_EXTERNAL_PROJECT)
         # When building per-ABI external projects we only need to copy ABI-specific libraries and
@@ -665,6 +660,12 @@ function(qt6_android_add_apk_target target)
                 COMMENT "Resolving ${CMAKE_ANDROID_ARCH_ABI} dependencies for the ${target} APK"
                 ${uses_terminal}
             )
+        endif()
+    else()
+        if(TARGET ${target}_copy_apk_dependencies)
+            add_dependencies(${target}_make_apk ${target}_copy_apk_dependencies)
+            add_dependencies(${target}_make_aab ${target}_copy_apk_dependencies)
+            add_dependencies(${target}_make_aar ${target}_copy_apk_dependencies)
         endif()
     endif()
 
@@ -1271,7 +1272,7 @@ endfunction()
 
 # Adds the custom build step to the multi-ABI Android project
 function(_qt_internal_add_android_abi_step project abi step)
-    cmake_parse_arguments(arg "" "" "COMMAND;DEPENDS" ${ARGV})
+    cmake_parse_arguments(arg "" "" "COMMAND;DEPENDS;TARGET_DEPENDS" ${ARGV})
 
     if(NOT arg_COMMAND)
         message(FATAL_ERROR "COMMAND is not set for ${project} step ${step} Android ABI ${abi}.")
@@ -1291,13 +1292,21 @@ function(_qt_internal_add_android_abi_step project abi step)
         set(add_to_pool "")
     endif()
 
+    if(NOT arg_TARGET_DEPENDS)
+        set(arg_TARGET_DEPENDS "")
+    endif()
+
     _qt_internal_get_android_abi_step_stampfile(stamp ${project} ${abi} ${step})
+    if(step STREQUAL "configure" AND EXISTS "${stamp}")
+        file(REMOVE "${stamp}")
+    endif()
     add_custom_command(OUTPUT "${stamp}"
         COMMAND ${arg_COMMAND}
         COMMAND "${CMAKE_COMMAND}" -E touch "${stamp}"
         ${add_to_pool}
         DEPENDS
             ${dep_stamps}
+            ${arg_TARGET_DEPENDS}
         WORKING_DIRECTORY
             "${build_dir}"
         VERBATIM
@@ -1443,7 +1452,9 @@ function(_qt_internal_configure_android_multiabi_target target)
     endforeach()
 
     set(missing_qt_abi_toolchains "")
-    set(previous_copy_apk_dependencies_target ${target})
+
+    add_custom_target(${target}_copy_apk_dependencies)
+    set(previous_copy_apk_dependencies_target ${target}_copy_apk_dependencies)
     # Create external projects for each android ABI except the main one.
     list(REMOVE_ITEM android_abis "${CMAKE_ANDROID_ARCH_ABI}")
     foreach(abi IN ITEMS ${android_abis})
@@ -1489,13 +1500,14 @@ function(_qt_internal_configure_android_multiabi_target target)
         _qt_internal_add_android_abi_step(qt_internal_android_${abi} ${abi} ${target}_build
             DEPENDS
                 configure
+            TARGET_DEPENDS
+                ${target}
             COMMAND
                 "${CMAKE_COMMAND}"
                 --build "${android_abi_build_dir}"
                 --config $<CONFIG>
                 --target ${target}
         )
-        add_dependencies(${target} "qt_internal_android_${abi}_${target}_build")
 
         _qt_internal_add_android_abi_step(qt_internal_android_${abi} ${abi}
             ${target}_copy_apk_dependencies
@@ -1555,6 +1567,88 @@ function(_qt_internal_android_executable_finalizer target)
     _qt_internal_configure_android_multiabi_target("${target}")
     qt6_android_generate_deployment_settings("${target}")
     qt6_android_add_apk_target("${target}")
+    _qt_internal_android_create_runner_wrapper("${target}")
+endfunction()
+
+# Helper to add the android executable finalizer.
+function(_qt_internal_add_android_executable_finalizer target)
+    set_property(TARGET ${target} APPEND PROPERTY
+        INTERFACE_QT_EXECUTABLE_FINALIZERS
+        _qt_internal_android_executable_finalizer
+    )
+endfunction()
+
+# Generates an Android app runner script for target
+function(_qt_internal_android_create_runner_wrapper target)
+    get_target_property(is_test ${target} _qt_is_test_executable)
+    get_target_property(is_manual_test ${target} _qt_is_manual_test)
+    if(is_test AND NOT is_manual_test)
+        qt_internal_android_test_runner_arguments("${target}" tool_path arguments)
+    else()
+        qt_internal_android_app_runner_arguments("${target}" tool_path arguments)
+    endif()
+
+    set(args_splitter "")
+    if(CMAKE_HOST_WIN32)
+        set(args_splitter "^")
+    else()
+        set(args_splitter "\\")
+    endif()
+
+    list(PREPEND arguments "${tool_path}")
+    set(formatted_command "")
+    # format args in pairs and or single args over multiple lines with indentation
+    foreach(item IN LISTS arguments)
+        if(formatted_command STREQUAL "")
+            set(formatted_command "${item}")
+        elseif(item MATCHES "^--.*")
+            set(formatted_command "${formatted_command} ${args_splitter}\n    ${item}")
+        else()
+            set(formatted_command "${formatted_command} \"${item}\"")
+        endif()
+    endforeach()
+
+    get_target_property(target_binary_dir ${target} BINARY_DIR)
+
+    if(CMAKE_HOST_WIN32)
+        set(script_content "${formatted_command} ${args_splitter}\n    %*\n")
+        set(wrapper_path "${target_binary_dir}/${target}.bat")
+    else()
+        set(script_content "#!/bin/sh\n\n${formatted_command} ${args_splitter}\n    $@\n")
+        set(wrapper_path "${target_binary_dir}/${target}")
+    endif()
+
+    get_property(__qt_core_macros_module_base_dir GLOBAL PROPERTY __qt_core_macros_module_base_dir)
+    set(template_file "${__qt_core_macros_module_base_dir}/Qt6CoreConfigureFileTemplate.in")
+    set(qt_core_configure_file_contents "${script_content}")
+    configure_file("${template_file}" "${wrapper_path}")
+
+    if(CMAKE_HOST_UNIX)
+        execute_process(COMMAND chmod +x ${wrapper_path})
+    endif()
+endfunction()
+
+# Get the android runner script path and its arguments for a target
+function(qt_internal_android_app_runner_arguments target out_runner_path out_arguments)
+    set(runner_dir "${QT_HOST_PATH}/${QT6_HOST_INFO_LIBEXECDIR}")
+    set(${out_runner_path} "${runner_dir}/qt-android-runner.py" PARENT_SCOPE)
+
+    qt_internal_android_get_target_android_build_dir(${target} android_build_dir)
+    set(${out_arguments}
+        "--adb" "${ANDROID_SDK_ROOT}/platform-tools/adb"
+        "--build-path" "${android_build_dir}"
+        "--apk" "${android_build_dir}/${target}.apk"
+        PARENT_SCOPE
+    )
+endfunction()
+
+function(qt_internal_android_get_target_android_build_dir target out_build_dir)
+    get_target_property(target_binary_dir ${target} BINARY_DIR)
+    if(QT_USE_TARGET_ANDROID_BUILD_DIR)
+        set(${out_build_dir} "${target_binary_dir}/android-build-${target}" PARENT_SCOPE)
+    else()
+        set(${out_build_dir} "${target_binary_dir}/android-build" PARENT_SCOPE)
+    endif()
 endfunction()
 
 function(_qt_internal_expose_android_package_source_dir_to_ide target)

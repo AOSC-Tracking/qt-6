@@ -1222,33 +1222,42 @@ void tst_qmlls_modules::linting()
 void tst_qmlls_modules::warnings_data()
 {
     QTest::addColumn<QString>("filePath");
-    QTest::addColumn<QString>("expectedWarning");
+    QTest::addColumn<QStringList>("expectedWarnings");
 
     const QString noWarningExpected;
 
     QTest::addRow("unqualifiedAccess") << u"warnings/withoutQmllintIni/unqualifiedAccess.qml"_s
-                                       << u"Unqualified access [unqualified]"_s;
+                                       << QStringList{ u"Unqualified access [unqualified]"_s };
 
     QTest::addRow("disableUnqualifiedEnabledCompiler")
             << u"warnings/disableUnqualifiedEnableCompiler/unqualifiedAccess.qml"_s
-            << u"Could not compile binding for i: Cannot access value for name unqualifiedAccess [compiler]"_s;
+            << QStringList { u"Could not compile binding for i: Cannot access value for name unqualifiedAccess [compiler]"_s };
+
+    QTest::addRow("enableQmllsGenerationIniViaCMake")
+            << u"warnings/InvalidImport.qml"_s
+            << QStringList{
+                   u"Warnings occurred while importing module \"foobar\": [import]"_s,
+                   u"Failed to import foobar. Are your import paths set up properly? Did you build your project? If yes, did you set the \"QT_QML_GENERATE_QMLLS_INI\" CMake variable on your project to \"ON\"? [import]"_s,
+                   u"Warnings occurred while importing module \"foobaz\": [import]"_s,
+                   u"Failed to import foobaz. Are your import paths set up properly? Did you build your project? If yes, did you set the \"QT_QML_GENERATE_QMLLS_INI\" CMake variable on your project to \"ON\"? [import]"_s,
+               };
 }
 
 void tst_qmlls_modules::warnings()
 {
     QFETCH(QString, filePath);
-    QFETCH(QString, expectedWarning);
+    QFETCH(QStringList, expectedWarnings);
 
     bool diagnosticOk = false;
     const auto uri = openFile(filePath);
     QVERIFY(uri);
     m_protocol->registerPublishDiagnosticsNotificationHandler(
-            [&expectedWarning, &diagnosticOk, &uri](const QByteArray &,
+            [&expectedWarnings, &diagnosticOk, &uri](const QByteArray &,
                                                     const PublishDiagnosticsParams &p) -> void {
                 if (p.uri != *uri || !p.version)
                     return;
 
-                if (expectedWarning.isEmpty()) {
+                if (expectedWarnings.isEmpty()) {
                     for (const auto& x: p.diagnostics)
                         qDebug() << "Received unexpected message:" << x.message;
                     QCOMPARE(p.diagnostics.size(), 0);
@@ -1256,8 +1265,10 @@ void tst_qmlls_modules::warnings()
                     return;
                 }
 
-                QCOMPARE(p.diagnostics.size(), 1);
-                QCOMPARE(p.diagnostics.front().message, expectedWarning.toUtf8());
+                QCOMPARE(p.diagnostics.size(), expectedWarnings.size());
+                for (qsizetype i = 0; i < p.diagnostics.size(); ++i) {
+                    QCOMPARE(p.diagnostics[i].message, expectedWarnings[i].toUtf8());
+                }
                 diagnosticOk = true;
             });
 
@@ -1307,6 +1318,25 @@ void tst_qmlls_modules::rangeFormatting_data()
         QTest::addRow("selectUnbalanced") << filePath << selectedRange << expectedRange
                                           << u"formatting/rangeFormatting.formatted5.qml"_s;
     }
+
+    {
+        QLspSpecification::Range selectedRange = { { 0, 1 }, { 7, 40 } };
+        QLspSpecification::Range expectedRange = { { 0, 0 }, { 7, 0 } };
+        QTest::addRow("NoNewlineAtEnd")
+                << u"formatting/WeirdNewlines.qml"_s << selectedRange << expectedRange
+                << u"formatting/WeirdNewlines.formatted.qml"_s;
+    }
+    {
+        QLspSpecification::Range selectedRange = { { 0, 1 }, { 3, 1 } };
+        QLspSpecification::Range expectedRange = { { 0, 0 }, { 7, 0 } };
+        QTest::addRow("WindowsNewlineAtEnd")
+                << u"formatting/WeirdNewlines.qml"_s << selectedRange << expectedRange
+#ifdef Q_OS_WIN
+                << u"formatting/WeirdNewlines.formatted2.windows.qml"_s;
+#else
+                << u"formatting/WeirdNewlines.formatted2.qml"_s;
+#endif
+    }
 }
 
 void tst_qmlls_modules::rangeFormatting()
@@ -1342,7 +1372,8 @@ void tst_qmlls_modules::rangeFormatting()
         QCOMPARE(text.range.start.character, expectedRange.start.character);
         QCOMPARE(text.range.end.line, expectedRange.end.line);
         QCOMPARE(text.range.end.character, expectedRange.end.character);
-        QCOMPARE(text.newText, file.readAll());
+        const QString fileContent = file.readAll();
+        QCOMPARE(text.newText, fileContent);
     };
 
     auto &&errorHandler = [&clean](auto &error) {

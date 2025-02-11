@@ -386,7 +386,8 @@ bool QQmlComponentPrivate::setInitialProperty(
         }
         const QString lastProperty = properties.last();
         segment = scope.engine->newString(lastProperty);
-        object->put(segment, scope.engine->metaTypeToJS(value.metaType(), value.constData()));
+        QV4::ScopedValue v(scope, scope.engine->metaTypeToJS(value.metaType(), value.constData()));
+        object->put(segment, v);
         if (scope.engine->hasException) {
             qmlWarning(base, scope.engine->catchExceptionAsQmlError());
             scope.engine->hasException = false;
@@ -459,6 +460,10 @@ QQmlComponent::~QQmlComponent()
 
     if (d->typeData) {
         d->typeData->unregisterCallback(d);
+        if (d->engine) {
+            QQmlEnginePrivate::get(d->engine)->typeLoader.drop(
+                    QQmlDataBlob::Ptr(d->typeData.data()));
+        }
         d->typeData.reset();
     }
 }
@@ -1023,6 +1028,14 @@ QObject *QQmlComponent::beginCreate(QQmlContext *context)
     return d->beginCreate(QQmlContextData::get(context));
 }
 
+static QQmlParserStatus *parserStatusCast(const QQmlType &type, QObject *rv)
+{
+    const int parserStatusCast = type.parserStatusCast();
+    return parserStatusCast == -1
+            ? nullptr
+            : reinterpret_cast<QQmlParserStatus *>(reinterpret_cast<char *>(rv) + parserStatusCast);
+}
+
 QObject *QQmlComponentPrivate::beginCreate(QQmlRefPointer<QQmlContextData> context)
 {
     Q_Q(QQmlComponent);
@@ -1080,10 +1093,11 @@ QObject *QQmlComponentPrivate::beginCreate(QQmlRefPointer<QQmlContextData> conte
 
     if (!loadedType.isValid()) {
         enginePriv->referenceScarceResources();
-        state.initCreator(std::move(context), compilationUnit, creationContext);
+        const QString *icName = inlineComponentName.get();
+        state.initCreator(context, compilationUnit, creationContext, icName ? *icName : QString());
 
         QQmlObjectCreator::CreationFlags flags;
-        if (const QString *icName = inlineComponentName.get()) {
+        if (icName) {
             flags = QQmlObjectCreator::InlineComponent;
             if (start == -1)
                 start = compilationUnit->inlineComponentId(*icName);
@@ -1100,25 +1114,20 @@ QObject *QQmlComponentPrivate::beginCreate(QQmlRefPointer<QQmlContextData> conte
         // TODO: extract into function
         rv = loadedType.createWithQQmlData();
         QQmlPropertyCache::ConstPtr propertyCache = QQmlData::ensurePropertyCache(rv);
-        QQmlParserStatus *parserStatus = nullptr;
-        const int parserStatusCast = loadedType.parserStatusCast();
-        if (parserStatusCast != -1) {
-            parserStatus = reinterpret_cast<QQmlParserStatus*>(reinterpret_cast<char *>(rv) + parserStatusCast);
+        if (QQmlParserStatus *parserStatus = parserStatusCast(loadedType, rv)) {
             parserStatus->classBegin();
+            state.ensureRequiredPropertyStorage(rv);
+        } else if (loadedType.finalizerCast() != -1) {
+            state.ensureRequiredPropertyStorage(rv);
         }
+
         for (int i = 0, propertyCount = propertyCache->propertyCount(); i < propertyCount; ++i) {
             if (const QQmlPropertyData *propertyData = propertyCache->property(i); propertyData->isRequired()) {
-                state.ensureRequiredPropertyStorage();
+                state.ensureRequiredPropertyStorage(rv);
                 RequiredPropertyInfo info;
                 info.propertyName = propertyData->name(rv);
                 state.addPendingRequiredProperty(rv, propertyData, info);
             }
-        }
-        if (parserStatus)
-            parserStatus->componentComplete();
-        if (const int finalizerCast = loadedType.finalizerCast(); finalizerCast != -1) {
-            auto* hook = reinterpret_cast<QQmlFinalizerHook *>(reinterpret_cast<char *>(rv) + finalizerCast);
-            hook->componentFinalized();
         }
     }
 
@@ -1130,6 +1139,12 @@ QObject *QQmlComponentPrivate::beginCreate(QQmlRefPointer<QQmlContextData> conte
         ddata->indestructible = true;
         ddata->explicitIndestructibleSet = true;
         ddata->rootObjectInCreation = false;
+
+        // Assign parent context to the object if we haven't created one.
+        if (!ddata->outerContext)
+            ddata->outerContext = context.data();
+        if (!ddata->context)
+            ddata->context = context.data();
     }
 
     return rv;
@@ -1152,7 +1167,9 @@ void QQmlComponentPrivate::beginDeferred(QQmlEnginePrivate *enginePriv,
         auto creator = state.initCreator(
                     deferredData->context->parent(),
                     deferredData->compilationUnit,
-                    QQmlRefPointer<QQmlContextData>());
+                    QQmlRefPointer<QQmlContextData>(),
+                    deferredData->inlineComponentName
+                );
 
         if (!creator->populateDeferredProperties(object, deferredData))
             state.appendCreatorErrors();
@@ -1266,7 +1283,18 @@ void QQmlComponentPrivate::completeCreate()
             state.errors.push_back(QQmlComponentPrivate::AnnotatedQmlError { error, true });
         }
     }
+
     if (loadedType.isValid()) {
+        QObject *rv = state.target();
+        if (QQmlParserStatus *parserStatus = parserStatusCast(loadedType, rv))
+            parserStatus->componentComplete();
+
+        if (const int finalizerCast = loadedType.finalizerCast(); finalizerCast != -1) {
+            auto *hook = reinterpret_cast<QQmlFinalizerHook *>(
+                    reinterpret_cast<char *>(rv) + finalizerCast);
+            hook->componentFinalized();
+        }
+
         /*
            We can directly set completePending to false, as finalize is only concerned
            with setting up pending bindings, but that cannot happen here, as we're
@@ -1488,7 +1516,9 @@ void QQmlComponent::create(QQmlIncubator &incubator, QQmlContext *context, QQmlC
 
     p->compilationUnit = d->compilationUnit;
     p->enginePriv = enginePriv;
-    p->creator.reset(new QQmlObjectCreator(contextData, d->compilationUnit, d->creationContext, p.data()));
+    p->creator.reset(new QQmlObjectCreator(contextData, d->compilationUnit, d->creationContext,
+                                           d->inlineComponentName ? *d->inlineComponentName : QString(),
+                                           p.data()));
     p->subComponentToCreate = d->start;
 
     enginePriv->incubate(incubator, forContextData);
@@ -1560,7 +1590,7 @@ void QQmlComponentPrivate::incubateObject(
 
     incubatorPriv->compilationUnit = componentPriv->compilationUnit;
     incubatorPriv->enginePriv = enginePriv;
-    incubatorPriv->creator.reset(new QQmlObjectCreator(context, componentPriv->compilationUnit, componentPriv->creationContext));
+    incubatorPriv->creator.reset(new QQmlObjectCreator(context, componentPriv->compilationUnit, componentPriv->creationContext, inlineComponentName ? *inlineComponentName : QString()));
 
     if (start == -1) {
         if (const QString *icName = componentPriv->inlineComponentName.get()) {

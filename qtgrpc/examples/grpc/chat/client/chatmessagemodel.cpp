@@ -77,7 +77,7 @@ int ChatMessageModel::rowCount(const QModelIndex &) const
     return m_container.count();
 }
 
-void ChatMessageModel::append(const qtgrpc::examples::chat::ChatMessageRepeated &messages)
+void ChatMessageModel::append(const QList<qtgrpc::examples::chat::ChatMessage> &messages)
 {
     if (messages.size() > 0) {
         beginInsertRows(QModelIndex(), m_container.size(),

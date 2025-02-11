@@ -19,6 +19,7 @@ macro(qt_internal_get_internal_add_qml_module_keywords
         NO_GENERATE_PLUGIN_SOURCE
         NO_GENERATE_QMLTYPES
         NO_GENERATE_QMLDIR
+        NO_GENERATE_EXTRA_QMLDIRS
         NO_LINT
         NO_CACHEGEN
         ENABLE_TYPE_COMPILER
@@ -204,8 +205,15 @@ function(qt_internal_add_qml_module target)
             _qt_internal_compute_qml_plugin_class_name_from_uri("${arg_URI}" arg_CLASS_NAME)
         endif()
 
+        # If the module is explicitly marked as STATIC, the plugin should inherit that as well.
+        set(static_plugin "")
+        if(arg_STATIC)
+            set(static_plugin "STATIC")
+        endif()
+
         # Create plugin target now so we can set internal things
         list(APPEND plugin_args
+            ${static_plugin}
             PLUGIN_TYPE qml_plugin
             DEFAULT_IF FALSE
             OUTPUT_DIRECTORY ${arg_OUTPUT_DIRECTORY}

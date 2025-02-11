@@ -124,7 +124,6 @@ QT_WARNING_DISABLE_GCC("-Wswitch") // case value not in enumerated type ‘QEven
         return;
     }
     case stopEvent: {
-        m_currentState.buffer = {};
         m_currentPipelineFrame = {};
         updateCurrentVideoFrame(m_currentVideoFrame);
         return;
@@ -143,9 +142,7 @@ void QGstVideoRenderer::handleNewBuffer(RenderBufferState state)
                                                          state.format, state.memoryFormat);
     QVideoFrame frame = QVideoFramePrivate::createFrame(std::move(videoBuffer), state.format);
     QGstUtils::setFrameTimeStampsFromBuffer(&frame, state.buffer.get());
-
     m_currentPipelineFrame = std::move(frame);
-    m_currentState = std::move(state);
 
     if (!m_isActive) {
         qCDebug(qLcGstVideoRenderer) << "    showing empty video frame";
@@ -221,9 +218,9 @@ GstFlowReturn QGstVideoRenderer::render(GstBuffer *buffer)
     }
 
     RenderBufferState state{
-        .buffer = QGstBufferHandle{ buffer, QGstBufferHandle::NeedsRef },
-        .format = m_format,
-        .memoryFormat = m_memoryFormat,
+        QGstBufferHandle{ buffer, QGstBufferHandle::NeedsRef },
+        m_format,
+        m_memoryFormat,
     };
 
     qCDebug(qLcGstVideoRenderer) << "    sending video frame";
@@ -451,7 +448,10 @@ void QGstVideoRendererSink::finalize(GObject *object)
 GstStateChangeReturn QGstVideoRendererSink::change_state(
         GstElement *element, GstStateChange transition)
 {
-    return GST_ELEMENT_CLASS(gvrs_sink_parent_class)->change_state(element, transition);
+    GstStateChangeReturn ret =
+            GST_ELEMENT_CLASS(gvrs_sink_parent_class)->change_state(element, transition);
+    qCDebug(qLcGstVideoRenderer) << "QGstVideoRenderer::change_state:" << transition << ret;
+    return ret;
 }
 
 GstCaps *QGstVideoRendererSink::get_caps(GstBaseSink *base, GstCaps *filter)

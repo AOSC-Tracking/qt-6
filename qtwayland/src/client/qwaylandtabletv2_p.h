@@ -22,6 +22,7 @@
 #include <QtCore/QObject>
 #include <QtCore/QPointer>
 #include <QtCore/QPointF>
+#include <QtCore/QTimer>
 #include <QtGui/QPointingDevice>
 #include <QtGui/QInputDevice>
 
@@ -37,6 +38,13 @@ class QWaylandTabletSeatV2;
 class QWaylandTabletV2;
 class QWaylandTabletToolV2;
 class QWaylandTabletPadV2;
+
+#if QT_CONFIG(cursor)
+class QWaylandCursorTheme;
+class QWaylandCursorShape;
+template <typename T>
+class CursorSurface;
+#endif
 
 class Q_WAYLANDCLIENT_EXPORT QWaylandTabletManagerV2 : public QtWayland::zwp_tablet_manager_v2
 {
@@ -54,6 +62,7 @@ public:
 
     QWaylandInputDevice *seat() const { return m_seat; }
 
+    void updateCursor();
     void toolRemoved(QWaylandTabletToolV2 *tool);
 
 protected:
@@ -74,6 +83,7 @@ class Q_WAYLANDCLIENT_EXPORT QWaylandTabletV2 : public QPointingDevice, public Q
     Q_OBJECT
 public:
     explicit QWaylandTabletV2(::zwp_tablet_v2 *tablet, const QString &seatName);
+    ~QWaylandTabletV2();
 
 protected:
     // callbacks which act as setters
@@ -89,6 +99,9 @@ class Q_WAYLANDCLIENT_EXPORT QWaylandTabletToolV2 : public QPointingDevice, publ
     Q_OBJECT
 public:
     QWaylandTabletToolV2(QWaylandTabletSeatV2 *tabletSeat, ::zwp_tablet_tool_v2 *tool);
+    ~QWaylandTabletToolV2();
+
+    void updateCursor();
 
 protected:
     void zwp_tablet_tool_v2_type(uint32_t tool_type) override;
@@ -112,7 +125,36 @@ protected:
     void zwp_tablet_tool_v2_frame(uint32_t time) override;
 
 private:
+#if QT_CONFIG(cursor)
+    int idealCursorScale() const;
+    void updateCursorTheme();
+    void cursorTimerCallback();
+    void cursorFrameCallback();
+    CursorSurface<QWaylandTabletToolV2> *getOrCreateCursorSurface();
+#endif
+
     QWaylandTabletSeatV2 *m_tabletSeat;
+
+    // Static state (sent before done event)
+    QPointingDevice::PointerType m_pointerType = QPointingDevice::PointerType::Unknown;
+    QInputDevice::DeviceType m_tabletDevice = QInputDevice::DeviceType::Unknown;
+    zwp_tablet_tool_v2::type m_toolType = type_pen;
+    bool m_hasRotation = false;
+    quint64 m_uid = 0;
+
+    uint32_t mEnterSerial = 0;
+#if QT_CONFIG(cursor)
+    struct
+    {
+        QScopedPointer<QWaylandCursorShape> shape;
+        QWaylandCursorTheme *theme = nullptr;
+        int themeBufferScale = 0;
+        QScopedPointer<CursorSurface<QWaylandTabletToolV2>> surface;
+        QTimer frameTimer;
+        bool gotFrameCallback = false;
+        bool gotTimerCallback = false;
+    } mCursor;
+#endif
 
     // Accumulated state (applied on frame event)
     struct State {
@@ -130,6 +172,9 @@ private:
         //auto operator<=>(const Point&) const = default; // TODO: use this when upgrading to C++20
         bool operator==(const State &o) const;
     } m_pending, m_applied;
+
+    template <typename T>
+    friend class CursorSurface;
 };
 
 class Q_WAYLANDCLIENT_EXPORT QWaylandTabletPadV2 : public QPointingDevice, public QtWayland::zwp_tablet_pad_v2
@@ -137,6 +182,7 @@ class Q_WAYLANDCLIENT_EXPORT QWaylandTabletPadV2 : public QPointingDevice, publi
     Q_OBJECT
 public:
     explicit QWaylandTabletPadV2(::zwp_tablet_pad_v2 *pad);
+    ~QWaylandTabletPadV2();
 
 protected:
 //    void zwp_tablet_pad_v2_group(struct ::zwp_tablet_pad_group_v2 *pad_group) override;

@@ -22,12 +22,13 @@
 
 QT_BEGIN_NAMESPACE
 
+class QAudioBuffer;
+class QAudioFormat;
 class QFFmpegAudioInput;
 class QPlatformAudioBufferInput;
 class QPlatformAudioBufferInputBase;
-class QVideoFrame;
-class QAudioBuffer;
 class QPlatformVideoSource;
+class QVideoFrame;
 
 namespace QFFmpeg
 {
@@ -44,7 +45,7 @@ class RecordingEngine : public QObject
     Q_OBJECT
 public:
     RecordingEngine(const QMediaEncoderSettings &settings, std::unique_ptr<EncodingFormatContext> context);
-    ~RecordingEngine();
+    ~RecordingEngine() override;
 
     void initialize(const std::vector<QPlatformAudioBufferInputBase *> &audioSources,
                     const std::vector<QPlatformVideoSource *> &videoSources);
@@ -58,7 +59,7 @@ public:
 
     void setMetaData(const QMediaMetaData &metaData);
     AVFormatContext *avFormatContext() { return m_formatContext->avFormatContext(); }
-    Muxer *getMuxer() { return m_muxer; }
+    Muxer *getMuxer() { return m_muxer.get(); }
 
     bool isEndOfSourceStreams() const;
 
@@ -73,15 +74,33 @@ Q_SIGNALS:
     void autoStopped();
 
 private:
+    // Normal states transition, Stop is called upon Encoding,
+    // header, content, and trailer are written:
+    // None -> FormatsInitialization -> EncodersInitialization -> Encoding -> Finalization
+    //
+    // Stop is called upon FormatsInitialization, nothing is written to the output:
+    // None -> FormatsInitialization -> Finalization
+    //
+    // Stop is called upon EncodersInitialization, nothing is written to the output:
+    // None -> FormatsInitialization -> EncodersInitialization -> Finalization
+    enum class State {
+        None,
+        FormatsInitialization,
+        EncodersInitialization,
+        Encoding, // header written
+        Finalization
+    };
+
     class EncodingFinalizer : public QThread
     {
     public:
-        EncodingFinalizer(RecordingEngine &recordingEngine);
+        EncodingFinalizer(RecordingEngine &recordingEngine, bool writeTrailer);
 
         void run() override;
 
     private:
         RecordingEngine &m_recordingEngine;
+        bool m_writeTrailer;
     };
 
     friend class EncodingInitializer;
@@ -93,7 +112,11 @@ private:
     void handleSourceEndOfStream();
     void handleEncoderInitialization();
 
-    void start();
+    void handleFormatsInitialization();
+
+    size_t encodersCount() const { return m_audioEncoders.size() + m_videoEncoders.size(); }
+
+    void stopAndDeleteThreads();
 
     template <typename F, typename... Args>
     void forEachEncoder(F &&f, Args &&...args);
@@ -105,21 +128,21 @@ private:
     QMediaEncoderSettings m_settings;
     QMediaMetaData m_metaData;
     std::unique_ptr<EncodingFormatContext> m_formatContext;
-    Muxer *m_muxer = nullptr;
+    ConsumerThreadUPtr<Muxer> m_muxer;
 
-    QList<AudioEncoder *> m_audioEncoders;
-    QList<VideoEncoder *> m_videoEncoders;
-    std::unique_ptr<EncodingInitializer> m_initializer;
+    std::vector<ConsumerThreadUPtr<AudioEncoder>> m_audioEncoders;
+    std::vector<ConsumerThreadUPtr<VideoEncoder>> m_videoEncoders;
+    std::unique_ptr<EncodingInitializer> m_formatsInitializer;
 
     QMutex m_timeMutex;
     qint64 m_timeRecorded = 0;
 
-    bool m_isHeaderWritten = false;
     bool m_autoStop = false;
-    qsizetype m_initializedEncodersCount = 0;
+    size_t m_initializedEncodersCount = 0;
+    State m_state = State::None;
 };
 
-}
+} // namespace QFFmpeg
 
 QT_END_NAMESPACE
 

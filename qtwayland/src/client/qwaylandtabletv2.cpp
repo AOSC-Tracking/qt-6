@@ -5,7 +5,17 @@
 #include "qwaylandinputdevice_p.h"
 #include "qwaylanddisplay_p.h"
 #include "qwaylandsurface_p.h"
+#include "qwaylandscreen_p.h"
+#include "qwaylandbuffer_p.h"
+#include "qwaylandcursorsurface_p.h"
+#include "qwaylandcursor_p.h"
+
+#include <QtGui/private/qguiapplication_p.h>
 #include <QtGui/private/qpointingdevice_p.h>
+#include <QtGui/qpa/qplatformtheme.h>
+#include <QtGui/qpa/qwindowsysteminterface_p.h>
+
+#include <wayland-cursor.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -13,8 +23,147 @@ namespace QtWaylandClient {
 
 using namespace Qt::StringLiterals;
 
-Q_LOGGING_CATEGORY(lcQpaInputDevices, "qt.qpa.input.devices")
-Q_DECLARE_LOGGING_CATEGORY(lcQpaWaylandInput)
+#if QT_CONFIG(cursor)
+int QWaylandTabletToolV2::idealCursorScale() const
+{
+    if (m_tabletSeat->seat()->mQDisplay->compositor()->version() < 3) {
+        return 1;
+    }
+
+    if (auto *s = mCursor.surface.data()) {
+        if (s->outputScale() > 0)
+            return s->outputScale();
+    }
+
+    return m_tabletSeat->seat()->mCursor.fallbackOutputScale;
+}
+
+void QWaylandTabletToolV2::updateCursorTheme()
+{
+    QString cursorThemeName;
+    QSize cursorSize;
+
+    if (const QPlatformTheme *platformTheme = QGuiApplicationPrivate::platformTheme()) {
+        cursorThemeName = platformTheme->themeHint(QPlatformTheme::MouseCursorTheme).toString();
+        cursorSize = platformTheme->themeHint(QPlatformTheme::MouseCursorSize).toSize();
+    }
+
+    if (cursorThemeName.isEmpty())
+        cursorThemeName = QStringLiteral("default");
+    if (cursorSize.isEmpty())
+        cursorSize = QSize(24, 24);
+
+    int scale = idealCursorScale();
+    int pixelSize = cursorSize.width() * scale;
+    auto *display = m_tabletSeat->seat()->mQDisplay;
+    mCursor.theme = display->loadCursorTheme(cursorThemeName, pixelSize);
+
+    if (!mCursor.theme)
+        return; // A warning has already been printed in loadCursorTheme
+
+    if (auto *arrow = mCursor.theme->cursor(Qt::ArrowCursor)) {
+        int arrowPixelSize = qMax(arrow->images[0]->width,
+                                  arrow->images[0]->height); // Not all cursor themes are square
+        while (scale > 1 && arrowPixelSize / scale < cursorSize.width())
+            --scale;
+    } else {
+        qCWarning(lcQpaWayland) << "Cursor theme does not support the arrow cursor";
+    }
+    mCursor.themeBufferScale = scale;
+}
+
+void QWaylandTabletToolV2::updateCursor()
+{
+    if (mEnterSerial == 0)
+        return;
+
+    auto shape = m_tabletSeat->seat()->mCursor.shape;
+
+    if (shape == Qt::BlankCursor) {
+        if (mCursor.surface)
+            mCursor.surface->reset();
+        set_cursor(mEnterSerial, nullptr, 0, 0);
+        return;
+    }
+
+    if (shape == Qt::BitmapCursor) {
+        auto buffer = m_tabletSeat->seat()->mCursor.bitmapBuffer;
+        if (!buffer) {
+            qCWarning(lcQpaWayland) << "No buffer for bitmap cursor, can't set cursor";
+            return;
+        }
+        auto hotspot = m_tabletSeat->seat()->mCursor.hotspot;
+        int bufferScale = m_tabletSeat->seat()->mCursor.bitmapScale;
+        getOrCreateCursorSurface()->update(buffer->buffer(), hotspot, buffer->size(), bufferScale);
+        return;
+    }
+
+    if (mCursor.shape) {
+        if (mCursor.surface) {
+            mCursor.surface->reset();
+        }
+        mCursor.shape->setShape(mEnterSerial, shape);
+        return;
+    }
+
+    if (!mCursor.theme || idealCursorScale() != mCursor.themeBufferScale)
+        updateCursorTheme();
+
+    if (!mCursor.theme)
+        return;
+
+    // Set from shape using theme
+    uint time = m_tabletSeat->seat()->mCursor.animationTimer.elapsed();
+
+    if (struct ::wl_cursor *waylandCursor = mCursor.theme->cursor(shape)) {
+        uint duration = 0;
+        int frame = wl_cursor_frame_and_duration(waylandCursor, time, &duration);
+        ::wl_cursor_image *image = waylandCursor->images[frame];
+
+        struct wl_buffer *buffer = wl_cursor_image_get_buffer(image);
+        if (!buffer) {
+            qCWarning(lcQpaWayland) << "Could not find buffer for cursor" << shape;
+            return;
+        }
+        int bufferScale = mCursor.themeBufferScale;
+        QPoint hotspot = QPoint(image->hotspot_x, image->hotspot_y) / bufferScale;
+        QSize size = QSize(image->width, image->height) / bufferScale;
+        bool animated = duration > 0;
+        if (animated) {
+            mCursor.gotFrameCallback = false;
+            mCursor.gotTimerCallback = false;
+            mCursor.frameTimer.start(duration);
+        }
+        getOrCreateCursorSurface()->update(buffer, hotspot, size, bufferScale, animated);
+        return;
+    }
+
+    qCWarning(lcQpaWayland) << "Unable to change to cursor" << shape;
+}
+
+CursorSurface<QWaylandTabletToolV2> *QWaylandTabletToolV2::getOrCreateCursorSurface()
+{
+    if (!mCursor.surface)
+        mCursor.surface.reset(
+                new CursorSurface<QWaylandTabletToolV2>(this, m_tabletSeat->seat()->mQDisplay));
+    return mCursor.surface.get();
+}
+
+void QWaylandTabletToolV2::cursorTimerCallback()
+{
+    mCursor.gotTimerCallback = true;
+    if (mCursor.gotFrameCallback)
+        updateCursor();
+}
+
+void QWaylandTabletToolV2::cursorFrameCallback()
+{
+    mCursor.gotFrameCallback = true;
+    if (mCursor.gotTimerCallback)
+        updateCursor();
+}
+
+#endif // QT_CONFIG(cursor)
 
 QWaylandTabletManagerV2::QWaylandTabletManagerV2(QWaylandDisplay *display, uint id, uint version)
     : zwp_tablet_manager_v2(display->wl_registry(), id, qMin(version, uint(1)))
@@ -36,12 +185,6 @@ QWaylandTabletSeatV2::QWaylandTabletSeatV2(QWaylandTabletManagerV2 *manager, QWa
 
 QWaylandTabletSeatV2::~QWaylandTabletSeatV2()
 {
-    for (auto *tablet : m_tablets)
-        tablet->destroy();
-    for (auto *tool : m_tools)
-        tool->destroy();
-    for (auto *pad : m_pads)
-        pad->destroy();
     qDeleteAll(m_tablets);
     qDeleteAll(m_tools);
     qDeleteAll(m_deadTools);
@@ -103,6 +246,11 @@ QWaylandTabletV2::QWaylandTabletV2(::zwp_tablet_v2 *tablet, const QString &seatN
     d->seatName = seatName;
 }
 
+QWaylandTabletV2::~QWaylandTabletV2()
+{
+    destroy();
+}
+
 void QWaylandTabletV2::zwp_tablet_v2_name(const QString &name)
 {
     QPointingDevicePrivate *d = QPointingDevicePrivate::get(this);
@@ -127,6 +275,12 @@ void QWaylandTabletV2::zwp_tablet_v2_done()
     QWindowSystemInterface::registerInputDevice(this);
 }
 
+void QWaylandTabletSeatV2::updateCursor()
+{
+    for (auto tool : m_tools)
+        tool->updateCursor();
+}
+
 void QWaylandTabletSeatV2::toolRemoved(QWaylandTabletToolV2 *tool)
 {
     m_tools.removeOne(tool);
@@ -135,7 +289,6 @@ void QWaylandTabletSeatV2::toolRemoved(QWaylandTabletToolV2 *tool)
 
 void QWaylandTabletV2::zwp_tablet_v2_removed()
 {
-    destroy();
     deleteLater();
 }
 
@@ -147,6 +300,21 @@ QWaylandTabletToolV2::QWaylandTabletToolV2(QWaylandTabletSeatV2 *tabletSeat, ::z
     , m_tabletSeat(tabletSeat)
 {
     // TODO get the number of buttons somehow?
+
+#if QT_CONFIG(cursor)
+    if (auto cursorShapeManager = m_tabletSeat->seat()->mQDisplay->cursorShapeManager()) {
+        mCursor.shape.reset(
+                new QWaylandCursorShape(cursorShapeManager->get_tablet_tool_v2(object())));
+    }
+
+    mCursor.frameTimer.setSingleShot(true);
+    mCursor.frameTimer.callOnTimeout(this, [&]() { cursorTimerCallback(); });
+#endif
+}
+
+QWaylandTabletToolV2::~QWaylandTabletToolV2()
+{
+    destroy();
 }
 
 void QWaylandTabletToolV2::zwp_tablet_tool_v2_type(uint32_t tool_type)
@@ -241,7 +409,6 @@ void QWaylandTabletToolV2::zwp_tablet_tool_v2_done()
 
 void QWaylandTabletToolV2::zwp_tablet_tool_v2_removed()
 {
-    destroy();
     m_tabletSeat->toolRemoved(this);
 }
 
@@ -250,6 +417,7 @@ void QWaylandTabletToolV2::zwp_tablet_tool_v2_proximity_in(uint32_t serial, zwp_
     Q_UNUSED(tablet);
 
     m_tabletSeat->seat()->mSerial = serial;
+    mEnterSerial = serial;
 
     if (Q_UNLIKELY(!surface)) {
         qCDebug(lcQpaWayland) << "Ignoring zwp_tablet_tool_v2_proximity_v2 with no surface";
@@ -257,6 +425,11 @@ void QWaylandTabletToolV2::zwp_tablet_tool_v2_proximity_in(uint32_t serial, zwp_
     }
     m_pending.enteredSurface = true;
     m_pending.proximitySurface = QWaylandSurface::fromWlSurface(surface);
+
+#if QT_CONFIG(cursor)
+    // Depends on mEnterSerial being updated
+    updateCursor();
+#endif
 }
 
 void QWaylandTabletToolV2::zwp_tablet_tool_v2_proximity_out()
@@ -427,6 +600,11 @@ QWaylandTabletPadV2::QWaylandTabletPadV2(::zwp_tablet_pad_v2 *pad)
 {
 }
 
+QWaylandTabletPadV2::~QWaylandTabletPadV2()
+{
+    destroy();
+}
+
 void QWaylandTabletPadV2::zwp_tablet_pad_v2_path(const QString &path)
 {
     QPointingDevicePrivate *d = QPointingDevicePrivate::get(this);
@@ -446,7 +624,6 @@ void QWaylandTabletPadV2::zwp_tablet_pad_v2_done()
 
 void QWaylandTabletPadV2::zwp_tablet_pad_v2_removed()
 {
-    destroy();
     delete this;
 }
 

@@ -247,7 +247,7 @@ void QPickingSettings::setFaceOrientationPickingMode(QPickingSettings::FaceOrien
 }
 
 /*!
-    \qmlproperty qreal PickingSettings::worldSpaceTolerance
+    \qmlproperty real PickingSettings::worldSpaceTolerance
 
     Holds the threshold, in model space coordinates, used to evaluate line and point picking.
 */

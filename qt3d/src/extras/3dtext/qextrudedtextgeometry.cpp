@@ -168,13 +168,13 @@ void QExtrudedTextGeometryPrivate::init()
  */
 
 /*!
- * \qmlproperty QString ExtrudedTextGeometry::text
+ * \qmlproperty string ExtrudedTextGeometry::text
  *
  * Holds the text used for the mesh.
  */
 
 /*!
- * \qmlproperty QFont ExtrudedTextGeometry::font
+ * \qmlproperty font ExtrudedTextGeometry::font
  *
  * Holds the font of the text.
  *

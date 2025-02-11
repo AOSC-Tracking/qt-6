@@ -127,6 +127,8 @@ void QMediaPlayerPrivate::setError(QMediaPlayer::Error error, const QString &err
 
 void QMediaPlayerPrivate::setMedia(const QUrl &media, QIODevice *stream)
 {
+    setError(QMediaPlayer::NoError, {});
+
     if (!control)
         return;
 
@@ -135,7 +137,8 @@ void QMediaPlayerPrivate::setMedia(const QUrl &media, QIODevice *stream)
     // Back ends can't play qrc files directly.
     // If the back end supports StreamPlayback, we pass a QFile for that resource.
     // If it doesn't, we copy the data to a temporary file and pass its path.
-    if (!media.isEmpty() && !stream && media.scheme() == QLatin1String("qrc")) {
+    if (!media.isEmpty() && !stream && media.scheme() == QLatin1String("qrc")
+        && !control->canPlayQrc()) {
         qrcMedia = media;
 
         file.reset(new QFile(QLatin1Char(':') + media.path()));
@@ -506,9 +509,6 @@ void QMediaPlayer::play()
 
     if (!d->control)
         return;
-
-    // Reset error conditions
-    d->setError(NoError, QString());
 
     d->control->play();
 }

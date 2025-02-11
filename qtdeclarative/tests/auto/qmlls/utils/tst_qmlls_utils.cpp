@@ -35,7 +35,7 @@ static QString readFileContent(const QString &testFileName) {
 };
 
 std::tuple<QQmlJS::Dom::DomItem, QQmlJS::Dom::DomItem>
-tst_qmlls_utils::createEnvironmentAndLoadFile(const QString &filePath)
+tst_qmlls_utils::createEnvironmentAndLoadFile(const QString &filePath, const QStringList &extraBuildDir)
 {
     CacheKey cacheKey = QDir::cleanPath(filePath + u"/.."_s);
     if (auto entry = cache.find(cacheKey); entry != cache.end()) {
@@ -43,8 +43,10 @@ tst_qmlls_utils::createEnvironmentAndLoadFile(const QString &filePath)
         return { env, env.field(QQmlJS::Dom::Fields::qmlFileWithPath).key(filePath) };
     };
 
-    QStringList qmltypeDirs =
-            QStringList({ dataDirectory(), QLibraryInfo::path(QLibraryInfo::Qml2ImportsPath) });
+    const QStringList qmltypeDirs =
+            QStringList({ dataDirectory(), QLibraryInfo::path(QLibraryInfo::Qml2ImportsPath),
+                          dataDirectory() + u"/sophisticatedBuildFolder"_s,
+                        }) += extraBuildDir;
 
     // This should be exactly the same options as qmlls uses in qqmlcodemodel.
     // Otherwise, this test will not test the codepaths also used by qmlls and will be useless.
@@ -97,17 +99,33 @@ void tst_qmlls_utils::textOffsetRowColumnConversions_data()
     // try to access '\r'
     QTest::newRow("newlines3") << u"A\nB\r\nC\n\r\nD\r\n\r"_s << 1 << 1 << 3ll << QChar('\r') << -1
                                << -1;
-    // try to access '\n', should return the last character of the line (which is '\r' in this case)
-    QTest::newRow("newlines4") << u"A\nB\r\nC\n\r\nD\r\n\r"_s << 1 << 2 << 3ll << QChar('\r') << -1
-                               << 1;
+    // try to access '\n', should return the last character of the line (which is '\n' in this case)
+    QTest::newRow("newlines4") << u"A\nB\r\nC\n\r\nD\r\n\r"_s << 1 << 2 << 4ll << QChar('\n') << -1
+                               << -1;
     // try to access after the end of the line, should return the last character of the line (which
-    // is '\r' in this case)
-    QTest::newRow("afterLineEnd") << u"A\nB\r\nC\n\r\nD\r\n\r"_s << 1 << 42 << 3ll << QChar('\r')
-                                  << -1 << 1;
+    // is '\n' in this case)
+    QTest::newRow("afterLineEnd") << u"A\nB\r\nC\n\r\nD\r\n\r"_s << 1 << 42 << 4ll << QChar('\n')
+                                  << -1 << 2;
 
     // try to access an inexisting column, seems to return the last character of the last line.
     QTest::newRow("afterColumnEnd")
-            << u"A\nB\r\nC\n\r\nD\r\n\rAX"_s << 42 << 0 << 15ll << QChar('X') << 5 << 2;
+            << u"A\nB\r\nC\n\r\nD\r\n\rAX"_s << 42 << 0 << 15ll << QChar('X') << 6 << 1;
+
+    // \n\r are two newlines
+    QTest::newRow("\\n\\r")
+            << u"A\n\rB"_s << 2 << 0 << 3ll << QChar('B') << -1 << -1;
+    // \r\n is a newline
+    QTest::newRow("\\r\\n")
+            << u"A\r\nB"_s << 1 << 0 << 3ll << QChar('B') << -1 << -1;
+
+    QTest::newRow("windowsNewlineAfterColumnEnd")
+            << u"A\r\nB\r\n"_s << 0 << 42 << 2ll << QChar('\n') << 0 << 2;
+    QTest::newRow("windowsNewlineAfterLineEnd")
+            << u"A\r\nB\r\n"_s << 42 << 0 << 5ll << QChar('\n') << 1 << 2;
+
+    QTest::newRow("windowsNewlineR")
+            << u"A\r\nB\r\n"_s << 0 << 1 << 1ll << QChar('\r') << 0 << 1;
+
 }
 
 void tst_qmlls_utils::textOffsetRowColumnConversions()
@@ -258,6 +276,14 @@ void tst_qmlls_utils::findItemFromLocation_data()
     QTest::addRow("rectangle-property")
             << file1Qml << 44 << 31 << firstResult << outOfOne
             << QQmlJS::Dom::DomType::ScriptIdentifierExpression << -1 << 29;
+
+    // check comment
+    QTest::addRow("pre-comment")
+            << file1Qml << 62 << 15 << firstResult << outOfOne
+            << QQmlJS::Dom::DomType::Comment << -1 << 5;
+    QTest::addRow("post-comment")
+            << file1Qml << 64 << 15 << firstResult << outOfOne
+            << QQmlJS::Dom::DomType::Comment << -1 << 5;
 }
 
 void tst_qmlls_utils::findItemFromLocation()
@@ -1793,91 +1819,111 @@ void tst_qmlls_utils::findDefinitionFromLocation_data()
     QTest::addColumn<int>("expectedLine");
     QTest::addColumn<int>("expectedCharacter");
     QTest::addColumn<size_t>("expectedLength");
+    QTest::addColumn<QStringList>("extraBuildDirs");
 
     const QString JSDefinitionsQml = testFile(u"JSDefinitions.qml"_s);
     const QString BaseTypeQml = testFile(u"BaseType.qml"_s);
+    const QStringList noExtraBuildDir;
 
     QTest::addRow("JSIdentifierX")
-            << JSDefinitionsQml << 14 << 11 << JSDefinitionsQml << 13 << 13 << strlen("x");
+            << JSDefinitionsQml << 14 << 11 << JSDefinitionsQml << 13 << 13 << strlen("x") << noExtraBuildDir;
     QTest::addRow("JSIdentifierX2")
-            << JSDefinitionsQml << 15 << 11 << JSDefinitionsQml << 13 << 13 << strlen("x");
+            << JSDefinitionsQml << 15 << 11 << JSDefinitionsQml << 13 << 13 << strlen("x") << noExtraBuildDir;
     QTest::addRow("propertyI") << JSDefinitionsQml << 14 << 14 << JSDefinitionsQml << 9 << 18
-                               << strlen("i");
+                               << strlen("i") << noExtraBuildDir;
     QTest::addRow("qualifiedPropertyI")
-            << JSDefinitionsQml << 15 << 21 << JSDefinitionsQml << 9 << 18 << strlen("i");
+            << JSDefinitionsQml << 15 << 21 << JSDefinitionsQml << 9 << 18 << strlen("i") << noExtraBuildDir;
     QTest::addRow("inlineComponentProperty")
-            << JSDefinitionsQml << 62 << 21 << JSDefinitionsQml << 54 << 22 << strlen("data");
+            << JSDefinitionsQml << 62 << 21 << JSDefinitionsQml << 54 << 22 << strlen("data") << noExtraBuildDir;
 
     QTest::addRow("parameterA") << JSDefinitionsQml << 10 << 16 << JSDefinitionsQml << 10 << 16
-                                << strlen("a");
+                                << strlen("a") << noExtraBuildDir;
     QTest::addRow("parameterAUsage")
-            << JSDefinitionsQml << 10 << 39 << JSDefinitionsQml << -1 << 16 << strlen("a");
+            << JSDefinitionsQml << 10 << 39 << JSDefinitionsQml << -1 << 16 << strlen("a") << noExtraBuildDir;
 
     QTest::addRow("parameterB") << JSDefinitionsQml << 10 << 28 << JSDefinitionsQml << 10 << 28
-                                << strlen("b");
+                                << strlen("b") << noExtraBuildDir;
     QTest::addRow("parameterBUsage")
-            << JSDefinitionsQml << 10 << 86 << JSDefinitionsQml << -1 << 28 << strlen("b");
+            << JSDefinitionsQml << 10 << 86 << JSDefinitionsQml << -1 << 28 << strlen("b") << noExtraBuildDir;
 
     QTest::addRow("comment") << JSDefinitionsQml << 10 << 21 << noResultExpected << -1 << -1
-                             << size_t{};
+                             << size_t{} << noExtraBuildDir;
 
     QTest::addRow("scopedX") << JSDefinitionsQml << 22 << 18 << JSDefinitionsQml << 21 << 17
-                             << strlen("scoped");
+                             << strlen("scoped") << noExtraBuildDir;
     QTest::addRow("scopedX2") << JSDefinitionsQml << 25 << 22 << JSDefinitionsQml << 21 << 17
-                              << strlen("scoped");
+                              << strlen("scoped") << noExtraBuildDir;
     QTest::addRow("scopedX3") << JSDefinitionsQml << 28 << 14 << JSDefinitionsQml << 19 << 13
-                              << strlen("scoped");
+                              << strlen("scoped") << noExtraBuildDir;
 
     QTest::addRow("normalI") << JSDefinitionsQml << 22 << 23 << JSDefinitionsQml << 9 << 18
-                             << strlen("i");
+                             << strlen("i") << noExtraBuildDir;
     QTest::addRow("scopedI") << JSDefinitionsQml << 25 << 27 << JSDefinitionsQml << 24 << 32
-                             << strlen("i");
+                             << strlen("i") << noExtraBuildDir;
 
     QTest::addRow("shadowingProperty")
-            << JSDefinitionsQml << 37 << 21 << JSDefinitionsQml << 34 << 22 << strlen("i");
+            << JSDefinitionsQml << 37 << 21 << JSDefinitionsQml << 34 << 22 << strlen("i") << noExtraBuildDir;
     QTest::addRow("shadowingQualifiedProperty")
-            << JSDefinitionsQml << 37 << 35 << JSDefinitionsQml << 34 << 22 << strlen("i");
+            << JSDefinitionsQml << 37 << 35 << JSDefinitionsQml << 34 << 22 << strlen("i") << noExtraBuildDir;
     QTest::addRow("shadowedProperty")
-            << JSDefinitionsQml << 37 << 49 << JSDefinitionsQml << 9 << 18 << strlen("i");
+            << JSDefinitionsQml << 37 << 49 << JSDefinitionsQml << 9 << 18 << strlen("i") << noExtraBuildDir;
 
     QTest::addRow("propertyInBinding")
-            << JSDefinitionsQml << 64 << 37 << JSDefinitionsQml << 9 << 18 << strlen("i");
+            << JSDefinitionsQml << 64 << 37 << JSDefinitionsQml << 9 << 18 << strlen("i") << noExtraBuildDir;
     QTest::addRow("propertyInBinding2")
-            << JSDefinitionsQml << 65 << 38 << JSDefinitionsQml << 9 << 18 << strlen("i");
+            << JSDefinitionsQml << 65 << 38 << JSDefinitionsQml << 9 << 18 << strlen("i") << noExtraBuildDir;
     QTest::addRow("propertyInBinding3")
-            << JSDefinitionsQml << 66 << 51 << JSDefinitionsQml << 9 << 18 << strlen("i");
+            << JSDefinitionsQml << 66 << 51 << JSDefinitionsQml << 9 << 18 << strlen("i") << noExtraBuildDir;
 
     QTest::addRow("propertyFromDifferentFile")
-            << JSDefinitionsQml << 72 << 20 << BaseTypeQml << 24 << 18 << strlen("helloProperty");
+            << JSDefinitionsQml << 72 << 20 << BaseTypeQml << 24 << 18 << strlen("helloProperty") << noExtraBuildDir;
 
     QTest::addRow("id") << JSDefinitionsQml << 15 << 17 << JSDefinitionsQml << 7 << 9
-                        << strlen("rootId");
+                        << strlen("rootId") << noExtraBuildDir;
     QTest::addRow("onId") << JSDefinitionsQml << 32 << 16 << JSDefinitionsQml << 32 << 13
-                          << strlen("nested");
+                          << strlen("nested") << noExtraBuildDir;
     QTest::addRow("parentId") << JSDefinitionsQml << 37 << 44 << JSDefinitionsQml << 7 << 9
-                              << strlen("rootId");
+                              << strlen("rootId") << noExtraBuildDir;
     QTest::addRow("currentId") << JSDefinitionsQml << 37 << 30 << JSDefinitionsQml << 32 << 13
-                               << strlen("nested");
+                               << strlen("nested") << noExtraBuildDir;
     QTest::addRow("inlineComponentId")
-            << JSDefinitionsQml << 56 << 35 << JSDefinitionsQml << 52 << 13 << strlen("helloIC");
+            << JSDefinitionsQml << 56 << 35 << JSDefinitionsQml << 52 << 13 << strlen("helloIC") << noExtraBuildDir;
 
     QTest::addRow("recursiveFunction")
-            << JSDefinitionsQml << 39 << 28 << JSDefinitionsQml << 36 << 18 << strlen("f");
+            << JSDefinitionsQml << 39 << 28 << JSDefinitionsQml << 36 << 18 << strlen("f") << noExtraBuildDir;
     QTest::addRow("recursiveFunction2")
-            << JSDefinitionsQml << 39 << 39 << JSDefinitionsQml << 36 << 18 << strlen("f");
+            << JSDefinitionsQml << 39 << 39 << JSDefinitionsQml << 36 << 18 << strlen("f") << noExtraBuildDir;
     QTest::addRow("functionFromFunction")
-            << JSDefinitionsQml << 44 << 20 << JSDefinitionsQml << 36 << 18 << strlen("f");
+            << JSDefinitionsQml << 44 << 20 << JSDefinitionsQml << 36 << 18 << strlen("f") << noExtraBuildDir;
     QTest::addRow("qualifiedFunctionName")
-            << JSDefinitionsQml << 48 << 23 << JSDefinitionsQml << 36 << 18 << strlen("f");
+            << JSDefinitionsQml << 48 << 23 << JSDefinitionsQml << 36 << 18 << strlen("f") << noExtraBuildDir;
 
     QTest::addRow("functionInParent")
-            << JSDefinitionsQml << 44 << 37 << JSDefinitionsQml << 18 << 14 << strlen("ffff");
+            << JSDefinitionsQml << 44 << 37 << JSDefinitionsQml << 18 << 14 << strlen("ffff") << noExtraBuildDir;
     QTest::addRow("functionFromDifferentFile")
-            << JSDefinitionsQml << 72 << 47 << BaseTypeQml << 25 << 14 << strlen("helloFunction");
+            << JSDefinitionsQml << 72 << 47 << BaseTypeQml << 25 << 14 << strlen("helloFunction") << noExtraBuildDir;
     QTest::addRow("componentFromFile")
-            << JSDefinitionsQml << 68 << 28 << BaseTypeQml << 6 << 1 << strlen("Item");
+            << JSDefinitionsQml << 68 << 28 << BaseTypeQml << 6 << 1 << strlen("Item") << noExtraBuildDir;
     QTest::addRow("inlineComponentFromDifferentFile")
-            << JSDefinitionsQml << 75 << 27 << BaseTypeQml << 9 << 38 << strlen("Item");
+            << JSDefinitionsQml << 75 << 27 << BaseTypeQml << 9 << 38 << strlen("Item") << noExtraBuildDir;
+
+    QTest::addRow("lambdaParameter")
+            << JSDefinitionsQml << 78 << 33 << JSDefinitionsQml << 77 << 34 << strlen("c") << noExtraBuildDir;
+    QTest::addRow("callFromLambda")
+            << JSDefinitionsQml << 79 << 21 << JSDefinitionsQml << 47 << 14 << strlen("abc") << noExtraBuildDir;
+    QTest::addRow("callFromLambda2")
+            << JSDefinitionsQml << 81 << 32 << JSDefinitionsQml << 76 << 14 << strlen("helloLambda") << noExtraBuildDir;
+    QTest::addRow("lambdaRecursion")
+            << JSDefinitionsQml << 80 << 29 << JSDefinitionsQml << 77 << 24 << strlen("function") << noExtraBuildDir;
+
+    QTest::addRow("arrowParameter")
+            << JSDefinitionsQml << 84 << 37 << JSDefinitionsQml << 83 << 32 << strlen("c") << noExtraBuildDir;
+    QTest::addRow("callFromArrow")
+            << JSDefinitionsQml << 85 << 21 << JSDefinitionsQml << 47 << 14 << strlen("abc") << noExtraBuildDir;
+    QTest::addRow("callFromArrow2")
+            << JSDefinitionsQml << 87 << 32 << JSDefinitionsQml << 76 << 14 << strlen("helloLambda") << noExtraBuildDir;
+    QTest::addRow("arrowRecursion")
+            << JSDefinitionsQml << 86 << 29 << JSDefinitionsQml << 77 << 24 << strlen("function") << noExtraBuildDir;
 
     {
         const QString definitionFile =
@@ -1885,45 +1931,51 @@ void tst_qmlls_utils::findDefinitionFromLocation_data()
         const QString qmlComponents = testFile(u"findDefinition/QmlComponents.qml"_s);
         const QString qualifiedQmlComponents = testFile(u"findDefinition/QualifiedQmlComponents.qml"_s);
         QTest::addRow("component") << qmlComponents << 7 << 11 << definitionFile << 7 << 1
-                                   << strlen("ApplicationWindow");
+                                   << strlen("ApplicationWindow") << noExtraBuildDir;
         QTest::addRow("attachedType") << qmlComponents << 9 << 42 << definitionFile << 7 << 1
-                                      << strlen("ApplicationWindow");
+                                      << strlen("ApplicationWindow") << noExtraBuildDir;
         QTest::addRow("enumValue") << qmlComponents << 10 << 42 << definitionFile << 7 << 1
-                                   << strlen("ApplicationWindow");
+                                   << strlen("ApplicationWindow") << noExtraBuildDir;
         QTest::addRow("enumName") << qmlComponents << 11 << 42 << definitionFile << 7 << 1
-                                  << strlen("ApplicationWindow");
+                                  << strlen("ApplicationWindow") << noExtraBuildDir;
 
         QTest::addRow("qualifiedComponent") << qualifiedQmlComponents << 7 << 11 << definitionFile
-                                            << 7 << 1 << strlen("ApplicationWindow");
+                                            << 7 << 1 << strlen("ApplicationWindow") << noExtraBuildDir;
         QTest::addRow("qualifiedAttachedType")
                 << qualifiedQmlComponents << 9 << 47 << definitionFile << 7 << 1
-                << strlen("ApplicationWindow");
+                << strlen("ApplicationWindow") << noExtraBuildDir;
         QTest::addRow("qualifiedEnumValue") << qualifiedQmlComponents << 10 << 42 << definitionFile
-                                            << 7 << 1 << strlen("ApplicationWindow");
+                                            << 7 << 1 << strlen("ApplicationWindow") << noExtraBuildDir;
         QTest::addRow("qualifiedEnumName") << qualifiedQmlComponents << 11 << 42 << definitionFile
-                                           << 7 << 1 << strlen("ApplicationWindow");
+                                           << 7 << 1 << strlen("ApplicationWindow") << noExtraBuildDir;
 
         QTest::addRow("qualifiedModuleName")
                 << qualifiedQmlComponents << 9 << 42 << qualifiedQmlComponents << 5 << 52
-                << strlen("MAWM");
+                << strlen("MAWM") << noExtraBuildDir;
     }
-    QTest::addRow("lambdaParameter")
-            << JSDefinitionsQml << 78 << 33 << JSDefinitionsQml << 77 << 34 << strlen("c");
-    QTest::addRow("callFromLambda")
-            << JSDefinitionsQml << 79 << 21 << JSDefinitionsQml << 47 << 14 << strlen("abc");
-    QTest::addRow("callFromLambda2")
-            << JSDefinitionsQml << 81 << 32 << JSDefinitionsQml << 76 << 14 << strlen("helloLambda");
-    QTest::addRow("lambdaRecursion")
-            << JSDefinitionsQml << 80 << 29 << JSDefinitionsQml << 77 << 24 << strlen("function");
 
-    QTest::addRow("arrowParameter")
-            << JSDefinitionsQml << 84 << 37 << JSDefinitionsQml << 83 << 32 << strlen("c");
-    QTest::addRow("callFromArrow")
-            << JSDefinitionsQml << 85 << 21 << JSDefinitionsQml << 47 << 14 << strlen("abc");
-    QTest::addRow("callFromArrow2")
-            << JSDefinitionsQml << 87 << 32 << JSDefinitionsQml << 76 << 14 << strlen("helloLambda");
-    QTest::addRow("arrowRecursion")
-            << JSDefinitionsQml << 86 << 29 << JSDefinitionsQml << 77 << 24 << strlen("function");
+    {
+        const QString mainQml = testFile(u"findDefinition/mymodule-source/MyModule/Main.qml"_s);
+        const QString myComponentQml = testFile(u"findDefinition/mymodule-source/MyModule/X/Y/Z/MyComponent.qml"_s);
+
+        QTest::addRow("nestedFromOwnModule") << mainQml << 4 << 5 << myComponentQml << 3 << 1
+                                             << strlen("Item") << QStringList { testFile(u"findDefinition/mymodule-build"_s) };
+        QTest::addRow("nestedFromOwnModuleWithoutQmldirPrefer") << mainQml << 4 << 5 << myComponentQml << 3 << 1
+                                                                << strlen("Item")
+                                                                << QStringList { testFile(u"findDefinition/mymodule-build-without-qmldir-prefer"_s) };
+    }
+
+    {
+        const QString mainQml = testFile(u"findDefinition/TestAppWithBuildFolder/TestApp/Main.qml"_s);
+        const QString myComponentQml = testFile(u"findDefinition/TestAppWithBuildFolder/TestApp/somesubfolder/anothersubfolder/MyModule/MyItem.qml"_s);
+        QTest::addRow("componentFromOtherModule")
+                << mainQml << 5 << 8 << myComponentQml << 3 << 1 << strlen("Item")
+                << QStringList{
+                       testFile(u"findDefinition/TestAppWithBuildFolder/build"_s),
+                       testFile(
+                           u"findDefinition/TestAppWithBuildFolder/build/somesubfolder/anothersubfolder"_s)
+                   };
+    }
 }
 
 void tst_qmlls_utils::findDefinitionFromLocation()
@@ -1935,6 +1987,7 @@ void tst_qmlls_utils::findDefinitionFromLocation()
     QFETCH(int, expectedLine);
     QFETCH(int, expectedCharacter);
     QFETCH(size_t, expectedLength);
+    QFETCH(QStringList, extraBuildDirs);
 
     if (expectedLine == -1)
         expectedLine = line;
@@ -1947,7 +2000,7 @@ void tst_qmlls_utils::findDefinitionFromLocation()
     Q_ASSERT(expectedLine > 0);
     Q_ASSERT(expectedCharacter > 0);
 
-    auto [env, file] = createEnvironmentAndLoadFile(filePath);
+    auto [env, file] = createEnvironmentAndLoadFile(filePath, extraBuildDirs);
 
     auto locations = QQmlLSUtils::itemsFromTextLocation(
             file.field(QQmlJS::Dom::Fields::currentItem), line - 1, character - 1);
@@ -4290,6 +4343,22 @@ void tst_qmlls_utils::completions_data()
             << ExpectedCompletions{ { u"World"_s, CompletionItemKind::EnumMember },
                                     { u"Hello"_s, CompletionItemKind::Enum } }
             << QStringList{};
+
+    QTest::newRow("viaResourceFile")
+            << testFile("AdminDialogFromSource.qml") << 4 << 33
+            << ExpectedCompletions{ { u"LabelTitle"_s, CompletionItemKind::Constructor } }
+            << QStringList{};
+
+    QTest::newRow("Qt.Point") << testFile("completions/QtPoint.qml") << 5 << 34
+                              << ExpectedCompletions{ { u"y"_s, CompletionItemKind::Property } }
+                              << QStringList{ u"f"_s, forStatementCompletion };
+
+    QTest::newRow("insideComment1")
+            << testFile("completions/Comments.qml") << 4 << 9 << ExpectedCompletions{}
+            << QStringList{ u"f"_s, forStatementCompletion };
+    QTest::newRow("insideComment2")
+            << testFile("completions/Comments.qml") << 6 << 9 << ExpectedCompletions{}
+            << QStringList{ u"x"_s, u"Item"_s, forStatementCompletion };
 }
 
 void tst_qmlls_utils::completions()

@@ -536,12 +536,14 @@ public:
 
     void setDebugger(Debugging::Debugger *) {}
     void setProfiler(Profiling::Profiler *) {}
+    static void setPreviewing(bool) {}
 #else
     QV4::Debugging::Debugger *debugger() const { return m_debugger.data(); }
     QV4::Profiling::Profiler *profiler() const { return m_profiler.data(); }
 
     void setDebugger(Debugging::Debugger *debugger);
     void setProfiler(Profiling::Profiler *profiler);
+    static void setPreviewing(bool enabled);
 #endif // QT_CONFIG(qml_debug)
 
     // We don't want to #include <private/qv4stackframe_p.h> here, but we still want
@@ -769,15 +771,10 @@ public:
     }
     void trimCompilationUnits();
 
-    QV4::Value *registerNativeModule(const QUrl &url, const QV4::Value &module);
 
-    struct Module {
-        QQmlRefPointer<ExecutableCompilationUnit> compiled;
+    using Module = QQmlRefPointer<ExecutableCompilationUnit>;
 
-        // We can pass a raw value pointer here, but nowhere else. See below.
-        Value *native = nullptr;
-    };
-
+    Module registerNativeModule(const QUrl &url, const QV4::Value &value);
     Module moduleForUrl(const QUrl &_url, const ExecutableCompilationUnit *referrer = nullptr) const;
     Module loadModule(const QUrl &_url, const ExecutableCompilationUnit *referrer = nullptr);
 
@@ -885,12 +882,6 @@ private:
     QVector<Deletable *> m_extensionData;
 
     QMultiHash<QUrl, QQmlRefPointer<ExecutableCompilationUnit>> m_compilationUnits;
-
-    // QV4::PersistentValue would be preferred, but using QHash will create copies,
-    // and QV4::PersistentValue doesn't like creating copies.
-    // Instead, we allocate a raw pointer using the same manual memory management
-    // technique in QV4::PersistentValue.
-    QHash<QUrl, Value *> nativeModules;
 };
 
 #define CHECK_STACK_LIMITS(v4) \

@@ -80,7 +80,24 @@ private:
     \brief The QAudioBufferInput class is used for providing custom audio buffers
     to \l QMediaRecorder through \l QMediaCaptureSession.
 
-    \sa QMediaRecorder, QMediaCaptureSession
+    QAudioBufferInput is only supported with the FFmpeg backend.
+
+    Custom audio buffers can be recorded by connecting a \l QAudioBufferInput and a
+    \l QMediaRecorder to a \l QMediaCaptureSession. For a pull mode implementation,
+    call \l sendAudioBuffer() in response to the \l readyToSendAudioBuffer() signal.
+    In the snippet below this is done by connecting the signal to a slot in a custom
+    media generator class. The slot function emits another signal with a new audio
+    buffer, which is connected to  \l sendAudioBuffer():
+
+    \snippet custommediainputsnippets/custommediainputsnippets.cpp QAudioBufferInput setup
+
+    Here's a minimal implementation of the slot function that provides audio buffers:
+
+    \snippet custommediainputsnippets/custommediainputsnippets.cpp nextAudioBuffer()
+
+    For more details see readyToSendAudioBuffer() and sendAudioBuffer().
+
+    \sa QMediaRecorder and QMediaCaptureSession.
 */
 
 /*!
@@ -123,7 +140,7 @@ QAudioBufferInput::~QAudioBufferInput()
     which can happen if the instance is not assigned to
     \l QMediaCaptureSession, the session doesn't have a media recorder,
     the media recorder is not started or its queue is full.
-    The signal \l readyToSendAudiobuffer will be sent as soon as
+    The \l readyToSendAudioBuffer() signal will be emitted as soon as
     the destination is able to handle a new audio buffer.
 
     Sending of an empty audio buffer is treated by \l QMediaRecorder

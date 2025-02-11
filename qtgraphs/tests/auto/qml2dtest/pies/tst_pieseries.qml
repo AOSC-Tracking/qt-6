@@ -52,7 +52,7 @@ Item {
             var slice = pieSeries.append("slice", 10)
             compare(slice.angleSpan, 360.0)
             verify(slice.borderColor !== undefined)
-            compare(slice.borderWidth, 1)
+            compare(slice.borderWidth, 0)
             verify(slice.color !== undefined)
             compare(slice.explodeDistanceFactor, 0.15)
             compare(slice.exploded, false)

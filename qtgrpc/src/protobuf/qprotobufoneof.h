@@ -22,6 +22,19 @@ namespace QtProtobufPrivate {
 class QProtobufOneofPrivate;
 class QProtobufOneof final
 {
+    template <typename T>
+    using is_oneof_value_type = std::disjunction<
+        QtProtobuf::is_protobuf_message_without_ordering<T>,
+        QtProtobuf::is_protobuf_non_message<T>>;
+    template <typename T>
+    using if_oneof_value_type = std::enable_if_t<is_oneof_value_type<T>::value, bool>;
+
+    template <typename T>
+    using is_oneof_compatible = std::disjunction<QtProtobuf::is_protobuf_message<T>,
+                                                 is_oneof_value_type<T>>;
+    template <typename T>
+    using if_oneof_compatible = std::enable_if_t<is_oneof_compatible<T>::value, bool>;
+
 public:
     Q_PROTOBUF_EXPORT  QProtobufOneof();
     Q_PROTOBUF_EXPORT  ~QProtobufOneof();
@@ -34,7 +47,7 @@ public:
         qt_ptr_swap(d_ptr, other.d_ptr);
     }
 
-    template<typename T, QtProtobuf::if_protobuf_type<T> = true>
+    template <typename T, if_oneof_compatible<T> = true>
     void setValue(const T &value, int fieldNumber)
     {
         setValue(QVariant::fromValue<T>(value), fieldNumber);
@@ -43,10 +56,10 @@ public:
     template<typename T, QtProtobuf::if_protobuf_message<T> = true>
     void setValue(T &&value, int fieldNumber)
     {
-        setValue(QVariant::fromValue<T>(std::move(value)), fieldNumber);
+        setValue(QVariant::fromValue<T>(std::forward<T>(value)), fieldNumber);
     }
 
-    template <typename T, QtProtobuf::if_protobuf_non_message<T> = true>
+    template <typename T, if_oneof_value_type<T> = true>
     T value() const
     {
         ensureMetaType(QMetaType::fromType<T>(), rawValue().metaType());
@@ -67,7 +80,7 @@ public:
         return static_cast<const T *>(rawValue().data());
     }
 
-    template <typename T,  QtProtobuf::if_protobuf_non_message<T> = true>
+    template <typename T, if_oneof_value_type<T> = true>
     bool isEqual(const T &otherValue, int fieldNumber) const
     {
         return this->fieldNumber() == fieldNumber

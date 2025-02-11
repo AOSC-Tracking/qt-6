@@ -871,11 +871,11 @@ void tst_QImage::convertToFormat_data()
     QTest::newRow("blue rgb888 -> argb32") << int(QImage::Format_RGB888) << 0xff0000ff
                                            << int(QImage::Format_ARGB32) << 0xff0000ff;
 
-    QTest::newRow("red bgr888 -> argb32") << int(QImage::Format_RGB888) << 0xffff0000
+    QTest::newRow("red bgr888 -> argb32") << int(QImage::Format_BGR888) << 0xffff0000
                                           << int(QImage::Format_ARGB32) << 0xffff0000;
-    QTest::newRow("green bgr888 -> argb32") << int(QImage::Format_RGB888) << 0xff00ff00
+    QTest::newRow("green bgr888 -> argb32") << int(QImage::Format_BGR888) << 0xff00ff00
                                             << int(QImage::Format_ARGB32) << 0xff00ff00;
-    QTest::newRow("blue bgr888 -> argb32") << int(QImage::Format_RGB888) << 0xff0000ff
+    QTest::newRow("blue bgr888 -> argb32") << int(QImage::Format_BGR888) << 0xff0000ff
                                            << int(QImage::Format_ARGB32) << 0xff0000ff;
 
     QTest::newRow("red rgb888 -> rgbx8888") << int(QImage::Format_RGB888) << 0xffff0000
@@ -3431,7 +3431,7 @@ void tst_QImage::colorSpaceCmykConversion()
 
     QImage image(16, 16, QImage::Format_CMYK8888);
     QFile iccProfile(m_prefix +"CGATS001Compat-v2-micro.icc");
-    iccProfile.open(QIODevice::ReadOnly);
+    QVERIFY2(iccProfile.open(QIODevice::ReadOnly), qPrintable(iccProfile.errorString()));
     image.setColorSpace(QColorSpace::fromIccProfile(iccProfile.readAll()));
     QVERIFY(image.colorSpace().isValid());
 
@@ -3490,7 +3490,7 @@ void tst_QImage::colorSpaceFromGrayConversion_data()
     };
 
     QFile iccProfile(m_prefix + "VideoHD.icc");
-    iccProfile.open(QIODevice::ReadOnly);
+    QVERIFY2(iccProfile.open(QIODevice::ReadOnly), qPrintable(iccProfile.errorString()));
     colorSpaces.append(QColorSpace::fromIccProfile(iccProfile.readAll()));
 
     for (auto fromFormat : formats) {

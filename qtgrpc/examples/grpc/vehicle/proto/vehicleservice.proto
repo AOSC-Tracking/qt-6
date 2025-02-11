@@ -5,20 +5,23 @@ syntax = "proto3";
 package qtgrpc.examples;
 import "google/protobuf/empty.proto";
 
+
+//! [Proto types]
 message SpeedMsg {
     int32 speed = 1;
 }
 
-message GearMsg {
+message RpmMsg {
     int32 rpm = 1;
 }
 
-message FuelLevelMsg {
-    int32 fuelLevel = 1;
+message AutonomyMsg {
+    int32 autonomy = 1;
 }
 
 service VehicleService {
     rpc getSpeedStream(google.protobuf.Empty) returns (stream SpeedMsg) {}
-    rpc getGearStream(google.protobuf.Empty) returns (stream GearMsg) {}
-    rpc getFuelLevel(google.protobuf.Empty) returns (FuelLevelMsg) {}
+    rpc getRpmStream(google.protobuf.Empty) returns (stream RpmMsg) {}
+    rpc getAutonomy(google.protobuf.Empty) returns (AutonomyMsg) {}
 }
+//! [Proto types]

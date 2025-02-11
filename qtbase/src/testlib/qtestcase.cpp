@@ -90,7 +90,6 @@
 #if __has_include(<paths.h>)
 # include <paths.h>
 #endif
-#include <signal.h>
 #include <time.h>
 #include <sys/mman.h>
 #include <sys/uio.h>
@@ -98,15 +97,6 @@
 #include <unistd.h>
 # if !defined(Q_OS_INTEGRITY)
 #  include <sys/resource.h>
-# endif
-# ifndef _PATH_DEFPATH
-#  define _PATH_DEFPATH     "/usr/bin:/bin"
-# endif
-# ifndef SIGSTKSZ
-#  define SIGSTKSZ          0       /* we have code to set the minimum */
-# endif
-# ifndef SA_RESETHAND
-#  define SA_RESETHAND      0
 # endif
 #endif
 
@@ -119,6 +109,10 @@
 
 #if defined(Q_OS_WASM)
 #include <emscripten.h>
+#endif
+
+#ifdef Q_OS_ANDROID
+#include <QtCore/QStandardPaths>
 #endif
 
 #include <vector>
@@ -684,9 +678,9 @@ Q_TESTLIB_EXPORT void qtest_qParseArgs(int argc, const char *const argv[], bool 
          "                       is only supported with the plain text logger.\n"
          " -skipblacklisted    : Skip blacklisted tests. Useful for measuring test coverage.\n"
          " -[no]throwonfail    : Enables/disables throwing on QCOMPARE()/QVERIFY()/etc.\n"
-         "                       Default: off,  unless QTEST_THROW_ON_FAIL is set."
+         "                       Default: off,  unless QTEST_THROW_ON_FAIL is set.\n"
          " -[no]throwonskip    : Enables/disables throwing on QSKIP().\n"
-         "                       Default: off,  unless QTEST_THROW_ON_SKIP is set."
+         "                       Default: off,  unless QTEST_THROW_ON_SKIP is set.\n"
          "\n"
          " Benchmarking options:\n"
 #if QT_CONFIG(valgrind)
@@ -1275,6 +1269,17 @@ public:
 
 #endif  // QT_CONFIG(thread)
 
+template <typename Functor>
+void runWithWatchdog(std::optional<WatchDog> &watchDog, Functor &&f)
+{
+    if (watchDog)
+        watchDog->beginTest();
+
+    f();
+
+    if (watchDog)
+        watchDog->testFinished();
+}
 
 static void printUnknownDataTagError(QLatin1StringView name, QLatin1StringView tag,
                                      const QTestTable &lTable, const QTestTable &gTable)
@@ -1346,7 +1351,9 @@ bool TestMethods::invokeTest(int index, QLatin1StringView tag, std::optional<Wat
 
         if (curGlobalDataIndex == 0) {
             std::snprintf(member, 512, "%s_data()", name.constData());
-            invokeTestMethodIfExists(member);
+            runWithWatchdog(watchDog, [&member] {
+                invokeTestMethodIfExists(member);
+            });
             if (QTestResult::skipCurrentTest())
                 break;
         }
@@ -1379,12 +1386,14 @@ bool TestMethods::invokeTest(int index, QLatin1StringView tag, std::optional<Wat
                         curDataIndex >= dataCount ? nullptr : table.testData(curDataIndex));
 
                     QTestPrivate::qtestMouseButtons = Qt::NoButton;
-                    if (watchDog)
-                        watchDog->beginTest();
-                    QTest::lastMouseTimestamp += 500;   // Maintain at least 500ms mouse event timestamps between each test function call
-                    invokeTestOnData(index);
-                    if (watchDog)
-                        watchDog->testFinished();
+
+                    // Maintain at least 500ms mouse event timestamps between each test function
+                    // call
+                    QTest::lastMouseTimestamp += 500;
+
+                    runWithWatchdog(watchDog, [this, index] {
+                        invokeTestOnData(index);
+                    });
                 }
 
                 if (!tag.isEmpty() && !globalDataCount)
@@ -1691,8 +1700,6 @@ void TestMethods::invokeTests(QObject *testObject) const
 {
     const QMetaObject *metaObject = testObject->metaObject();
     QTEST_ASSERT(metaObject);
-    QTestResult::setCurrentTestFunction("initTestCase");
-    invokeTestMethodIfValid(m_initTestCaseDataMethod, testObject);
 
     std::optional<WatchDog> watchDog = std::nullopt;
     if (!CrashHandler::alreadyDebugging()
@@ -1703,10 +1710,18 @@ void TestMethods::invokeTests(QObject *testObject) const
         watchDog.emplace();
     }
 
+    QTestResult::setCurrentTestFunction("initTestCase");
+    runWithWatchdog(watchDog, [this, testObject] {
+        invokeTestMethodIfValid(m_initTestCaseDataMethod, testObject);
+    });
+
     QSignalDumper::startDump();
 
     if (!QTestResult::skipCurrentTest() && !QTestResult::currentTestFailed()) {
-        invokeTestMethodIfValid(m_initTestCaseMethod, testObject);
+
+        runWithWatchdog(watchDog, [this, testObject] {
+            invokeTestMethodIfValid(m_initTestCaseMethod, testObject);
+        });
 
         // finishedCurrentTestDataCleanup() resets QTestResult::currentTestFailed(), so use a local copy.
         const bool previousFailed = QTestResult::currentTestFailed();
@@ -1730,7 +1745,10 @@ void TestMethods::invokeTests(QObject *testObject) const
         QTestResult::setSkipCurrentTest(false);
         QTestResult::setBlacklistCurrentTest(false);
         QTestResult::setCurrentTestFunction("cleanupTestCase");
-        invokeTestMethodIfValid(m_cleanupTestCaseMethod, testObject);
+        runWithWatchdog(watchDog, [this, testObject] {
+            invokeTestMethodIfValid(m_cleanupTestCaseMethod, testObject);
+        });
+
         QTestResult::finishedCurrentTestData();
         // Restore skip state as it affects decision on whether we passed:
         QTestResult::setSkipCurrentTest(wasSkipped || QTestResult::skipCurrentTest());
@@ -1775,6 +1793,14 @@ static void initEnvironment()
 {
     qputenv("QT_QTESTLIB_RUNNING", "1");
 }
+
+#ifdef Q_OS_ANDROID
+static QFile androidExitCodeFile()
+{
+    const QString testHome = QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
+    return QFile(testHome + "/qtest_last_exit_code"_L1);
+}
+#endif
 
 /*!
     Executes tests declared in \a testObject. In addition, the private slots
@@ -1876,6 +1902,10 @@ void QTest::qInit(QObject *testObject, int argc, char **argv)
     if (QBenchmarkGlobalData::current->mode() != QBenchmarkGlobalData::CallgrindParentProcess)
 #endif
         QTestLog::startLogging();
+
+#ifdef Q_OS_ANDROID
+    androidExitCodeFile().remove();
+#endif
 }
 
 /*! \internal
@@ -1970,7 +2000,19 @@ int QTest::qRun()
 #endif
     // make sure our exit code is never going above 127
     // since that could wrap and indicate 0 test fails
-    return qMin(QTestLog::failCount(), 127);
+    const int exitCode = qMin(QTestLog::failCount(), 127);
+
+#ifdef Q_OS_ANDROID
+    QFile exitCodeFile = androidExitCodeFile();
+    if (exitCodeFile.open(QIODevice::WriteOnly)) {
+        exitCodeFile.write(qPrintable(QString::number(exitCode)));
+    } else {
+        qWarning("Failed to open %s for writing test exit code: %s",
+                 qPrintable(exitCodeFile.fileName()), qPrintable(exitCodeFile.errorString()));
+    }
+#endif
+
+    return exitCode;
 }
 
 /*! \internal
@@ -2636,9 +2678,6 @@ QTestData &QTest::addRow(const char *format, ...)
 
     Example:
     \snippet code/src_qtestlib_qtestcase.cpp 21
-
-    To add custom types to the testdata, the type must be registered with
-    QMetaType via \l Q_DECLARE_METATYPE().
 
     \note This function can only be used called as part of a test's data
     function that is invoked by the test framework.

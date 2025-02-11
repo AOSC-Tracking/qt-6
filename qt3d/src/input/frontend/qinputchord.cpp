@@ -21,7 +21,7 @@ namespace Qt3DInput {
 /*!
     \qmltype InputChord
     \inqmlmodule Qt3D.Input
-    \inherits QAbstractActionInput
+    \inherits AbstractActionInput
     \nativetype Qt3DInput::QInputChord
     \brief QML frontend for the Qt3DInput::QInputChord C++ class.
 

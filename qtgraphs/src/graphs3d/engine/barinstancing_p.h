@@ -19,7 +19,7 @@
 struct BarItemHolder
 {
     QVector3D position = {.0f, .0f, .0f};
-    QVector3D eulerRotation = {.0f, .0f, .0f};
+    QQuaternion rotation = {1.f, .0f, .0f, .0f};
     QVector3D scale = {.0f, .0f, .0f};
     QPoint coord;
     float heightValue = .0f;

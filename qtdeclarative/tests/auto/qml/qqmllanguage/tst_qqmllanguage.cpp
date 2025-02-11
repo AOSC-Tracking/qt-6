@@ -49,7 +49,7 @@ DEFINE_BOOL_CONFIG_OPTION(qmlCheckTypes, QML_CHECK_TYPES)
 static inline bool isCaseSensitiveFileSystem(const QString &path) {
     Q_UNUSED(path);
 #if defined(Q_OS_DARWIN)
-    return pathconf(path.toLatin1().constData(), _PC_CASE_SENSITIVE);
+    return pathconf(path.toLatin1().constData(), _PC_CASE_SENSITIVE) == 1;
 #elif defined(Q_OS_WIN)
     return false;
 #else
@@ -465,6 +465,10 @@ private slots:
     void optimizedSequenceShift();
 
     void overrideInnerBinding();
+
+    void engineTypeCrossTalk();
+
+    void onlyInlineComponent();
 
 private:
     QQmlEngine engine;
@@ -5201,7 +5205,7 @@ static void beginDeferredOnce(QQmlEnginePrivate *enginePriv,
         state.setCompletePending(true);
 
         state.initCreator(deferData->context->parent(), deferData->compilationUnit,
-                                 QQmlRefPointer<QQmlContextData>());
+                                 QQmlRefPointer<QQmlContextData>(), deferData->inlineComponentName);
 
         enginePriv->inProgressCreations++;
 
@@ -6299,7 +6303,7 @@ class EnumTester : public QObject
 public:
     enum Types
     {
-        FIRST = 0,
+        FIRST = 42,
         SECOND,
         THIRD
     };
@@ -6313,13 +6317,18 @@ void tst_qqmllanguage::qualifiedScopeInCustomParser()
     QQmlEngine engine;
     QQmlComponent component(&engine);
     component.setData("import QtQml.Models 2.12\n"
+                      "import QtQml\n"
                       "import scoped.custom.test 1.0 as BACKEND\n"
                       "ListModel {\n"
+                      "    id: root\n"
+                      "    property int num: -1\n"
                       "    ListElement { text: \"a\"; type: BACKEND.EnumTester.FIRST }\n"
+                      "    Component.onCompleted: {  root.num = root.get(0).type }\n"
                       "}\n", QUrl());
     QVERIFY2(component.isReady(), qPrintable(component.errorString()));
     QScopedPointer<QObject> obj(component.create());
     QVERIFY(!obj.isNull());
+    QCOMPARE(obj->property("num").toInt(), 42);
 }
 
 void tst_qqmllanguage::checkUncreatableNoReason()
@@ -8992,6 +9001,60 @@ void tst_qqmllanguage::overrideInnerBinding()
 
     QCOMPARE(o->property("width").toReal(), 20.0);
     QCOMPARE(o->property("innerWidth").toReal(), 20.0);
+
+    QQmlComponent c2(&e, testFileUrl("Wrap.qml"));
+    QVERIFY2(c2.isReady(), qPrintable(c2.errorString()));
+    o.reset(c2.create());
+    QVERIFY(!o.isNull());
+
+    QFont font = qvariant_cast<QFont>(o->property("font"));
+    QCOMPARE(font.family(), "Ariallll");
+}
+
+class EngineAndObject
+{
+public:
+    EngineAndObject(const QUrl &outer)
+    {
+        QQmlComponent component(&engine, outer);
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        object.reset(component.create());
+        QVERIFY(object);
+        QCOMPARE(object->property("logger"), QVariant::fromValue<int>(12));
+    }
+
+    void wreck(const QUrl &inner) {
+        QQmlComponent component(&engine, inner);
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        object->setProperty("delegate", QVariant::fromValue(&component));
+        QMetaObject::invokeMethod(object.get(), "doInstantiate");
+        QVERIFY(object->property("innerObject").value<QObject *>() != nullptr);
+    }
+
+    QQmlEngine engine;
+    std::unique_ptr<QObject> object;
+};
+
+void tst_qqmllanguage::engineTypeCrossTalk()
+{
+    const QUrl outer("qrc:/StaticTest/data/outerObject.qml");
+    EngineAndObject first(outer);
+    EngineAndObject second(outer);
+
+    const QUrl inner("qrc:/StaticTest/data/InnerObject.qml");
+    first.wreck(inner);
+    second.wreck(inner);
+}
+
+void tst_qqmllanguage::onlyInlineComponent()
+{
+    QQmlEngine e;
+    QQmlComponent c(&e, testFileUrl("onlyInlineComponent.qml"));
+    QVERIFY2(c.isReady(), qPrintable(c.errorString()));
+    QScopedPointer<QObject> o(c.create());
+    QVERIFY(!o.isNull());
+
+    QCOMPARE(o->objectName(), QLatin1String("yes"));
 }
 
 QTEST_MAIN(tst_qqmllanguage)

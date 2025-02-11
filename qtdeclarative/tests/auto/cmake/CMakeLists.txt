@@ -137,8 +137,8 @@ endif()
 if(TARGET Qt::Quick)
     if(NOT CMAKE_CROSSCOMPILING)
         _qt_internal_test_expect_pass(shared_qml_module
-            BINARY "ctest"
-            BINARY_ARGS "-V shared_qml_module"
+            BINARY "${CMAKE_CTEST_COMMAND}"
+            BINARY_ARGS "-V"
         )
         _qt_internal_test_expect_pass(qtquickcompiler BINARY qqc_test)
         if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.21")
@@ -149,6 +149,7 @@ if(TARGET Qt::Quick)
         endif()
         if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.19")
             _qt_internal_test_expect_pass(test_generate_qmlls_ini BINARY tst_generate_qmlls_ini)
+            _qt_internal_test_expect_pass(test_aotstats_integration BINARY tst_aotstats_integration)
         endif()
         _qt_internal_test_expect_pass(
                    test_link_qml_module_without_target

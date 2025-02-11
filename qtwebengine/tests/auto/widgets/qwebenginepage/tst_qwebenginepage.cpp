@@ -41,6 +41,8 @@
 #    include <QStateMachine>
 #endif
 #include <QtGui/QClipboard>
+#include <QtGui/qpa/qplatformintegration.h>
+#include <QtGui/private/qguiapplication_p.h>
 #include <QtTest/QtTest>
 #include <QTextCharFormat>
 #if QT_CONFIG(webengine_webchannel)
@@ -268,6 +270,7 @@ private Q_SLOTS:
     void renderProcessCrashed();
     void renderProcessPid();
     void backgroundColor();
+    void popupOnTransparentBackground();
     void audioMuted();
     void closeContents();
     void isSafeRedirect_data();
@@ -1690,14 +1693,13 @@ public:
 
     void jsGetMedia(const QString &call)
     {
+        m_jsPromiseFulfilled = false;
+        m_jsPromiseRejected = false;
         evaluateJavaScriptSync(this,
-            QStringLiteral(
-                "var promiseFulfilled = false;"
-                "var promiseRejected = false;"
-                "navigator.mediaDevices.%1"
-                ".then(stream => { promiseFulfilled = true})"
-                ".catch(err => { promiseRejected = true})")
-            .arg(call));
+                               QStringLiteral("navigator.mediaDevices.%1"
+                                              ".then(stream => { console.info('fulfilled') })"
+                                              ".catch(err => { console.info('rejected') })")
+                                       .arg(call));
     }
 
     void jsGetUserMedia(const QString &constraints)
@@ -1705,15 +1707,11 @@ public:
         jsGetMedia(QStringLiteral("getUserMedia(%1)").arg(constraints));
     }
 
-    bool jsPromiseFulfilled()
-    {
-        return evaluateJavaScriptSync(this, QStringLiteral("promiseFulfilled")).toBool();
-    }
+    bool jsPromiseSettled() { return m_jsPromiseFulfilled || m_jsPromiseRejected; }
 
-    bool jsPromiseRejected()
-    {
-        return evaluateJavaScriptSync(this, QStringLiteral("promiseRejected")).toBool();
-    }
+    bool jsPromiseFulfilled() { return m_jsPromiseFulfilled; }
+
+    bool jsPromiseRejected() { return m_jsPromiseRejected; }
 
     void rejectPendingRequest()
     {
@@ -1732,6 +1730,10 @@ public:
     bool gotExpectedRequests(bool isDesktopPermission,
                              QWebEnginePermission::PermissionType permissionType) const
     {
+#if !QT_CONFIG(webengine_webrtc)
+        // When webrtc is disabled, these come through as media requests and not desktop requests.
+        isDesktopPermission = false;
+#endif
         if (isDesktopPermission != m_gotDesktopMediaRequest)
             return false;
         if (isDesktopPermission && m_gotEmptyDesktopMediaRequest)
@@ -1766,6 +1768,15 @@ private:
         m_permission.reset();
     }
 
+    void javaScriptConsoleMessage(JavaScriptConsoleMessageLevel, const QString &message, int,
+                                  const QString &) override
+    {
+        m_jsPromiseFulfilled = (message == "fulfilled");
+        m_jsPromiseRejected = (message == "rejected");
+    }
+
+    bool m_jsPromiseFulfilled;
+    bool m_jsPromiseRejected;
     bool m_gotDesktopMediaRequest;
     bool m_gotEmptyDesktopMediaRequest;
     bool m_loadSucceeded;
@@ -1817,7 +1828,7 @@ void tst_QWebEnginePage::getUserMediaRequest()
     page.jsGetMedia(call);
     QTRY_VERIFY(page.gotExpectedRequests(isDesktopPermission, permissionType));
     page.rejectPendingRequest();
-    QTRY_VERIFY(!page.jsPromiseFulfilled() && page.jsPromiseRejected());
+    QTRY_VERIFY(page.jsPromiseRejected());
 
     // 2. Accepting request on C++ side should either fulfill or reject the
     // Promise on JS side. Due to the potential lack of physical media devices
@@ -1827,13 +1838,13 @@ void tst_QWebEnginePage::getUserMediaRequest()
     page.jsGetMedia(call);
     QTRY_VERIFY(page.gotExpectedRequests(isDesktopPermission, permissionType));
     page.acceptPendingRequest();
-    QTRY_VERIFY(page.jsPromiseFulfilled() || page.jsPromiseRejected());
+    QTRY_VERIFY(page.jsPromiseSettled());
 
     // 3. Media permissions are not remembered.
     page.jsGetMedia(call);
     QTRY_VERIFY(page.gotExpectedRequests(isDesktopPermission, permissionType));
     page.acceptPendingRequest();
-    QTRY_VERIFY(page.jsPromiseFulfilled() || page.jsPromiseRejected());
+    QTRY_VERIFY(page.jsPromiseSettled());
 }
 
 void tst_QWebEnginePage::getUserMediaRequestDesktopAudio()
@@ -1847,11 +1858,11 @@ void tst_QWebEnginePage::getUserMediaRequestDesktopAudio()
 
     page.jsGetUserMedia(
         QStringLiteral("{audio: { mandatory: { chromeMediaSource: 'desktop' }}}"));
-    QTRY_VERIFY(!page.jsPromiseFulfilled() && page.jsPromiseRejected());
+    QTRY_VERIFY(page.jsPromiseRejected());
 
     page.jsGetUserMedia(
         QStringLiteral("{audio: { mandatory: { chromeMediaSource: 'desktop' }}, video: true}"));
-    QTRY_VERIFY(!page.jsPromiseFulfilled() && page.jsPromiseRejected());
+    QTRY_VERIFY(page.jsPromiseRejected());
 }
 
 void tst_QWebEnginePage::getUserMediaRequestSettingDisabled()
@@ -1864,7 +1875,7 @@ void tst_QWebEnginePage::getUserMediaRequestSettingDisabled()
     // asking for permission first.
 
     page.jsGetUserMedia(QStringLiteral("{video: { mandatory: { chromeMediaSource: 'desktop' }}}"));
-    QTRY_VERIFY(!page.jsPromiseFulfilled() && page.jsPromiseRejected());
+    QTRY_VERIFY(page.jsPromiseRejected());
 }
 
 // Try to trigger any possible race condition between the UI thread (permission
@@ -1897,7 +1908,7 @@ void tst_QWebEnginePage::getUserMediaRequestDesktopVideoManyPages()
     for (GetUserMediaTestPage &page : pages)
         page.acceptPendingRequest();
     for (GetUserMediaTestPage &page : pages)
-        QTRY_VERIFY(page.jsPromiseFulfilled() || page.jsPromiseRejected());
+        QTRY_VERIFY(page.jsPromiseSettled());
 }
 
 // Try to trigger any possible race condition between the UI or audio/device
@@ -1921,7 +1932,7 @@ void tst_QWebEnginePage::getUserMediaRequestDesktopVideoManyRequests()
         page.jsGetUserMedia(constraints);
         QTRY_VERIFY(page.gotExpectedRequests(/*isDesktopPermission*/ true, permissionType));
         page.acceptPendingRequest();
-        QTRY_VERIFY(page.jsPromiseFulfilled() || page.jsPromiseRejected());
+        QTRY_VERIFY(page.jsPromiseSettled());
     }
 }
 
@@ -4002,18 +4013,22 @@ void tst_QWebEnginePage::clipboardReadWritePermissionInitialState_data()
 {
     QTest::addColumn<bool>("canAccessClipboard");
     QTest::addColumn<bool>("canPaste");
-    QTest::addColumn<QString>("permission");
-    QTest::newRow("access and paste should grant") << true << true << "granted";
-    QTest::newRow("no access should prompt") << false << true << "prompt";
-    QTest::newRow("no paste should prompt") << true << false << "prompt";
-    QTest::newRow("no access or paste should prompt") << false << false << "prompt";
+    QTest::addColumn<QString>("readPermission");
+    QTest::addColumn<QString>("writePermission");
+    QTest::newRow("access and paste should grant both") << true << true << "granted" << "granted";
+    QTest::newRow("paste only should prompt for both") << false << true << "prompt" << "prompt";
+    QTest::newRow("access only should grant for write only")
+            << true << false << "prompt" << "granted";
+    QTest::newRow("no access or paste should prompt for both")
+            << false << false << "prompt" << "prompt";
 }
 
 void tst_QWebEnginePage::clipboardReadWritePermissionInitialState()
 {
     QFETCH(bool, canAccessClipboard);
     QFETCH(bool, canPaste);
-    QFETCH(QString, permission);
+    QFETCH(QString, readPermission);
+    QFETCH(QString, writePermission);
 
     QWebEngineProfile otr;
     otr.setPersistentPermissionsPolicy(QWebEngineProfile::PersistentPermissionsPolicy::AskEveryTime);
@@ -4030,9 +4045,9 @@ void tst_QWebEnginePage::clipboardReadWritePermissionInitialState()
     QTRY_COMPARE(spy.size(), 1);
 
     evaluateJavaScriptSync(&page, clipboardPermissionQuery("readPermission", "clipboard-read"));
-    QCOMPARE(evaluateJavaScriptSync(&page, QStringLiteral("readPermission")), permission);
+    QCOMPARE(evaluateJavaScriptSync(&page, QStringLiteral("readPermission")), readPermission);
     evaluateJavaScriptSync(&page, clipboardPermissionQuery("writePermission", "clipboard-write"));
-    QCOMPARE(evaluateJavaScriptSync(&page, QStringLiteral("writePermission")), permission);
+    QCOMPARE(evaluateJavaScriptSync(&page, QStringLiteral("writePermission")), writePermission);
 }
 
 void tst_QWebEnginePage::clipboardReadWritePermission_data()
@@ -5334,6 +5349,27 @@ void tst_QWebEnginePage::backgroundColor()
 
     QCOMPARE(page->backgroundColor(), Qt::green);
     QTRY_COMPARE(view.grab().toImage().pixelColor(center), Qt::green);
+}
+
+void tst_QWebEnginePage::popupOnTransparentBackground()
+{
+    if (!QGuiApplicationPrivate::platformIntegration()->hasCapability(
+                QPlatformIntegration::WindowActivation))
+        QSKIP("Cannot test on platforms without window activation capability");
+
+    QWebEngineView view;
+    view.resize(640, 480);
+    view.page()->setBackgroundColor(Qt::transparent);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    QSignalSpy spyLoadFinished(&view, SIGNAL(loadFinished(bool)));
+    view.setHtml(QLatin1String("<html><head></head><body><select id='foo' name='meow'>"
+                               "<option>fran</option><option>troz</option>"
+                               "</select></body></html>"));
+    QTRY_COMPARE(spyLoadFinished.size(), 1);
+    makeClick(view.windowHandle(), false, elementCenter(view.page(), "foo"));
+    QPointer<QWidget> popup;
+    QTRY_VERIFY((popup = QApplication::activePopupWidget()));
 }
 
 void tst_QWebEnginePage::audioMuted()

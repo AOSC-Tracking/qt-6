@@ -107,6 +107,8 @@
 
 /*!
  * \qmlproperty Bar3DSeries Bars3D::selectedSeries
+ * \readonly
+ *
  * The selected series or \c null. If \l {GraphsItem3D::selectionMode}{selectionMode} has
  * the \c SelectionMultiSeries flag set, this property holds the series that
  * owns the selected bar.
@@ -328,7 +330,7 @@ void QQuickGraphsBars::setBarSpecs(float thicknessRatio, QSizeF spacing, bool re
 
 void QQuickGraphsBars::setBarThickness(float thicknessRatio)
 {
-    if (thicknessRatio != barThickness()) {
+    if (thicknessRatio != barThickness() && thicknessRatio > 0.f) {
         setBarSpecs(thicknessRatio, barSpacing(), isBarSpacingRelative());
         emit barThicknessChanged(thicknessRatio);
     }
@@ -968,12 +970,12 @@ void QQuickGraphsBars::calculateSceneScalingFactors()
     m_xScaleFactor = m_rowWidth / m_scaleFactor;
     m_zScaleFactor = m_columnDepth / m_scaleFactor;
 
-    if (m_requestedMargin < 0.0f) {
+    if (margin() < 0.0f) {
         m_hBackgroundMargin = 0.0f;
         m_vBackgroundMargin = 0.0f;
     } else {
-        m_hBackgroundMargin = m_requestedMargin;
-        m_vBackgroundMargin = m_requestedMargin;
+        m_hBackgroundMargin = margin();
+        m_vBackgroundMargin = margin();
     }
 
     auto scale = QVector3D(m_xScaleFactor, 1.0f, m_zScaleFactor);
@@ -1222,6 +1224,7 @@ void QQuickGraphsBars::handleItemChanged(qsizetype rowIndex, qsizetype columnInd
     for (ChangeItem item : m_changedItems) {
         if (item.point == candidate && item.series == series) {
             newItem = false;
+            setDataDirty(true);
             break;
         }
     }
@@ -1522,10 +1525,12 @@ void QQuickGraphsBars::updateBarPositions(QBar3DSeries *series)
             float heightValue = updateBarHeightParameters(item);
             float angle = item->rotation();
 
-            if (angle)
-                model->setRotation(QQuaternion::fromAxisAndAngle(upVector, angle));
-            else
-                model->setRotation(QQuaternion());
+            if (angle) {
+                model->setRotation(QQuaternion::fromAxisAndAngle(upVector, angle)
+                                   + series->meshRotation());
+            } else {
+                model->setRotation(QQuaternion() + series->meshRotation());
+            }
 
             if (heightValue < 0.f) {
                 const QVector3D rot = model->eulerRotation();
@@ -1578,9 +1583,20 @@ void QQuickGraphsBars::updateBarPositions(QBar3DSeries *series)
                         float heightValue = updateBarHeightParameters(&item);
                         BarItemHolder *bih = new BarItemHolder();
 
-                        if (heightValue < 0.f) {
-                            const QVector3D eulerRot = barList.at(i)->model->eulerRotation();
-                            bih->eulerRotation = QVector3D(-180.f, eulerRot.y(), eulerRot.z());
+                        if (barList.at(i)->model->eulerRotation() != QVector3D()
+                            || series->meshRotation() != QQuaternion()) {
+                            const QQuaternion rotation =
+                                QQuaternion(barList.at(i)->model->eulerRotation().toVector4D())
+                                + series->meshRotation();
+
+                            bih->rotation = rotation;
+                            if (heightValue < 0.f) {
+                                bih->rotation = QQuaternion(
+                                    QVector3D(-180.f, rotation.y(), rotation.z()).toVector4D());
+                            }
+                        } else {
+                            bih->rotation = QQuaternion::fromEulerAngles(
+                                QVector3D(.0f, item.rotation(), .0f));
                         }
 
                         float colPos = (col + seriesPos) * m_cachedBarSpacing.width();
@@ -2084,6 +2100,8 @@ void QQuickGraphsBars::updateSelectedBar()
                         updateItemLabel(m_selectedBarPos);
                         itemLabel()->setVisible(theme()->labelsVisible());
                         itemLabel()->setProperty("labelText", label);
+                        if (!label.compare(hiddenLabelTag))
+                            itemLabel()->setVisible(false);
                         if (isSliceEnabled())
                             updateSliceItemLabel(label, m_selectedBarPos);
                         break;
@@ -2154,6 +2172,8 @@ void QQuickGraphsBars::updateSliceItemLabel(const QString &label, QVector3D posi
     slicePos.setZ(.1f);
     sliceItemLabel()->setPosition(slicePos);
     sliceItemLabel()->setProperty("labelText", label);
+    if (!label.compare(hiddenLabelTag))
+        sliceItemLabel()->setVisible(false);
     sliceItemLabel()->setEulerRotation(QVector3D(0.0f, 0.0f, 90.0f));
     sliceItemLabel()->setVisible(theme()->labelsVisible());
 }
@@ -2413,7 +2433,7 @@ void QQuickGraphsBars::createBarItemHolders(QBar3DSeries *series,
             selectedBih->selectedBar = false;
             selectedBih->color = series->singleHighlightColor();
             selectedBih->coord = bih->coord;
-            selectedBih->eulerRotation = bih->eulerRotation;
+            selectedBih->rotation = bih->rotation;
             selectedBih->heightValue = bih->heightValue;
             selectedBih->position = bih->position;
             selectedBih->scale = bih->scale;
@@ -2443,6 +2463,8 @@ void QQuickGraphsBars::createBarItemHolders(QBar3DSeries *series,
             updateItemLabel(m_selectedBarPos);
             itemLabel()->setVisible(theme()->labelsVisible());
             itemLabel()->setProperty("labelText", label);
+            if (!label.compare(hiddenLabelTag))
+                itemLabel()->setVisible(false);
             if (isSliceEnabled())
                 updateSliceItemLabel(label, m_selectedBarPos);
             break;
@@ -2465,7 +2487,7 @@ void QQuickGraphsBars::createBarItemHolders(QBar3DSeries *series,
             selectedBih->selectedBar = false;
             selectedBih->color = series->multiHighlightColor();
             selectedBih->coord = bih->coord;
-            selectedBih->eulerRotation = bih->eulerRotation;
+            selectedBih->rotation = bih->rotation;
             selectedBih->heightValue = bih->heightValue;
             selectedBih->position = bih->position;
             selectedBih->scale = bih->scale;
@@ -2496,7 +2518,7 @@ void QQuickGraphsBars::createBarItemHolders(QBar3DSeries *series,
             selectedBih->selectedBar = false;
             selectedBih->color = series->baseColor();
             selectedBih->coord = bih->coord;
-            selectedBih->eulerRotation = bih->eulerRotation;
+            selectedBih->rotation = bih->rotation;
             selectedBih->heightValue = bih->heightValue;
             selectedBih->position = bih->position;
             selectedBih->scale = bih->scale;

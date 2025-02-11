@@ -73,7 +73,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlproperty float PhysicsWorld::typicalLength
+    \qmlproperty real PhysicsWorld::typicalLength
     This property defines the approximate size of objects in the simulation. This is used to
     estimate certain length-related tolerances. Objects much smaller or much larger than this
     size may not behave properly. The default value is \c 100.
@@ -82,7 +82,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlproperty float PhysicsWorld::typicalSpeed
+    \qmlproperty real PhysicsWorld::typicalSpeed
     This property defines the typical magnitude of velocities of objects in simulation. This is used
     to estimate whether a contact should be treated as bouncing or resting based on its impact
     velocity, and a kinetic energy threshold below which the simulation may put objects to sleep.
@@ -94,7 +94,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlproperty float PhysicsWorld::defaultDensity
+    \qmlproperty real PhysicsWorld::defaultDensity
     This property defines the default density of dynamic objects, measured in kilograms per cubic
     unit. This is equal to the weight of a cube with side \c 1.
 
@@ -114,7 +114,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlproperty float PhysicsWorld::minimumTimestep
+    \qmlproperty real PhysicsWorld::minimumTimestep
     This property defines the minimum simulation timestep in milliseconds. The default value is
     \c 16.667 which corresponds to \c 60 frames per second.
 
@@ -122,7 +122,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlproperty float PhysicsWorld::maximumTimestep
+    \qmlproperty real PhysicsWorld::maximumTimestep
     This property defines the maximum simulation timestep in milliseconds. The default value is
     \c 33.333 which corresponds to \c 30 frames per second.
 

@@ -50,13 +50,13 @@
 
 QT_BEGIN_NAMESPACE
 
+Q_DECLARE_LOGGING_CATEGORY(writeOutLog);
+
 namespace QQmlJS {
 // we didn't have enough 'O's to properly name everything...
 namespace Dom {
 
 class Path;
-
-Q_DECLARE_LOGGING_CATEGORY(writeOutLog);
 
 constexpr bool domTypeIsObjWrap(DomType k);
 constexpr bool domTypeIsValueWrap(DomType k);
@@ -880,6 +880,8 @@ public:
     std::weak_ptr<DomEnvironment> environment() const { return m_environment; }
     QString canonicalPath() const { return m_canonicalPath; }
     QString logicalPath() const { return m_logicalPath; }
+    void setCanonicalPath(const QString &canonicalPath) { m_canonicalPath = canonicalPath; }
+    void setLogicalPath(const QString &logicalPath) { m_logicalPath = logicalPath; }
     std::optional<InMemoryContents> content() const { return m_content; }
 
 private:

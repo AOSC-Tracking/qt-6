@@ -85,6 +85,11 @@ QT_NAMESPACE_ALIAS_OBJC_CLASS(QNSViewMouseMoveHelper);
 @interface QNSView (ServicesMenu) <NSServicesMenuRequestor>
 @end
 
+#if QT_MACOS_PLATFORM_SDK_EQUAL_OR_ABOVE(150000)
+@interface QNSView (ContentSelectionInfo) <NSViewContentSelectionInfo>
+@end
+#endif
+
 @interface QT_MANGLE_NAMESPACE(QNSViewMenuHelper) : NSObject
 - (instancetype)initWithView:(QNSView *)theView;
 @end
@@ -123,7 +128,6 @@ QT_NAMESPACE_ALIAS_OBJC_CLASS(QNSViewMenuHelper);
     // Text
     QString m_composingText;
     QPointer<QObject> m_composingFocusObject;
-    NSDraggingContext m_lastSeenContext;
 }
 
 @synthesize colorSpace = m_colorSpace;
@@ -154,7 +158,6 @@ QT_NAMESPACE_ALIAS_OBJC_CLASS(QNSViewMenuHelper);
         m_lastKeyDead = false;
         m_sendKeyEvent = false;
         m_currentlyInterpretedKeyEvent = nil;
-        m_lastSeenContext = NSDraggingContextWithinApplication;
 
         self.menuHelper = [[[QNSViewMenuHelper alloc] initWithView:self] autorelease];
     }

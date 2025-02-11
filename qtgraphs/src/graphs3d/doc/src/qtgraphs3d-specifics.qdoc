@@ -471,6 +471,7 @@
 
 /*!
  * \fn QSurfaceFormat qDefaultSurfaceFormat(bool antialias)
+ * \deprecated [6.9] Use \l {QQuick3D::idealSurfaceFormat()}
  * \relates QtGraphs3D
  *
  * This convenience function can be used to create a custom surface format suitable for use by
@@ -488,7 +489,7 @@
  *
  * // ...
  *
- * Q3DBars *graph = new Q3DBars(qDefaultSurfaceFormat(false));
+ * QSurfaceFormat::setDefaultFormat(qDefaultSurfaceFormat(true));
  * \endcode
  *
  * For example, enable antialiasing for direct rendering modes on QML application:

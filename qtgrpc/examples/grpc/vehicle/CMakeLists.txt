@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
 cmake_minimum_required(VERSION 3.16)
-project(vehicle_cluster LANGUAGES CXX)
+project(vehicle LANGUAGES CXX)
 
 if(NOT DEFINED INSTALL_EXAMPLESDIR)
     set(INSTALL_EXAMPLESDIR "examples")
@@ -20,58 +20,57 @@ find_package(Qt6 REQUIRED COMPONENTS
 
 qt_standard_project_setup()
 
-add_subdirectory(grpc_vehicle_server)
-
-qt_add_executable(vehicle_cluster
+qt_add_executable(vehicle_client
     main.cpp
-    clusterdatamanager.h
-    clusterdatamanager.cpp
+    vehiclemanager.h
+    vehiclemanager.cpp
     vehiclethread.h
     vehiclethread.cpp
-    navithread.h
-    navithread.cpp
+    navigationthread.h
+    navigationthread.cpp
 )
 
 qt_add_protobuf(vehiclelib
     PROTO_FILES
         proto/vehicleservice.proto
-        proto/naviservice.proto
+        proto/navigationservice.proto
 )
 
 qt_add_grpc(vehiclelib CLIENT
     PROTO_FILES
         proto/vehicleservice.proto
-        proto/naviservice.proto
+        proto/navigationservice.proto
 )
 
 target_link_libraries(vehiclelib PRIVATE Qt6::ProtobufWellKnownTypes)
 
-set_target_properties(vehicle_cluster PROPERTIES
+set_target_properties(vehicle_client PROPERTIES
     WIN32_EXECUTABLE TRUE
     MACOSX_BUNDLE TRUE
 )
 
-qt_add_qml_module(vehicle_cluster
+qt_add_qml_module(vehicle_client
     URI qtgrpc.examples.vehicle
     VERSION 1.0
     RESOURCE_PREFIX "/qt/qml"
     QML_FILES
-        "ClusterText.qml"
-        "ClusterProgressBar.qml"
+        "StyledText.qml"
+        "StyledProgressBar.qml"
         "Main.qml"
 )
 
-qt_add_resources(vehicle_cluster
-    "vehicle_cluster"
+qt_add_resources(vehicle_client
+    "resources"
     PREFIX "/"
+    BASE "resources"
     FILES
-        "left.png"
-        "right.png"
-        "forward.png"
-        "fuel_lvl.png"
+        "resources/direction_left.svg"
+        "resources/direction_right.svg"
+        "resources/direction_straight.svg"
+        "resources/fuel_icon.svg"
 )
 
-target_link_libraries(vehicle_cluster PRIVATE
+target_link_libraries(vehicle_client PRIVATE
     Qt6::Core
     Qt6::Quick
     Qt6::Protobuf
@@ -80,8 +79,13 @@ target_link_libraries(vehicle_cluster PRIVATE
     vehiclelib
 )
 
-install(TARGETS vehicle_cluster vehiclelib
+install(TARGETS vehicle_client vehiclelib
     RUNTIME DESTINATION "${INSTALL_EXAMPLEDIR}"
     BUNDLE DESTINATION "${INSTALL_EXAMPLEDIR}"
     LIBRARY DESTINATION "${INSTALL_EXAMPLEDIR}"
 )
+
+add_subdirectory(server)
+if(TARGET vehicle_server)
+    add_dependencies(vehicle_client vehicle_server)
+endif()

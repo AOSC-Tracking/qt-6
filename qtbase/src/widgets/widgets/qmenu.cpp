@@ -409,7 +409,7 @@ void QMenuPrivate::updateActionRects(const QRect &screen) const
           sz = w->sizeHint().expandedTo(w->minimumSize()).expandedTo(w->minimumSizeHint()).boundedTo(w->maximumSize());
         } else {
             //calc what I think the size is..
-            if (action->isSeparator()) {
+            if (action->isSeparator() && action->text().isEmpty()) {
                 sz = QSize(2, 2);
             } else {
                 QString s = action->text();
@@ -2459,7 +2459,14 @@ void QMenuPrivate::popup(const QPoint &p, QAction *atAction, PositionFunction po
         }
     }
 
-    QPoint mouse = QCursor::pos();
+    // do nothing if we don't have a valid size, e.g. when all actions are invisible
+    if (!size.isValid()) {
+        eventLoop = nullptr;
+        syncAction = nullptr;
+        return;
+    }
+
+    const QPoint mouse = QGuiApplicationPrivate::lastCursorPosition.toPoint();
     mousePopupPos = mouse;
     const bool snapToMouse = !causedPopup.widget && (QRect(p.x() - 3, p.y() - 3, 6, 6).contains(mouse));
 
@@ -2505,6 +2512,7 @@ void QMenuPrivate::popup(const QPoint &p, QAction *atAction, PositionFunction po
             }
         }
     }
+
     const int subMenuOffset = q->style()->pixelMetric(QStyle::PM_SubMenuOverlap, nullptr, q);
     QMenu *caused = qobject_cast<QMenu*>(causedPopup.widget);
     if (caused && caused->geometry().width() + menuSizeHint.width() + subMenuOffset < screen.width()) {
@@ -2667,7 +2675,8 @@ QAction *QMenuPrivate::exec(const QPoint &p, QAction *action, PositionFunction p
     popup(p, action, positionFunction);
 
     QPointer<QObject> guard = q;
-    (void) evtLoop.exec();
+    if (eventLoop) // popup might have reset if there was nothing to show
+        (void)eventLoop->exec();
     if (guard.isNull())
         return nullptr;
 
@@ -2892,7 +2901,9 @@ void QMenu::mousePressEvent(QMouseEvent *e)
     // and mouse clicks on second screen, e->pos() is QPoint(0,0) and the menu doesn't hide. This trick makes
     // possible to hide the menu when mouse clicks on another screen (e->screenPos() returns correct value).
     // Only when mouse clicks in QPoint(0,0) on second screen, the menu doesn't hide.
-    if ((e->position().toPoint().isNull() && !e->globalPosition().isNull()) || !rect().contains(e->position().toPoint())) {
+    if ((e->position().toPoint().isNull() && !e->globalPosition().isNull())
+        || !rect().contains(e->position().toPoint())
+        || !d->hasMouseMoved(e->globalPosition().toPoint())) {
          if (d->noReplayFor
              && QRect(d->noReplayFor->mapToGlobal(QPoint()), d->noReplayFor->size()).contains(e->globalPosition().toPoint()))
              setAttribute(Qt::WA_NoMouseReplay);
@@ -2923,8 +2934,15 @@ void QMenu::mouseReleaseEvent(QMouseEvent *e)
 
     QMenuPrivate::mouseDown = nullptr;
     d->setSyncAction();
-    QAction *action = d->actionAt(e->position().toPoint());
 
+    if (!d->hasMouseMoved(e->globalPosition().toPoint())) {
+        // We don't want to trigger a menu item if the mouse hasn't moved
+        // since the popup was opened. Instead we want to close the menu.
+        d->hideUpToMenuBar();
+        return;
+    }
+
+    QAction *action = d->actionAt(e->position().toPoint());
     if (action && action == d->currentAction) {
         if (!action->menu()) {
 #if defined(Q_OS_WIN)
@@ -2933,7 +2951,7 @@ void QMenu::mouseReleaseEvent(QMouseEvent *e)
 #endif
                 d->activateAction(action, QAction::Trigger);
         }
-    } else if ((!action || action->isEnabled()) && d->hasMouseMoved(e->globalPosition().toPoint())) {
+    } else if (!action || action->isEnabled()) {
         d->hideUpToMenuBar();
     }
 }
@@ -3345,8 +3363,11 @@ void QMenu::keyPressEvent(QKeyEvent *e)
     }
 
     if (!key_consumed) {                                // send to menu bar
-        if ((!e->modifiers() || e->modifiers() == Qt::AltModifier || e->modifiers() == Qt::ShiftModifier) &&
-           e->text().size()==1) {
+        const Qt::KeyboardModifiers modifiers = e->modifiers();
+        if ((!modifiers || modifiers == Qt::AltModifier || modifiers == Qt::ShiftModifier
+             || modifiers == Qt::KeypadModifier
+             || modifiers == (Qt::KeypadModifier | Qt::AltModifier))
+            && e->text().size() == 1) {
             bool activateAction = false;
             QAction *nextAction = nullptr;
             if (style()->styleHint(QStyle::SH_Menu_KeyboardSearch, nullptr, this) && !e->modifiers()) {
@@ -3625,7 +3646,8 @@ void QMenu::internalDelayedPopup()
 
     int subMenuOffset = style()->pixelMetric(QStyle::PM_SubMenuOverlap, nullptr, this);
     const QRect actionRect(d->actionRect(d->currentAction));
-    QPoint subMenuPos(mapToGlobal(QPoint(actionRect.right() + subMenuOffset + 1, actionRect.top())));
+    const auto ofs = isRightToLeft() ? (-subMenuOffset - actionRect.width() + 1) : subMenuOffset;
+    QPoint subMenuPos(mapToGlobal(QPoint(actionRect.right() + ofs, actionRect.top())));
     if (subMenuPos.x() > screen.right())
         subMenuPos.setX(geometry().left());
 

@@ -13,7 +13,6 @@
 #include "qsurface3dseries_p.h"
 #include "qsurfacedataproxy_p.h"
 #include "qvalue3daxis_p.h"
-#include "surfaceselectioninstancing_p.h"
 
 #include <QtQuick3D/private/qquick3dcustommaterial_p.h>
 #include <QtQuick3D/private/qquick3ddefaultmaterial_p.h>
@@ -76,6 +75,8 @@ QT_BEGIN_NAMESPACE
 
 /*!
  * \qmlproperty Surface3DSeries Surface3D::selectedSeries
+ * \readonly
+ *
  * The selected series or null. If \l {GraphsItem3D::selectionMode}{selectionMode}
  * has the \c MultiSeries flag set, this property holds the series
  * which owns the selected point.
@@ -164,8 +165,6 @@ QQuickGraphsSurface::~QQuickGraphsSurface()
     const QMutexLocker locker2(mutex());
     for (const auto &model : std::as_const(m_model))
         delete model;
-    delete m_instancing;
-    delete m_sliceInstancing;
 }
 
 void QQuickGraphsSurface::setAxisX(QValue3DAxis *axis)
@@ -222,6 +221,139 @@ void QQuickGraphsSurface::handleWireframeColorChanged()
             auto gridMaterial = static_cast<QQuick3DPrincipledMaterial *>(gridMaterialRef.at(0));
             gridMaterial->setBaseColor(gridColor);
         }
+    }
+}
+
+void QQuickGraphsSurface::handleMeshTypeChanged(QAbstract3DSeries::Mesh mesh)
+{
+    QSurface3DSeries *sender = qobject_cast<QSurface3DSeries *>(QObject::sender());
+    changePointerMeshTypeForSeries(mesh, sender);
+    if (sliceView())
+        changeSlicePointerMeshTypeForSeries(mesh, sender);
+}
+
+void QQuickGraphsSurface::changePointerMeshTypeForSeries(QAbstract3DSeries::Mesh mesh,
+                                                         QSurface3DSeries *series)
+{
+    changePointerForSeries(getMeshFileName(mesh, series), series);
+}
+
+void QQuickGraphsSurface::changeSlicePointerMeshTypeForSeries(QAbstract3DSeries::Mesh mesh,
+                                                              QSurface3DSeries *series)
+{
+    changeSlicePointerForSeries(getMeshFileName(mesh, series), series);
+}
+
+QString QQuickGraphsSurface::getMeshFileName(QAbstract3DSeries::Mesh mesh,
+                                             QSurface3DSeries *series) const
+{
+    QString fileName = {};
+    switch (mesh) {
+    case QAbstract3DSeries::Mesh::Sphere:
+        fileName = QStringLiteral("defaultMeshes/sphereMesh");
+        break;
+    case QAbstract3DSeries::Mesh::Bar:
+    case QAbstract3DSeries::Mesh::Cube:
+        fileName = QStringLiteral("defaultMeshes/barMesh");
+        break;
+    case QAbstract3DSeries::Mesh::Pyramid:
+        fileName = QStringLiteral("defaultMeshes/pyramidMesh");
+        break;
+    case QAbstract3DSeries::Mesh::Cone:
+        fileName = QStringLiteral("defaultMeshes/coneMesh");
+        break;
+    case QAbstract3DSeries::Mesh::Cylinder:
+        fileName = QStringLiteral("defaultMeshes/cylinderMesh");
+        break;
+    case QAbstract3DSeries::Mesh::BevelBar:
+    case QAbstract3DSeries::Mesh::BevelCube:
+        fileName = QStringLiteral("defaultMeshes/bevelBarMesh");
+        break;
+    case QAbstract3DSeries::Mesh::UserDefined:
+        fileName = series->userDefinedMesh();
+        break;
+    default:
+        fileName = QStringLiteral("defaultMeshes/sphereMesh");
+    }
+    return fileName;
+}
+
+void QQuickGraphsSurface::handlePointerChanged(const QString &filename)
+{
+    QSurface3DSeries *sender = qobject_cast<QSurface3DSeries *>(QObject::sender());
+    changePointerForSeries(filename, sender);
+    changeSlicePointerForSeries(filename, sender);
+}
+
+void QQuickGraphsSurface::changePointerForSeries(const QString &filename, QSurface3DSeries *series)
+{
+    if (!filename.isEmpty()) {
+        // Selection pointer
+        QQuick3DNode *parent = rootNode();
+
+        QQuick3DPrincipledMaterial *pointerMaterial = nullptr;
+        QQuick3DModel *pointer = m_selectionPointers.value(series);
+
+        if (pointer) {
+            // Retrieve the already created material
+            QQmlListReference materialRef(pointer, "materials");
+            pointerMaterial = qobject_cast<QQuick3DPrincipledMaterial *>(materialRef.at(0));
+            // Delete old model
+            delete pointer;
+        } else {
+            // No pointer yet; create material for it
+            pointerMaterial = new QQuick3DPrincipledMaterial();
+            pointerMaterial->setParent(this);
+            pointerMaterial->setBaseColor(theme()->singleHighlightColor());
+        }
+        // Create new pointer
+        pointer = new QQuick3DModel();
+        pointer->setParent(parent);
+        pointer->setParentItem(parent);
+        pointer->setSource(QUrl(filename));
+        pointer->setScale(QVector3D(0.05f, 0.05f, 0.05f));
+        // Insert to the map
+        m_selectionPointers.insert(series, pointer);
+        // Set material
+        QQmlListReference materialRef(pointer, "materials");
+        materialRef.append(pointerMaterial);
+    }
+}
+
+void QQuickGraphsSurface::changeSlicePointerForSeries(const QString &filename,
+                                                      QSurface3DSeries *series)
+{
+    if (!filename.isEmpty()) {
+        // Slice selection pointer
+        QQuick3DNode *sliceParent = sliceView()->scene();
+
+        QQuick3DPrincipledMaterial *slicePointerMaterial = nullptr;
+        QQuick3DModel *slicePointer = m_sliceSelectionPointers.value(series);
+
+        if (slicePointer) {
+            // Retrieve the already created material
+            QQmlListReference sliceMaterialRef(slicePointer, "materials");
+            slicePointerMaterial = qobject_cast<QQuick3DPrincipledMaterial *>(
+                sliceMaterialRef.at(0));
+            // Delete old model
+            delete slicePointer;
+        } else {
+            // No pointer yet; create material for it
+            slicePointerMaterial = new QQuick3DPrincipledMaterial();
+            slicePointerMaterial->setParent(sliceParent);
+            slicePointerMaterial->setBaseColor(theme()->singleHighlightColor());
+        }
+        // Create new pointer
+        slicePointer = new QQuick3DModel();
+        slicePointer->setParent(sliceParent);
+        slicePointer->setParentItem(sliceParent);
+        slicePointer->setSource(QUrl(filename));
+        slicePointer->setScale(QVector3D(0.05f, 0.05f, 0.05f));
+        // Insert to the map
+        m_sliceSelectionPointers.insert(series, slicePointer);
+        // Set material
+        QQmlListReference sliceMaterialRef(slicePointer, "materials");
+        sliceMaterialRef.append(slicePointerMaterial);
     }
 }
 
@@ -392,7 +524,8 @@ void QQuickGraphsSurface::handleArrayReset()
         m_changedSeriesList.append(series);
 
     // Clear selection unless still valid
-    setSelectedPoint(m_selectedPoint, m_selectedSeries, false);
+    if (m_selectedPoint != invalidSelectionPosition())
+        setSelectedPoint(m_selectedPoint, m_selectedSeries, false);
     series->d_func()->markItemLabelDirty();
     emitNeedRender();
 }
@@ -806,6 +939,8 @@ void QQuickGraphsSurface::removeSeries(QSurface3DSeries *series)
 void QQuickGraphsSurface::clearSelection()
 {
     setSelectedPoint(invalidSelectionPosition(), 0, false);
+    for (auto model : m_model)
+        model->picked = false;
 }
 
 void QQuickGraphsSurface::handleAxisXChanged(QAbstract3DAxis *axis)
@@ -827,23 +962,10 @@ void QQuickGraphsSurface::componentComplete()
 {
     QQuickGraphsItem::componentComplete();
 
-    for (auto series : surfaceSeriesList())
+    for (auto series : surfaceSeriesList()) {
         addModel(series);
-
-    QQuick3DNode *parent = rootNode();
-
-    m_selectionPointer = new QQuick3DModel();
-    m_selectionPointer->setParent(parent);
-    m_selectionPointer->setParentItem(parent);
-    m_selectionPointer->setSource(QUrl(QStringLiteral("#Sphere")));
-    auto pointerMaterial = new QQuick3DPrincipledMaterial();
-    pointerMaterial->setParent(this);
-    pointerMaterial->setBaseColor(theme()->singleHighlightColor());
-    QQmlListReference materialRef(m_selectionPointer, "materials");
-    materialRef.append(pointerMaterial);
-    m_instancing = new SurfaceSelectionInstancing();
-    m_instancing->setScale(QVector3D(0.001f, 0.001f, 0.001f));
-    m_selectionPointer->setInstancing(m_instancing);
+        changePointerMeshTypeForSeries(series->mesh(), series);
+    }
 
     graphsInputHandler()->setGraphsItem(this);
 }
@@ -1313,18 +1435,22 @@ void QQuickGraphsSurface::updateModel(SurfaceModel *model)
                 vertex.uv = QVector2D(j * uvX, i * uvY);
                 vertex.coord = QPoint(j, i);
                 model->vertices.push_back(vertex);
-                if (boundsMin.isNull())
-                    boundsMin = pos;
-                else
-                    boundsMin = QVector3D(qMin(boundsMin.x(), pos.x()),
-                                          qMin(boundsMin.y(), pos.y()),
-                                          qMin(boundsMin.z(), pos.z()));
-                if (boundsMax.isNull())
+                if (!qIsNaN(pos.y()) && !qIsInf(pos.y())) {
+                    if (boundsMin.isNull()) {
+                        boundsMin = pos;
+                    } else {
+                        boundsMin = QVector3D(qMin(boundsMin.x(), pos.x()),
+                                              qMin(boundsMin.y(), pos.y()),
+                                              qMin(boundsMin.z(), pos.z()));
+                    }
+                }
+                if (boundsMax.isNull()) {
                     boundsMax = pos;
-                else
+                } else {
                     boundsMax = QVector3D(qMax(boundsMax.x(), pos.x()),
                                           qMax(boundsMax.y(), pos.y()),
                                           qMax(boundsMax.z(), pos.z()));
+                }
             }
         }
         model->boundsMin = boundsMin;
@@ -1444,10 +1570,11 @@ void QQuickGraphsSurface::updateProxyModel(SurfaceModel *model)
             vertex.uv = QVector2D(j * uvX, i * uvY);
             vertex.coord = QPoint(i, j);
             proxyVerts.push_back(vertex);
-
-            boundsMin = QVector3D(qMin(boundsMin.x(), pos.x()),
-                                  qMin(boundsMin.y(), pos.y()),
-                                  qMin(boundsMin.z(), pos.z()));
+            if (!qIsNaN(pos.y()) && !qIsInf(pos.y())) {
+                boundsMin = QVector3D(qMin(boundsMin.x(), pos.x()),
+                                      qMin(boundsMin.y(), pos.y()),
+                                      qMin(boundsMin.z(), pos.z()));
+            }
             boundsMax = QVector3D(qMax(boundsMax.x(), pos.x()),
                                   qMax(boundsMax.y(), pos.y()),
                                   qMax(boundsMax.z(), pos.z()));
@@ -1948,10 +2075,18 @@ bool QQuickGraphsSurface::doPicking(QPointF position)
         if (!pickResult.isEmpty()) {
             for (auto picked : pickResult) {
                 bool inBounds = qAbs(picked.position().y()) < scaleWithBackground().y();
-                if (inBounds && picked.objectHit()
-                    && picked.objectHit()->objectName().contains(QStringLiteral("ProxyModel"))) {
+                if (inBounds && picked.objectHit()) {
                     pickedPos = picked.position();
-                    pickedModel = qobject_cast<QQuick3DModel *>(picked.objectHit()->parentItem());
+                    if (picked.objectHit()->objectName().contains(QStringLiteral("ProxyModel"))) {
+                        pickedModel = qobject_cast<QQuick3DModel *>(
+                            picked.objectHit()->parentItem());
+                    } else if (picked.objectHit()->objectName().contains(
+                                   QStringLiteral("SurfaceModel"))) {
+                        pickedModel = qobject_cast<QQuick3DModel *>(picked.objectHit());
+                    } else {
+                        clearSelection();
+                        continue;
+                    }
                     bool visible = false;
                     for (auto model : m_model) {
                         if (model->model == pickedModel)
@@ -1961,8 +2096,6 @@ bool QQuickGraphsSurface::doPicking(QPointF position)
                         break;
                 } else {
                     clearSelection();
-                    for (auto model : m_model)
-                        model->picked = false;
                 }
             }
 
@@ -2010,9 +2143,17 @@ bool QQuickGraphsSurface::doPicking(QPointF position)
 void QQuickGraphsSurface::updateSelectedPoint()
 {
     bool labelVisible = false;
-    m_instancing->resetPositions();
-    if (sliceView() && sliceView()->isVisible())
-        m_sliceInstancing->resetPositions();
+
+    auto list = surfaceSeriesList();
+    for (auto series : list) {
+        // If the pointer and its instancing do not exist yet (as will happen in widget case),
+        // we must create them
+        if (!m_selectionPointers.value(series))
+            changePointerMeshTypeForSeries(series->mesh(), series);
+        m_selectionPointers.value(series)->setVisible(false);
+        if (sliceView() && sliceView()->isVisible())
+            m_sliceSelectionPointers.value(series)->setVisible(false);
+    }
 
     QPointF worldCoord;
     for (auto model : m_model) {
@@ -2043,13 +2184,15 @@ void QQuickGraphsSurface::updateSelectedPoint()
         selectedVertex.coord = model->selectedVertex.coord;
         if (model->series->isVisible() && !selectedVertex.position.isNull()
             && selectionMode().testFlag(QtGraphs3D::SelectionFlag::Item)) {
-            m_instancing->addPosition(selectedVertex.position);
+            m_selectionPointers.value(model->series)->setPosition(selectedVertex.position);
+            m_selectionPointers.value(model->series)->setVisible(true);
             QVector3D slicePosition = getNormalizedVertex(dataPos, false, false);
             if (sliceView() && sliceView()->isVisible()) {
                 if (selectionMode().testFlag(QtGraphs3D::SelectionFlag::Column))
                     slicePosition.setX(-slicePosition.z());
                 slicePosition.setZ(.0f);
-                m_sliceInstancing->addPosition(slicePosition);
+                m_sliceSelectionPointers.value(model->series)->setPosition(slicePosition);
+                m_sliceSelectionPointers.value(model->series)->setVisible(true);
             }
             if (model->picked) {
                 QVector3D labelPosition = selectedVertex.position;
@@ -2058,7 +2201,9 @@ void QQuickGraphsSurface::updateSelectedPoint()
 
                 updateItemLabel(labelPosition);
                 itemLabel()->setProperty("labelText", label);
-                labelVisible = true;
+                if (!label.compare(hiddenLabelTag))
+                    itemLabel()->setVisible(false);
+                labelVisible = model->series->isItemLabelVisible();
                 if (sliceView() && sliceView()->isVisible())
                     updateSliceItemLabel(label, slicePosition);
             }
@@ -2147,6 +2292,7 @@ void QQuickGraphsSurface::addModel(QSurface3DSeries *series)
                                0,
                                QQuick3DGeometry::Attribute::U32Type);
     gridModel->setGeometry(gridGeometry);
+    gridModel->setCastsShadows(false);
     QQmlListReference gridMaterialRef(gridModel, "materials");
     auto gridMaterial = createQmlCustomMaterial(QStringLiteral(":/materials/GridSurfaceMaterial"));
     gridMaterial->setParent(gridModel);
@@ -2170,7 +2316,14 @@ void QQuickGraphsSurface::addModel(QSurface3DSeries *series)
             &QSurface3DSeries::wireframeColorChanged,
             this,
             &QQuickGraphsSurface::handleWireframeColorChanged);
-
+    connect(series,
+            &QSurface3DSeries::userDefinedMeshChanged,
+            this,
+            &QQuickGraphsSurface::handlePointerChanged);
+    connect(series,
+            &QSurface3DSeries::meshChanged,
+            this,
+            &QQuickGraphsSurface::handleMeshTypeChanged);
     if (sliceView())
         addSliceModel(surfaceModel);
 }
@@ -2180,24 +2333,10 @@ void QQuickGraphsSurface::createSliceView()
     setSliceOrthoProjection(true);
     QQuickGraphsItem::createSliceView();
 
-    for (auto surfaceModel : m_model)
+    for (auto surfaceModel : m_model) {
         addSliceModel(surfaceModel);
-
-    QQuick3DViewport *sliceParent = sliceView();
-
-    m_sliceSelectionPointer = new QQuick3DModel();
-    m_sliceSelectionPointer->setParent(sliceParent->scene());
-    m_sliceSelectionPointer->setParentItem(sliceParent->scene());
-    m_sliceSelectionPointer->setSource(QUrl(QStringLiteral("#Sphere")));
-    QQuick3DPrincipledMaterial *pointerMaterial = new QQuick3DPrincipledMaterial();
-    pointerMaterial->setParent(m_sliceSelectionPointer);
-    pointerMaterial->setBaseColor(theme()->singleHighlightColor());
-    QQmlListReference sliceMaterialRef(m_sliceSelectionPointer, "materials");
-    sliceMaterialRef.append(pointerMaterial);
-    m_sliceInstancing = new SurfaceSelectionInstancing();
-    m_sliceInstancing->setScale(QVector3D(0.001f, 0.001f, 0.001f));
-    m_sliceSelectionPointer->setInstancing(m_sliceInstancing);
-    m_sliceInstancing->setColor(theme()->singleHighlightColor());
+        changeSlicePointerMeshTypeForSeries(surfaceModel->series->mesh(), surfaceModel->series);
+    }
 }
 
 void QQuickGraphsSurface::updateSliceItemLabel(const QString &label, QVector3D position)
@@ -2215,6 +2354,8 @@ void QQuickGraphsSurface::updateSliceItemLabel(const QString &label, QVector3D p
     labelPosition.setY(position.y() + .05f);
     sliceItemLabel()->setPosition(labelPosition);
     sliceItemLabel()->setProperty("labelText", label);
+    if (!label.compare(hiddenLabelTag))
+        sliceItemLabel()->setVisible(false);
 }
 
 void QQuickGraphsSurface::updateSelectionMode(QtGraphs3D::SelectionFlags mode)
@@ -2305,9 +2446,18 @@ void QQuickGraphsSurface::addSliceModel(SurfaceModel *model)
 
 void QQuickGraphsSurface::updateSingleHighlightColor()
 {
-    m_instancing->setColor(theme()->singleHighlightColor());
-    if (sliceView())
-        m_sliceInstancing->setColor(theme()->singleHighlightColor());
+    auto list = surfaceSeriesList();
+    for (auto series : list) {
+        QQmlListReference pMaterialRef(m_selectionPointers.value(series), "materials");
+        auto pmat = qobject_cast<QQuick3DPrincipledMaterial *>(pMaterialRef.at(0));
+        if (pmat)
+            pmat->setBaseColor(theme()->singleHighlightColor());
+        if (sliceView()) {
+            QQmlListReference spMaterialRef(m_sliceSelectionPointers.value(series), "materials");
+            auto spmat = qobject_cast<QQuick3DPrincipledMaterial *>(spMaterialRef.at(0));
+            spmat->setBaseColor(theme()->singleHighlightColor());
+        }
+    }
 }
 
 void QQuickGraphsSurface::updateLightStrength()

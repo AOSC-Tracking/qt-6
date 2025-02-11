@@ -8,6 +8,12 @@
 */
 
 /*!
+    \module QtGraphsWidgets
+    \qtcmakepackage GraphsWidgets
+    \qtvariable graphswidgets
+*/
+
+/*!
     \title Qt Graphs C++ Classes
     \group graphs
 

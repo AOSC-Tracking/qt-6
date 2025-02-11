@@ -123,6 +123,23 @@ Item {
                 // If you want to check with series colors, uncomment these
                 // baseGradient: customGradient
                 // baseColor: barColor.color
+                columnLabels: [
+                    "col 1",
+                    "col 2",
+                    "col 3",
+                    "col 4",
+                    "col 5",
+                    "col 6",
+                ]
+                rowLabels: [
+                    "row 1",
+                    "row 2",
+                    "row 3",
+                    "row 4",
+                    "row 5",
+                    "row 6",
+                ]
+
                 ItemModelBarDataProxy {
                     id: barProxy
                     itemModel: ListModel {

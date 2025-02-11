@@ -848,16 +848,16 @@ static void removeOldBinding(QObject *object, QQmlPropertyIndex index, QQmlPrope
         oldBinding = oldBinding->nextBinding();
     }
 
-    if (valueTypeIndex != -1
-            && oldBinding
-            && oldBinding->kind() == QQmlAbstractBinding::ValueTypeProxy) {
-        oldBinding = static_cast<QQmlValueTypeProxyBinding *>(oldBinding.data())->binding(index);
-    }
-
     if (!oldBinding) {
         // Clear the binding bit so that the binding doesn't appear later for any reason
         data->clearBindingBit(coreIndex);
         return;
+    }
+
+    if (valueTypeIndex != -1 && oldBinding->kind() == QQmlAbstractBinding::ValueTypeProxy) {
+        oldBinding = static_cast<QQmlValueTypeProxyBinding *>(oldBinding.data())->binding(index);
+        if (!oldBinding)
+           return;
     }
 
     if (!(flags & QQmlPropertyPrivate::DontEnable))
@@ -1369,7 +1369,7 @@ struct ConvertAndAssignResult {
 static ConvertAndAssignResult tryConvertAndAssign(
         QObject *object, const QQmlPropertyData &property, const QVariant &value,
         QQmlPropertyData::WriteFlags flags, QMetaType propertyMetaType, QMetaType variantMetaType,
-        bool isUrl) {
+        bool isUrl, QQmlEnginePrivate *enginePriv) {
 
     if (isUrl
             || variantMetaType == QMetaType::fromType<QString>()
@@ -1423,7 +1423,8 @@ static ConvertAndAssignResult tryConvertAndAssign(
     }
     }
 
-    QVariant converted = QQmlValueTypeProvider::createValueType(value, propertyMetaType);
+    QVariant converted = QQmlValueTypeProvider::createValueType(
+            value, propertyMetaType, enginePriv ? enginePriv->v4engine() : nullptr);
     if (!converted.isValid()) {
         converted = QVariant(propertyMetaType);
         if (!QMetaType::convert(value.metaType(), value.constData(),
@@ -1474,7 +1475,8 @@ static bool tryAssignBinding(
     if (!f || !f->isBinding())
         return false;
 
-    QV4::QObjectWrapper::setProperty(f->engine(), object, &property, f->asReturnedValue());
+    // fromReturnedValue is safe! f is stored in the QJSValue, so htere's already a persistent reference to it
+    QV4::QObjectWrapper::setProperty(f->engine(), object, &property, QV4::Value::fromReturnedValue(f->asReturnedValue()));
     return true;
 }
 
@@ -1542,7 +1544,8 @@ bool QQmlPropertyPrivate::write(
             return false;
         }
     } else if (ConvertAndAssignResult result = tryConvertAndAssign(
-                   object, property, value, flags, propertyMetaType, variantMetaType, isUrl)) {
+                       object, property, value, flags, propertyMetaType, variantMetaType, isUrl,
+                       enginePriv)) {
         return result.couldWrite;
     } else if (propertyMetaType == QMetaType::fromType<QVariant>()) {
         return property.writeProperty(object, const_cast<QVariant *>(&value), flags);

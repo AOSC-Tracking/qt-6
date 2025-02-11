@@ -116,12 +116,12 @@ static QShader vfcGetShader(const QString &name)
     return shader;
 }
 
-static void rasterTransform(QImage &image, NormalizedVideoTransformation transformation)
+static void rasterTransform(QImage &image, VideoTransformation transformation)
 {
     QTransform t;
     if (transformation.rotation != QtVideo::Rotation::None)
         t.rotate(qreal(transformation.rotation));
-    if (transformation.xMirrorredAfterRotation)
+    if (transformation.mirrorredHorizontallyAfterRotation)
         t.scale(-1., 1);
     if (!t.isIdentity())
         image = image.transformed(t);
@@ -139,8 +139,9 @@ static QRhi *initializeRHI(QRhi *videoFrameRhi)
         return g_state.localData().rhi;
 
     QRhi::Implementation backend = videoFrameRhi ? videoFrameRhi->backend() : QRhi::Null;
+    const QPlatformIntegration *qpa = QGuiApplicationPrivate::platformIntegration();
 
-    if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::RhiBasedRendering)) {
+    if (qpa && qpa->hasCapability(QPlatformIntegration::RhiBasedRendering)) {
 
 #if defined(Q_OS_MACOS) || defined(Q_OS_IOS)
         if (backend == QRhi::Metal || backend == QRhi::Null) {
@@ -158,8 +159,8 @@ static QRhi *initializeRHI(QRhi *videoFrameRhi)
 
 #if QT_CONFIG(opengl)
         if (!g_state.localData().rhi && (backend == QRhi::OpenGLES2 || backend == QRhi::Null)) {
-            if (QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::OpenGL)
-                    && QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::RasterGLSurface)
+            if (qpa->hasCapability(QPlatformIntegration::OpenGL)
+                    && qpa->hasCapability(QPlatformIntegration::RasterGLSurface)
                     && !QCoreApplication::testAttribute(Qt::AA_ForceRasterWidgets)) {
 
                 g_state.localData().fallbackSurface = QRhiGles2InitParams::newFallbackSurface();
@@ -198,7 +199,7 @@ static bool updateTextures(QRhi *rhi,
                            std::unique_ptr<QRhiGraphicsPipeline> &graphicsPipeline,
                            std::unique_ptr<QRhiRenderPassDescriptor> &renderPass,
                            QVideoFrame &frame,
-                           const std::unique_ptr<QVideoFrameTextures> &videoFrameTextures)
+                           const QVideoFrameTexturesUPtr &videoFrameTextures)
 {
     auto format = frame.surfaceFormat();
     auto pixelFormat = format.pixelFormat();
@@ -222,7 +223,7 @@ static bool updateTextures(QRhi *rhi,
     if (!vs.isValid())
         return false;
 
-    QShader fs = vfcGetShader(QVideoTextureHelper::fragmentShaderFileName(format));
+    QShader fs = vfcGetShader(QVideoTextureHelper::fragmentShaderFileName(format, rhi));
     if (!fs.isValid())
         return false;
 
@@ -248,7 +249,7 @@ static bool updateTextures(QRhi *rhi,
     return true;
 }
 
-static QImage convertJPEG(const QVideoFrame &frame, const NormalizedVideoTransformation &transform)
+static QImage convertJPEG(const QVideoFrame &frame, const VideoTransformation &transform)
 {
     QVideoFrame varFrame = frame;
     if (!varFrame.map(QVideoFrame::ReadOnly)) {
@@ -262,7 +263,7 @@ static QImage convertJPEG(const QVideoFrame &frame, const NormalizedVideoTransfo
     return image;
 }
 
-static QImage convertCPU(const QVideoFrame &frame, const NormalizedVideoTransformation &transform)
+static QImage convertCPU(const QVideoFrame &frame, const VideoTransformation &transform)
 {
     VideoFrameConvertFunc convert = qConverterForFormat(frame.pixelFormat());
     if (!convert) {
@@ -290,8 +291,8 @@ QImage qImageFromVideoFrame(const QVideoFrame &frame, bool forceCpu)
                                 forceCpu);
 }
 
-QImage qImageFromVideoFrame(const QVideoFrame &frame,
-                            const NormalizedVideoTransformation &transformation, bool forceCpu)
+QImage qImageFromVideoFrame(const QVideoFrame &frame, const VideoTransformation &transformation,
+                            bool forceCpu)
 {
 #ifdef Q_OS_DARWIN
     QMacAutoReleasePool releasePool;
@@ -323,7 +324,7 @@ QImage qImageFromVideoFrame(const QVideoFrame &frame,
     if (QHwVideoBuffer *buffer = QVideoFramePrivate::hwBuffer(frame))
         rhi = buffer->rhi();
 
-    if (!rhi || rhi->thread() != QThread::currentThread())
+    if (!rhi || !rhi->thread()->isCurrentThread())
         rhi = initializeRHI(rhi);
 
     if (!rhi || rhi->isRecordingFrame())
@@ -364,11 +365,12 @@ QImage qImageFromVideoFrame(const QVideoFrame &frame,
     }
 
     QRhiResourceUpdateBatch *rub = rhi->nextResourceUpdateBatch();
+    Q_ASSERT(rub);
 
     rub->uploadStaticBuffer(vertexBuffer.get(), g_quad);
 
     QVideoFrame frameTmp = frame;
-    auto videoFrameTextures = QVideoTextureHelper::createTextures(frameTmp, rhi, rub, {});
+    auto videoFrameTextures = QVideoTextureHelper::createTextures(frameTmp, *rhi, *rub, {});
     if (!videoFrameTextures) {
         qCDebug(qLcVideoFrameConverter) << "Failed obtain textures. Using CPU conversion.";
         return convertCPU(frame, transformation);
@@ -380,7 +382,7 @@ QImage qImageFromVideoFrame(const QVideoFrame &frame,
         return convertCPU(frame, transformation);
     }
 
-    float xScale = transformation.xMirrorredAfterRotation ? -1.0 : 1.0;
+    float xScale = transformation.mirrorredHorizontallyAfterRotation ? -1.0 : 1.0;
     float yScale = 1.f;
 
     if (rhi->isYUpInFramebuffer())
@@ -399,7 +401,7 @@ QImage qImageFromVideoFrame(const QVideoFrame &frame,
     cb->setViewport({ 0, 0, float(frameSize.width()), float(frameSize.height()) });
     cb->setShaderResources(shaderResourceBindings.get());
 
-    const quint32 vertexOffset = quint32(sizeof(float)) * 16 * transformation.rotationIndex;
+    const quint32 vertexOffset = quint32(sizeof(float)) * 16 * transformation.rotationIndex();
     const QRhiCommandBuffer::VertexInput vbufBinding(vertexBuffer.get(), vertexOffset);
     cb->setVertexInput(0, 1, &vbufBinding);
     cb->draw(4);

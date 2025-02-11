@@ -28,6 +28,7 @@ QWaylandEglWindow::QWaylandEglWindow(QWindow *window, QWaylandDisplay *display)
         m_clientBufferIntegration = static_cast<QWaylandEglClientBufferIntegration *>(
                 mDisplay->clientBufferIntegration());
     });
+    ensureSize();
 }
 
 QWaylandEglWindow::~QWaylandEglWindow()
@@ -59,6 +60,7 @@ void QWaylandEglWindow::ensureSize()
         m_bufferSize = sizeWithMargins;
     }
 
+    QMutexLocker lock (&m_eglSurfaceLock);
     updateSurface(false);
 }
 
@@ -74,6 +76,8 @@ void QWaylandEglWindow::setGeometry(const QRect &rect)
 
 void QWaylandEglWindow::updateSurface(bool create)
 {
+    // eglSurfaceLock should be locked before calling this method
+
     QSize sizeWithMargins;
     {
         QReadLocker lock(&m_bufferSizeLock);
@@ -152,6 +156,8 @@ QSurfaceFormat QWaylandEglWindow::format() const
 
 void QWaylandEglWindow::invalidateSurface()
 {
+    QMutexLocker lock (&m_eglSurfaceLock);
+
     if (m_eglSurface) {
         eglDestroySurface(m_clientBufferIntegration->eglDisplay(), m_eglSurface);
         m_eglSurface = 0;
@@ -167,6 +173,11 @@ void QWaylandEglWindow::invalidateSurface()
 EGLSurface QWaylandEglWindow::eglSurface() const
 {
     return m_eglSurface;
+}
+
+QMutex* QWaylandEglWindow::eglSurfaceLock()
+{
+    return &m_eglSurfaceLock;
 }
 
 GLuint QWaylandEglWindow::contentFBO() const

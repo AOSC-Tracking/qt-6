@@ -11,22 +11,27 @@
     \qmltype GraphPointAnimation
     \inqmlmodule QtGraphs
     \ingroup graphs_qml_2D
+    \inherits XYSeriesAnimation
     \brief An animation type which signifies the animation for points.
 
-GraphPointAnimation is an animation type derived from QVariantAnimation which defines how points are animated.
-It can make use of QVariantAnimation functionality and properties for its animations, such as \c duration and \c easing.
-These animations are housed inside of a QParallelAnimationGroup and hence will run in parallel.
+    GraphPointAnimation is an animation type derived from QVariantAnimation which defines how points are animated.
+    It can make use of QVariantAnimation functionality and properties for its animations, such as \c duration and \c easing.
+    These animations are housed inside of a QParallelAnimationGroup and hence will run in parallel.
 
-This example shows how to use a GraphPointAnimation to set points to animate with
-a \c duration of 1000ms and \c easing of OutCubic:
+    This example shows how to use a GraphPointAnimation to set points to animate with
+    a \c duration of 1000ms and \c easing of OutCubic:
 
-\snippet doc_src_qmlgraphs.cpp 12
+    \snippet doc_src_qmlgraphs.cpp 12
 
-For XYSeries, this is considered to be the main list of points defined inside
-the series. The point is linearly interpolated from the start to the end value.
+    For XYSeries, this is considered to be the main list of points defined inside
+    the series. The point is linearly interpolated from the start to the end value.
 
-\sa GraphTransition, SplineControlAnimation
+    \note GraphPointAnimation currently supports animating only the last point in
+    a series when a point is appended or removed. If a point is replaced, the
+    animation will be triggered regardless of the point’s index within the
+    series.
 
+    \sa GraphTransition, SplineControlAnimation
 */
 
 QGraphPointAnimation::QGraphPointAnimation(QObject *parent)

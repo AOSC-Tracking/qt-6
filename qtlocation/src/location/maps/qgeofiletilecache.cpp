@@ -14,6 +14,8 @@
 
 QT_BEGIN_NAMESPACE
 
+using namespace Qt::StringLiterals;
+
 class QGeoCachedTileMemory
 {
 public:
@@ -465,10 +467,16 @@ bool QGeoFileTileCache::addToDiskCache(const QGeoTileSpec &spec, const QString &
         cost = bytes.size();
 
     if (diskCache_.insert(spec, td, cost)) {
+        auto discardCache = qScopeGuard([this, &spec]{
+            diskCache_.remove(spec);
+        });
         QFile file(filename);
-        file.open(QIODevice::WriteOnly);
-        file.write(bytes);
+        if (!file.open(QIODevice::WriteOnly))
+            return false;
+        if (file.write(bytes) != bytes.size())
+            return false;
         file.close();
+        discardCache.dismiss();
         return true;
     }
     return false;
@@ -531,7 +539,10 @@ QSharedPointer<QGeoTileTexture> QGeoFileTileCache::getFromDisk(const QGeoTileSpe
     if (td) {
         const QString format = QFileInfo(td->filename).suffix();
         QFile file(td->filename);
-        file.open(QIODevice::ReadOnly);
+        if (!file.open(QIODevice::ReadOnly)) {
+            handleError(spec, "Cannot open file %1: %2"_L1.arg(file.fileName(), file.errorString()));
+            return nullptr;
+        }
         QByteArray bytes = file.readAll();
         file.close();
 

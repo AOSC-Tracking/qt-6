@@ -573,7 +573,8 @@ bool QQuickPopupPrivate::blockInput(QQuickItem *item, const QPointF &point) cons
     // don't block presses and releases
     // a) outside a non-modal popup,
     // b) to popup children/content, or
-    // b) outside a modal popups's background dimming
+    // c) outside a modal popups's background dimming
+
     return modal && ((popupItem != item) && !popupItem->isAncestorOf(item)) && (!dimmer || dimmer->contains(dimmer->mapFromScene(point)));
 }
 
@@ -1104,7 +1105,8 @@ void QQuickPopupPrivate::adjustPopupItemParentAndWindow()
             popupItem->setParentItem(popupWindow->contentItem());
             popupItem->forceActiveFocus(Qt::PopupFocusReason);
         }
-        popupWindow->setVisible(visible);
+        if (popupWindow)
+            popupWindow->setVisible(visible);
     } else {
         if (visible) {
             popupItem->setParentItem(overlay);
@@ -1233,10 +1235,15 @@ void QQuickPopupPrivate::toggleOverlay()
 void QQuickPopupPrivate::updateContentPalettes(const QPalette& parentPalette)
 {
     // Inherit parent palette to all child objects
-    inheritPalette(parentPalette);
-
+    if (providesPalette())
+        inheritPalette(parentPalette);
     // Inherit parent palette to items within popup (such as headers and footers)
     QQuickItemPrivate::get(popupItem)->updateChildrenPalettes(parentPalette);
+}
+
+void QQuickPopupPrivate::updateChildrenPalettes(const QPalette& parentPalette)
+{
+    updateContentPalettes(parentPalette);
 }
 
 void QQuickPopupPrivate::showDimmer()
@@ -2442,7 +2449,12 @@ bool QQuickPopup::isVisible() const
 void QQuickPopup::setVisible(bool visible)
 {
     Q_D(QQuickPopup);
-    if (d->visible == visible && d->transitionState != QQuickPopupPrivate::ExitTransition)
+    // During an exit transition, d->visible == true until the transition has completed.
+    // Therefore, this guard must not return early if setting visible to true while
+    // d->visible is true.
+    if (d->visible && visible && d->transitionState != QQuickPopupPrivate::ExitTransition)
+        return;
+    if (!d->visible && !visible)
         return;
 
     if (!d->complete || (visible && !d->window)) {
@@ -3135,6 +3147,18 @@ void QQuickPopup::mouseUngrabEvent()
     d->handleUngrab();
 }
 
+/*!
+    \internal
+
+    Called whenever the window receives a Wheel/Hover/Mouse/Touch event,
+    and has an active popup (with popupType: Popup.Item) in its scene.
+
+    The purpose is to close popups when the press/release event happened outside of it,
+    and the closePolicy allows for it to happen.
+
+    If the function is called from childMouseEventFilter, then the return value of this
+    function will determine whether the event will be filtered, or delivered to \a item.
+*/
 bool QQuickPopup::overlayEvent(QQuickItem *item, QEvent *event)
 {
     Q_D(QQuickPopup);
@@ -3214,7 +3238,8 @@ void QQuickPopup::geometryChange(const QRectF &newGeometry, const QRectF &oldGeo
 {
     Q_D(QQuickPopup);
     qCDebug(lcQuickPopup) << "geometryChange called on" << this << "with newGeometry" << newGeometry << "oldGeometry" << oldGeometry;
-    d->reposition();
+    if (!d->usePopupWindow())
+        d->reposition();
     if (!qFuzzyCompare(newGeometry.width(), oldGeometry.width())) {
         emit widthChanged();
         emit availableWidthChanged();

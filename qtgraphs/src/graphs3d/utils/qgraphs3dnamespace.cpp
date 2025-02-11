@@ -14,7 +14,7 @@ QT_BEGIN_NAMESPACE
     \enum QtGraphs3D::SelectionFlag
 
     Item selection modes. Values of this enumeration can be combined with OR
-   operator.
+    operator.
 
     \value None
            Selection mode disabled.
@@ -104,38 +104,96 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
- * \enum QtGraphs3D::CameraPreset
- *
- * Predefined positions for camera.
- *
- * \value NoPreset
- *        Used to indicate a preset has not been set, or the scene has been rotated freely.
- * \value FrontLow
- * \value Front
- * \value FrontHigh
- * \value LeftLow
- * \value Left
- * \value LeftHigh
- * \value RightLow
- * \value Right
- * \value RightHigh
- * \value BehindLow
- * \value Behind
- * \value BehindHigh
- * \value IsometricLeft
- * \value IsometricLeftHigh
- * \value IsometricRight
- * \value IsometricRightHigh
- * \value DirectlyAbove
- * \value DirectlyAboveCW45
- * \value DirectlyAboveCCW45
- * \value FrontBelow
- *        In Q3DBarsWidgetItem from FrontBelow onward these only work for graphs including negative
- *        values. They act as Preset...Low for positive-only values.
- * \value LeftBelow
- * \value RightBelow
- * \value BehindBelow
- * \value DirectlyBelow
- *        Acts as FrontLow for positive-only bars.
+    \enum QtGraphs3D::CameraPreset
+
+    Predefined positions for camera.
+
+    \value NoPreset
+        Used to indicate a preset has not been set, or the scene has been rotated freely.
+    \value FrontLow
+        Both x and y rotations of the camera are 0.
+    \value Front
+        X rotation is 0 and y rotation is 22.5 degrees.
+    \value FrontHigh
+        X rotation is 0 and y rotation is 45 degrees.
+    \value LeftLow
+        X rotation is 90 and y rotation is 0 degrees.
+    \value Left
+        X rotation is 90 and y rotation is 22.5 degrees.
+    \value LeftHigh
+        X rotation is 90 and y rotation is 45 degrees.
+    \value RightLow
+        X rotation is -90 and y rotation is 0 degrees.
+    \value Right
+        X rotation is -90 and y rotation is 22.5 degrees.
+    \value RightHigh
+        X rotation is -90 and y rotation is 45 degrees.
+    \value BehindLow
+        X rotation is 180 and y rotation is 0 degrees.
+    \value Behind
+        X rotation is 180 and y rotation is 22.5 degrees.
+    \value BehindHigh
+        X rotation is 180 and y rotation is 45 degrees.
+    \value IsometricLeft
+        X rotation is 45 and y rotation is 22.5 degrees.
+    \value IsometricLeftHigh
+        X rotation is 45 and y rotation is 45 degrees.
+    \value IsometricRight
+        X rotation is -45 and y rotation is 22.5 degrees.
+    \value IsometricRightHigh
+        X rotation is -45 and y rotation is 45 degrees.
+    \value DirectlyAbove
+        X rotation is 0 and y rotation is 90 degrees.
+    \value DirectlyAboveCW45
+        X rotation is -45 and y rotation is 90 degrees.
+    \value DirectlyAboveCCW45
+        X rotation is 45 and y rotation is 90 degrees.
+    \value FrontBelow
+        X rotation is 0 and y rotation is -45 degrees.
+        In Q3DBarsWidgetItem from FrontBelow onward these only work for graphs including negative
+        values. They act as CameraPreset...Low for positive-only values.
+    \value LeftBelow
+        X rotation is 90 and y rotation is -45 degrees.
+    \value RightBelow
+        X rotation is -90 and y rotation is -45 degrees.
+    \value BehindBelow
+        X rotation is 180 and y rotation is -45 degrees.
+    \value DirectlyBelow
+        X rotation is 0 and y rotation is -90 degrees.
+        Acts as FrontLow for positive-only bars.
+
  */
+
+/*!
+    \enum QtGraphs3D::GridLineType
+
+    \value Shader
+        Grid lines are rendered with GPU in a shader.
+    \value Geometry
+        Grid lines are rendered with 3D models.
+*/
+
+/*!
+    \enum QtGraphs3D::RenderingMode
+
+    \value DirectToBackground
+           Indicates that the graph will be rendered directly on the window
+    background and QML items are rendered on top of it. Using non-transparent QML
+    item as a background will hide the graph. Clears the whole window before
+    rendering the graph, including the areas outside the graph. If the surface
+    format of the window supports antialiasing, it will be used (see
+    \l {QQuick3D::idealSurfaceFormat()}).
+    This rendering mode offers the best performance at the expense of
+    non-standard QML behavior. For example, the graphs do not obey the z ordering
+    of QML items and the opacity value has no effect on them.
+
+    \value Indirect
+           Indicates the graph will be first rendered to an offscreen surface
+    that is then drawn during normal QML item rendering. The rendered image is
+    antialiased using the multisampling method if it is supported in the current
+    environment and the msaaSamples property value is greater than zero.
+    This rendering mode offers good quality and normal QML item behavior at the
+    expense of performance.
+ */
+
 QT_END_NAMESPACE

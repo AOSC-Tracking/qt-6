@@ -250,8 +250,10 @@ private:
     void updateGraph() override;
     void synchData() override;
     void handleOptimizationHintChange(QtGraphs3D::OptimizationHint hint) override;
+    void handleSeriesVisibilityChangedBySender(QObject *sender) override;
 
     bool selectedItemInRange(const ScatterModel *graphModel);
+    ScatterModel *findGraphModel(QScatter3DSeries *series);
 
 private slots:
     void cameraRotationChanged();

@@ -18,6 +18,8 @@
 #include "private/qplatformmediarecorder_p.h"
 #include "private/qmultimediautils_p.h"
 
+#include <unordered_set>
+
 QT_BEGIN_NAMESPACE
 
 class QMediaEncoderSettings;
@@ -35,7 +37,7 @@ public:
         QSize size;
         AVPixelFormat format = AV_PIX_FMT_NONE;
         AVPixelFormat swFormat = AV_PIX_FMT_NONE;
-        NormalizedVideoTransformation transform;
+        VideoTransformation transform;
         qreal frameRate = 0.;
         AVColorTransferCharacteristic colorTransfer = AVCOL_TRC_UNSPECIFIED;
         AVColorSpace colorSpace = AVCOL_SPC_UNSPECIFIED;
@@ -60,7 +62,7 @@ public:
     AVPacketUPtr retrievePacket();
 
 private:
-    VideoFrameEncoder(AVStream *stream, const AVCodec *codec, HWAccelUPtr hwAccel,
+    VideoFrameEncoder(AVStream *stream, const Codec &codec, HWAccelUPtr hwAccel,
                       const SourceParams &sourceParams,
                       const QMediaEncoderSettings &encoderSettings);
 
@@ -70,15 +72,22 @@ private:
 
     void updateConversions();
 
-    static VideoFrameEncoderUPtr create(AVStream *stream, const AVCodec *codec, HWAccelUPtr hwAccel,
-                                        const SourceParams &sourceParams,
-                                        const QMediaEncoderSettings &encoderSettings);
+    struct CreationResult
+    {
+        VideoFrameEncoderUPtr encoder;
+        AVPixelFormat targetFormat = AV_PIX_FMT_NONE;
+    };
+
+    static CreationResult create(AVStream *stream, const Codec &codec, HWAccelUPtr hwAccel,
+                                 const SourceParams &sourceParams,
+                                 const QMediaEncoderSettings &encoderSettings,
+                                 const AVPixelFormatSet &prohibitedTargetFormats = {});
 
     void initTargetSize();
 
     void initCodecFrameRate();
 
-    bool initTargetFormats();
+    bool initTargetFormats(const AVPixelFormatSet &prohibitedTargetFormats);
 
     void initStream();
 
@@ -91,7 +100,7 @@ private:
 private:
     QMediaEncoderSettings m_settings;
     AVStream *m_stream = nullptr;
-    const AVCodec *m_codec = nullptr;
+    Codec m_codec;
     HWAccelUPtr m_accel;
 
     QSize m_sourceSize;
@@ -99,8 +108,7 @@ private:
 
     qint64 m_lastPacketTime = AV_NOPTS_VALUE;
     AVCodecContextUPtr m_codecContext;
-    std::unique_ptr<SwsContext, decltype(&sws_freeContext)> m_converter = { nullptr,
-                                                                            &sws_freeContext };
+    SwsContextUPtr m_scaleContext;
     AVPixelFormat m_sourceFormat = AV_PIX_FMT_NONE;
     AVPixelFormat m_sourceSWFormat = AV_PIX_FMT_NONE;
     AVPixelFormat m_targetFormat = AV_PIX_FMT_NONE;
@@ -113,7 +121,7 @@ private:
     int64_t m_prevPacketDts = AV_NOPTS_VALUE;
     int64_t m_packetDtsOffset = 0;
 };
-}
+} // namespace QFFmpeg
 
 QT_END_NAMESPACE
 

@@ -52,6 +52,15 @@ QT_BEGIN_NAMESPACE
 
     The PieSlice type should be used as a child of a PieSeries type. For example:
 
+    \code
+    PieSeries {
+        PieSlice {
+            label: "example"
+            value: 1
+        }
+    }
+    \endcode
+
     Alternatively, slices can be added to a pie series by using the \l {QtGraphs::PieSeries::append()}
     {PieSeries.append()} method.
 
@@ -649,13 +658,13 @@ QPieSlicePrivate::QPieSlicePrivate()
     , m_isExploded(false)
     , m_explodeDistanceFactor(.15)
     , m_labelDirty(false)
-    , m_borderWidth(1.0)
+    , m_borderWidth(0.0)
     , m_shapePath(new QQuickShapePath)
     , m_labelItem(new QQuickText)
     , m_labelShape(new QQuickShape)
     , m_labelPath(new QQuickShapePath)
 {
-    m_labelItem->setColor(Qt::white);
+    m_labelItem->setColor(Qt::transparent);
     m_labelItem->setVisible(m_isLabelVisible);
     m_labelShape->setVisible(m_isLabelVisible);
     m_labelPath->setParent(m_labelShape);
@@ -719,8 +728,8 @@ void QPieSlicePrivate::setLabelPosition(QPieSlice::LabelPosition position)
         labelItem->setRotation(0);
     } else {
         m_labelShape->setVisible(false);
-        qreal centerX = (m_shapePath->startX() + m_largeArc.x() + m_centerLine.x()) / 3.0;
-        qreal centerY = (m_shapePath->startY() + m_largeArc.y() + m_centerLine.y()) / 3.0;
+        qreal centerX = (m_largeArc.x() + m_centerLine.x()) / 2.0;
+        qreal centerY = (m_largeArc.y() + m_centerLine.y()) / 2.0;
         QQuickText *labelItem = m_labelItem;
         centerX -= labelItem->width() * .5;
         centerY -= labelItem->height() * .5;

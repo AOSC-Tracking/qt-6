@@ -300,6 +300,24 @@ Item {
                 }
             }
         }
+
+        Column {
+            Label {
+                text: "Rotate bars"
+            }
+        }
+
+        Slider {
+            id: barsRotationSlider
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            clip: true
+            from: 0
+            to: 360
+            value: 5
+
+            onValueChanged: barSeries.meshAngle = value
+        }
     }
 
     Item {

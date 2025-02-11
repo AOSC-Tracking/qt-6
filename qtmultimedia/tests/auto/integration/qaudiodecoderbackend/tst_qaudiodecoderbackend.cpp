@@ -5,8 +5,8 @@
 #include <QDebug>
 #include "qaudiodecoder.h"
 
-#include "mediafileselector.h"
-#include "mediabackendutils.h"
+#include <private/mediafileselector_p.h>
+#include <private/mediabackendutils_p.h>
 
 constexpr char TEST_FILE_NAME[] = "testdata/test.wav";
 constexpr char TEST_UNSUPPORTED_FILE_NAME[] = "testdata/test-unsupported.avi";
@@ -768,7 +768,7 @@ void tst_QAudioDecoderBackend::invalidSource()
 
     QFile file;
     file.setFileName(TEST_INVALID_SOURCE);
-    file.open(QIODevice::ReadOnly);
+    QTEST_ASSERT(!file.open(QIODevice::ReadOnly));
     d.setSourceDevice(&file);
 
     d.start();

@@ -195,6 +195,12 @@ function(qt6_add_grpc target type)
         ${QT_CMAKE_EXPORT_NAMESPACE}::Grpc
     )
     if(arg_QML)
+        if(NOT TARGET ${QT_CMAKE_EXPORT_NAMESPACE}::GrpcQuick)
+            message(FATAL_ERROR "QML option of the qt_add_grpc command requires"
+                " ${QT_CMAKE_EXPORT_NAMESPACE}::GrpcQuick target. Please make sure that you"
+                " have the respective Qt component found by adding it to the find_package call:"
+                "   find_package(${QT_CMAKE_EXPORT_NAMESPACE} COMPONENTS GrpcQuick)")
+        endif()
         target_link_libraries(${target} PRIVATE
             ${QT_CMAKE_EXPORT_NAMESPACE}::GrpcQuick)
     endif()

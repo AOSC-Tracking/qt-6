@@ -136,7 +136,7 @@ void QWindowsDirectWriteFontDatabase::populateFamily(const QString &familyName)
                                                DWRITE_FONT_STYLE_NORMAL,
                                                &matchingFonts))) {
         for (uint j = 0; j < matchingFonts->GetFontCount(); ++j) {
-            IDWriteFont *font;
+            DirectWriteScope<IDWriteFont> font;
             if (SUCCEEDED(matchingFonts->GetFont(j, &font))) {
                 DirectWriteScope<IDWriteFont1> font1;
                 if (!SUCCEEDED(font->QueryInterface(__uuidof(IDWriteFont1),
@@ -265,75 +265,6 @@ QSupportedWritingSystems QWindowsDirectWriteFontDatabase::supportedWritingSystem
 
 bool QWindowsDirectWriteFontDatabase::populateFamilyAliases(const QString &missingFamily)
 {
-    // If the font has not been populated, it is possible this is a legacy font family supported
-    // by GDI. We make an attempt at loading it via GDI and then add this face directly to the
-    // database.
-    if (!missingFamily.isEmpty()
-        && missingFamily.size() < LF_FACESIZE
-        && !m_populatedFonts.contains(missingFamily)
-        && !m_populatedBitmapFonts.contains(missingFamily)) {
-        qCDebug(lcQpaFonts) << "Loading unpopulated" << missingFamily << ". Trying GDI.";
-
-        LOGFONT lf;
-        memset(&lf, 0, sizeof(LOGFONT));
-        memcpy(lf.lfFaceName, missingFamily.utf16(), missingFamily.size() * sizeof(wchar_t));
-
-        HFONT hfont = CreateFontIndirect(&lf);
-        if (hfont) {
-            HDC dummy = GetDC(0);
-            HGDIOBJ oldFont = SelectObject(dummy, hfont);
-
-            DirectWriteScope<IDWriteFontFace> directWriteFontFace;
-            if (SUCCEEDED(data()->directWriteGdiInterop->CreateFontFaceFromHdc(dummy, &directWriteFontFace))) {
-                DirectWriteScope<IDWriteFontCollection> fontCollection;
-                if (SUCCEEDED(data()->directWriteFactory->GetSystemFontCollection(&fontCollection))) {
-                    DirectWriteScope<IDWriteFont> font;
-                    if (SUCCEEDED(fontCollection->GetFontFromFontFace(*directWriteFontFace, &font))) {
-
-                        DirectWriteScope<IDWriteFont1> font1;
-                        if (SUCCEEDED(font->QueryInterface(__uuidof(IDWriteFont1),
-                                                           reinterpret_cast<void **>(&font1)))) {
-                            DirectWriteScope<IDWriteLocalizedStrings> names;
-                            if (SUCCEEDED(font1->GetFaceNames(&names))) {
-                                wchar_t englishLocale[] = L"en-us";
-                                QString englishLocaleStyleName = localeString(*names, englishLocale);
-
-                                QFont::Stretch stretch = fromDirectWriteStretch(font1->GetStretch());
-                                QFont::Style style = fromDirectWriteStyle(font1->GetStyle());
-                                QFont::Weight weight = fromDirectWriteWeight(font1->GetWeight());
-                                bool fixed = font1->IsMonospacedFont();
-
-                                QSupportedWritingSystems writingSystems = supportedWritingSystems(*directWriteFontFace);
-
-                                qCDebug(lcQpaFonts) << "Registering legacy font family" << missingFamily;
-                                QPlatformFontDatabase::registerFont(missingFamily,
-                                                                    englishLocaleStyleName,
-                                                                    QString(),
-                                                                    weight,
-                                                                    style,
-                                                                    stretch,
-                                                                    false,
-                                                                    true,
-                                                                    0xffff,
-                                                                    fixed,
-                                                                    writingSystems,
-                                                                    new FontHandle(*directWriteFontFace, missingFamily));
-
-                                SelectObject(dummy, oldFont);
-                                DeleteObject(hfont);
-
-                                return true;
-                            }
-                        }
-                    }
-                }
-            }
-
-            SelectObject(dummy, oldFont);
-            DeleteObject(hfont);
-        }
-    }
-
     // Skip over implementation in QWindowsFontDatabase
     return QWindowsFontDatabaseBase::populateFamilyAliases(missingFamily);
 }
@@ -789,11 +720,6 @@ void QWindowsDirectWriteFontDatabase::populateFontDatabase()
     }
 }
 
-QFont QWindowsDirectWriteFontDatabase::defaultFont() const
-{
-    return QFont(QStringLiteral("Segoe UI"));
-}
-
 bool QWindowsDirectWriteFontDatabase::supportsVariableApplicationFonts() const
 {
     QSharedPointer<QWindowsFontEngineData> fontEngineData = data();
@@ -804,6 +730,19 @@ bool QWindowsDirectWriteFontDatabase::supportsVariableApplicationFonts() const
     }
 
     return false;
+}
+
+void QWindowsDirectWriteFontDatabase::invalidate()
+{
+    QWindowsFontDatabase::invalidate();
+
+    for (IDWriteFontFamily *value : m_populatedFonts)
+        value->Release();
+    m_populatedFonts.clear();
+    m_populatedFonts.squeeze();
+
+    m_populatedBitmapFonts.clear();
+    m_populatedBitmapFonts.squeeze();
 }
 
 QT_END_NAMESPACE

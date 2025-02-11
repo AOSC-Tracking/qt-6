@@ -81,7 +81,8 @@ bool QmlTypeRegistrar::argumentsFromCommandLineAndFile(QStringList &allArguments
     return true;
 }
 
-int QmlTypeRegistrar::runExtract(const QString &baseName, const MetaTypesJsonProcessor &processor)
+int QmlTypeRegistrar::runExtract(
+        const QString &baseName, const QString &nameSpace, const MetaTypesJsonProcessor &processor)
 {
     if (processor.types().isEmpty()) {
         error(baseName) << "No types to register found in library";
@@ -103,10 +104,17 @@ int QmlTypeRegistrar::runExtract(const QString &baseName, const MetaTypesJsonPro
             "#define %1_H\n"
             "#include <QtQml/qqml.h>\n"
             "#include <QtQml/qqmlmoduleregistration.h>\n").arg(includeGuard);
+    auto postfix = QString::fromLatin1("\n#endif // %1_H\n").arg(includeGuard);
+
     const QList<QString> includes = processor.includes();
     for (const QString &include: includes)
         prefix += u"\n#include <%1>"_s.arg(include);
-    headerFile.write((prefix + processor.extractRegisteredTypes()).toUtf8() + "\n#endif\n");
+    if (!nameSpace.isEmpty()) {
+        prefix += u"\nnamespace %1 {"_s.arg(nameSpace);
+        postfix.prepend(u"\n} // namespace %1"_s.arg(nameSpace));
+    }
+
+    headerFile.write((prefix + processor.extractRegisteredTypes() + postfix).toUtf8());
 
     QFile sourceFile(baseName + u".cpp");
     ok = sourceFile.open(QFile::WriteOnly);
@@ -335,6 +343,11 @@ void QmlTypeRegistrar::write(QTextStream &output, QAnyStringView outFileName) co
         const FoundType target = QmlTypesClassDescription::findType(
                 m_types, m_foreignTypes, targetName, namespaces);
 
+        // The target may be in a namespace we've resolved already.
+        // Update the targetName accordingly.
+        if (!target.native.isEmpty())
+            targetName = target.native.qualifiedClassName().toString();
+
         if (targetIsNamespace) {
             // We need to figure out if the _target_ is a namespace. If not, it already has a
             // QMetaType and we don't need to generate one.
@@ -517,7 +530,7 @@ static const QQmlModuleRegistration %5("%1", %4);
         output << u"} // namespace %1\n"_s.arg(m_targetNamespace);
 }
 
-bool QmlTypeRegistrar::generatePluginTypes(const QString &pluginTypesFile)
+bool QmlTypeRegistrar::generatePluginTypes(const QString &pluginTypesFile, bool generatingJSRoot)
 {
     QmlTypesCreator creator;
     creator.setOwnTypes(m_types);
@@ -526,6 +539,7 @@ bool QmlTypeRegistrar::generatePluginTypes(const QString &pluginTypesFile)
     creator.setUsingDeclarations(m_usingDeclarations);
     creator.setModule(m_module.toUtf8());
     creator.setVersion(QTypeRevision::fromVersion(m_moduleVersion.majorVersion(), 0));
+    creator.setGeneratingJSRoot(generatingJSRoot);
 
     return creator.generate(pluginTypesFile);
 }

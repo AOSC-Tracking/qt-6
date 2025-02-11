@@ -241,7 +241,6 @@ private:
     float m_yScale = scale().y();
     float m_zScale = scale().z();
 
-    float m_requestedMargin = -1.0f;
     float m_vBackgroundMargin = 0.1f;
     float m_hBackgroundMargin = 0.1f;
 

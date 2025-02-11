@@ -161,24 +161,24 @@
     \b{\c{--filter-packages <regexp>}}. For example, filtering with the display
     name information can help search.
 
-    For example, the following command finds all MSVC 2019 packages for Qt 6.8.0:
+    For example, the following command finds all MSVC 2022 packages for Qt 6.8.0:
 
     \badcode
-    search .*680.*msvc2019
+    search .*680.*msvc2022
     \endcode
 
     You get the same result when you filter the search result as follows:
 
     \badcode
-    search --filter-packages DisplayName=MSVC 2019,Version=6.8.0
+    search --filter-packages DisplayName=MSVC 2022,Version=6.8.0
     \endcode
 
     As a result, you get the following packages:
 
     \badcode
     <availablepackages>
-        <package name="qt.qt6.680.win64_msvc2019_64" displayname="MSVC 2019 64-bit" version="6.8.0-0-202303290841"/>
-        <package name="qt.qt6.680.win64_msvc2019_arm64" displayname="MSVC 2019 ARM64 (TP)" version="6.8.0-0-202303290841"/>
+        <package name="qt.qt6.680.win64_msvc2022_64" displayname="MSVC 2022 64-bit" version="6.8.0-0-202303290841"/>
+        <package name="qt.qt6.680.win64_msvc2022_arm64" displayname="MSVC 2022 ARM64 (TP)" version="6.8.0-0-202303290841"/>
     </availablepackages>
     \endcode
 
@@ -227,7 +227,7 @@
 
     \badcode
     # Windows: new installation with Qt Online Installer
-    qt-unified-windows-x64-[Qt Online Installer version]-online.exe --root C:\Users\[username]\installation_dir --accept-licenses --default-answer --confirm-command install qt.qt6.680.win64_msvc2019_64
+    qt-unified-windows-x64-[Qt Online Installer version]-online.exe --root C:\Users\[username]\installation_dir --accept-licenses --default-answer --confirm-command install qt.qt6.680.win64_msvc2022_64
 
     # macOS: new installation with Qt Online Installer
     qt-unified-macOS-x64-[Qt Online Installer version]-online.dmg --root /home/<username>/installation_dir --accept-licenses --default-answer --confirm-command install qt.qt6.680.clang_644
@@ -260,7 +260,7 @@
 
     \badcode
     # Windows: update installation with Qt Maintenance Tool
-    MaintenanceTool.exe --accept-licenses --default-answer --confirm-command install qt.qt6.680.win64_msvc2019_64
+    MaintenanceTool.exe --accept-licenses --default-answer --confirm-command install qt.qt6.680.win64_msvc2022_64
 
     # macOS: update installation with Qt Maintenance Tool
     MaintenanceTool.app/Contents/MacOS/MaintenanceTool --accept-licenses --default-answer --confirm-command install qt.qt6.680.clang_64
@@ -413,7 +413,7 @@
 
     \badcode
     # Windows: new installation with user interaction
-    qt-unified-windows-x64-[Qt Online Installer version]-online.exe --root C:\Users\[username]\installation_dir install qt.qt6.680.win64_msvc2019_64
+    qt-unified-windows-x64-[Qt Online Installer version]-online.exe --root C:\Users\[username]\installation_dir install qt.qt6.680.win64_msvc2022_64
 
     # macOS: new installation with user interaction
     qt-unified-macOS-x64-[Qt Online Installer version]-online.dmg --root /home/<username>/installation_dir install qt.qt6.680.clang_64
@@ -427,7 +427,7 @@
 
     \badcode
     # Windows: update installation with Qt Maintenance Tool
-    MaintenanceTool.exe install qt.qt6.680.win64_msvc2019_64
+    MaintenanceTool.exe install qt.qt6.680.win64_msvc2022_64
 
     # macOS: update installation with Qt Maintenance Tool
     MaintenanceTool.dmg install qt.qt6.680.clang_64
@@ -458,7 +458,7 @@
 
     \badcode
     # windows
-    MaintenanceTool.exe --confirm-command remove qt.qt6.680.win64_msvc2019_64
+    MaintenanceTool.exe --confirm-command remove qt.qt6.680.win64_msvc2022_64
 
     # macOS
     MaintenanceTool.dmg --confirm-command remove install qt.qt6.680.clang_64

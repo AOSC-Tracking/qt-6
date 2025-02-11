@@ -50,7 +50,6 @@ namespace Qt3DRender {
 /*!
  * \qmltype RenderCaptureReply
  * \nativetype Qt3DRender::QRenderCaptureReply
- * \inherits QObject
  * \inqmlmodule Qt3D.Render
  * \since 5.8
  * \brief Receives render capture result.

@@ -1636,10 +1636,33 @@ void SubmissionContext::blitFramebuffer(Qt3DCore::QNodeId inputRenderTargetId,
     }
 
     // Blit framebuffer
-    const GLenum mode = interpolationMethod ? GL_NEAREST : GL_LINEAR;
+    auto resolveInterpolationMode = [](QBlitFramebuffer::InterpolationMethod interMode) {
+        switch (interMode) {
+        case QBlitFramebuffer::InterpolationMethod::Linear:
+            return GL_LINEAR;
+        case QBlitFramebuffer::InterpolationMethod::Nearest:
+            return GL_NEAREST;
+        default:
+            Q_UNREACHABLE();
+        }
+    };
+    auto resolveBufferBits = [](QRenderTargetOutput::AttachmentPoint inputAttachmentPoint) {
+        switch (inputAttachmentPoint) {
+        case QRenderTargetOutput::AttachmentPoint::Depth:
+            return GL_DEPTH_BUFFER_BIT;
+        case QRenderTargetOutput::AttachmentPoint::Stencil:
+            return GL_STENCIL_BUFFER_BIT;
+        case QRenderTargetOutput::AttachmentPoint::DepthStencil:
+            return GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
+        default:
+            return GL_COLOR_BUFFER_BIT;
+        }
+    };
+    const GLenum mode = resolveInterpolationMode(interpolationMethod);
+    const GLbitfield resolveBuffers = resolveBufferBits(inputAttachmentPoint);
     m_glHelper->blitFramebuffer(srcX0, srcY0, srcX1, srcY1,
                                 dstX0, dstY0, dstX1, dstY1,
-                                GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT|GL_STENCIL_BUFFER_BIT,
+                                resolveBuffers,
                                 mode);
 
     // Reset draw buffer

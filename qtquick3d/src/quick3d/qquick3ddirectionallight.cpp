@@ -83,7 +83,9 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlproperty float DirectionalLight::csmSplit1
+    \qmlproperty real DirectionalLight::csmSplit1
+    \since 6.8
+
     This property defines where the first cascade of the shadow map split will occur when
     CSM is active.
 
@@ -96,7 +98,9 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlproperty float DirectionalLight::csmSplit2
+    \qmlproperty real DirectionalLight::csmSplit2
+    \since 6.8
+
     This property defines where the second cascade of the shadow map split will occur when
     CSM is active.
 
@@ -109,7 +113,9 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlproperty float DirectionalLight::csmSplit3
+    \qmlproperty real DirectionalLight::csmSplit3
+    \since 6.8
+
     This property defines where the third cascade of the shadow map split will occur when
     CSM is active.
 
@@ -123,6 +129,8 @@ QT_BEGIN_NAMESPACE
 
 /*!
     \qmlproperty int DirectionalLight::csmNumSplits
+    \since 6.8
+
     This property defines the number of splits the frustum should be split by when
     rendering the shadowmap. No splits means that the shadowmap will be rendered
     so that it covers the bounding box of all shadow casting and receiving objects.
@@ -135,7 +143,9 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlproperty float DirectionalLight::csmBlendRatio
+    \qmlproperty real DirectionalLight::csmBlendRatio
+    \since 6.8
+
     This property defines how much of the shadow of any cascade should be blended
     together with the previous one.
 

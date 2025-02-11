@@ -38,6 +38,13 @@
             reports, rather than what was asked for.
     \endlist
 
+    \section2 Qt D-Bus Module
+    \list
+        \li The deprecated <qdbusmacros.h> header got removed. Use <qtdbusglobal.h> instead.
+        \li The new function \l{QDBusAbstractInterface::setInteractiveAuthorizationAllowed()}
+            allows to set the \c ALLOW_INTERACTIVE_AUTHORIZATION flag for asynchronous calls.
+    \endlist
+
     \section2 Qt Graphs Module
     \section3 Qt Graphs3D
     \list

@@ -635,7 +635,7 @@
     (\c iconengines, \c imageformats).
 
     In addition, the archive must contain the following compiler
-    specific libraries (assuming Visual Studio 16 (2019)):
+    specific libraries (assuming Visual Studio 17 (2022)):
 
     \table 100%
     \header
@@ -645,7 +645,7 @@
         \li {2, 1} \c vcruntime140.dll
     \row
         \li The C++ run-time
-        \li {2, 1} \c msvcp160.dll
+        \li {2, 1} \c msvcp170.dll
     \endtable
 
     If dynamic OpenGL was used, then the archive may additionally contain:
@@ -764,7 +764,7 @@
     \table 100%
         \header
             \li Qt
-            \li Visual Studio 16 (2019)
+            \li Visual Studio 17 (2022)
             \li Mingw-w64
         \row
         \li \list

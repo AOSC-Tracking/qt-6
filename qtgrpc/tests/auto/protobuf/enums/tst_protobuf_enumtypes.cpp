@@ -122,32 +122,32 @@ void QtProtobufEnumTypesGenerationTest::localEnumListTest()
     QVERIFY(RepeatedEnumMessage_QtProtobufNested::staticMetaObject.enumeratorCount() > 0);
 
     const char *propertyName = "localEnumList";
-    qProtobufAssertMessagePropertyRegistered<RepeatedEnumMessage, RepeatedEnumMessage::LocalEnumRepeated>(1,  "RepeatedEnumMessage::LocalEnumRepeated", propertyName);
+    qProtobufAssertMessagePropertyRegistered<RepeatedEnumMessage, QList<RepeatedEnumMessage::LocalEnum>>(1,  "QList<RepeatedEnumMessage::LocalEnum>", propertyName);
 
-    RepeatedEnumMessage::LocalEnumRepeated value({RepeatedEnumMessage::LocalEnum::LOCAL_ENUM_VALUE2,
+    QList<RepeatedEnumMessage::LocalEnum>value({RepeatedEnumMessage::LocalEnum::LOCAL_ENUM_VALUE2,
                                                 RepeatedEnumMessage::LocalEnum::LOCAL_ENUM_VALUE2,
                                                 RepeatedEnumMessage::LocalEnum::LOCAL_ENUM_VALUE1,
                                                 RepeatedEnumMessage::LocalEnum::LOCAL_ENUM_VALUE3});
 
     RepeatedEnumMessage test;
-    QVERIFY(test.setProperty(propertyName, QVariant::fromValue<RepeatedEnumMessage::LocalEnumRepeated>(value)));
-    QCOMPARE(test.property(propertyName).value<RepeatedEnumMessage::LocalEnumRepeated>(), value);
+    QVERIFY(test.setProperty(propertyName, QVariant::fromValue<QList<RepeatedEnumMessage::LocalEnum>>(value)));
+    QCOMPARE(test.property(propertyName).value<QList<RepeatedEnumMessage::LocalEnum>>(), value);
     QCOMPARE(test.localEnumList(), value);
 }
 
 void QtProtobufEnumTypesGenerationTest::fileEnumsTest()
 {
     const char *propertyName = "globalEnumList";
-    qProtobufAssertMessagePropertyRegistered<SimpleFileEnumMessage, TestEnumGadget::TestEnumRepeated>(2, "TestEnumGadget::TestEnumRepeated", propertyName);
+    qProtobufAssertMessagePropertyRegistered<SimpleFileEnumMessage, QList<TestEnumGadget::TestEnum>>(2, "QList<TestEnumGadget::TestEnum>", propertyName);
 
-    TestEnumGadget::TestEnumRepeated value{TestEnumGadget::TestEnum::TEST_ENUM_VALUE1,
+    QList<TestEnumGadget::TestEnum>value{TestEnumGadget::TestEnum::TEST_ENUM_VALUE1,
                                      TestEnumGadget::TestEnum::TEST_ENUM_VALUE3,
                                      TestEnumGadget::TestEnum::TEST_ENUM_VALUE4,
                                      TestEnumGadget::TestEnum::TEST_ENUM_VALUE2,
                                      TestEnumGadget::TestEnum::TEST_ENUM_VALUE1};
     SimpleFileEnumMessage test;
-    QVERIFY(test.setProperty(propertyName, QVariant::fromValue<TestEnumGadget::TestEnumRepeated>(value)));
-    QCOMPARE(test.property(propertyName).value<TestEnumGadget::TestEnumRepeated>(), value);
+    QVERIFY(test.setProperty(propertyName, QVariant::fromValue<QList<TestEnumGadget::TestEnum>>(value)));
+    QCOMPARE(test.property(propertyName).value<QList<TestEnumGadget::TestEnum>>(), value);
     QCOMPARE(test.globalEnumList(), value);
 }
 
@@ -165,15 +165,15 @@ void QtProtobufEnumTypesGenerationTest::stepChildEnumMessageTest()
 void QtProtobufEnumTypesGenerationTest::stepChildEnumListMessageTest()
 {
     const char *propertyName = "localStepChildList";
-    qProtobufAssertMessagePropertyRegistered<StepChildEnumMessage, SimpleEnumMessage::LocalEnumRepeated>(2, "SimpleEnumMessage::LocalEnumRepeated", propertyName);
+    qProtobufAssertMessagePropertyRegistered<StepChildEnumMessage, QList<SimpleEnumMessage::LocalEnum>>(2, "QList<SimpleEnumMessage::LocalEnum>", propertyName);
 
-    SimpleEnumMessage::LocalEnumRepeated value({SimpleEnumMessage::LocalEnum::LOCAL_ENUM_VALUE2,
+    QList<SimpleEnumMessage::LocalEnum>value({SimpleEnumMessage::LocalEnum::LOCAL_ENUM_VALUE2,
                                             SimpleEnumMessage::LocalEnum::LOCAL_ENUM_VALUE2,
                                             SimpleEnumMessage::LocalEnum::LOCAL_ENUM_VALUE1,
                                             SimpleEnumMessage::LocalEnum::LOCAL_ENUM_VALUE3});
     StepChildEnumMessage test;
-    QVERIFY(test.setProperty(propertyName, QVariant::fromValue<SimpleEnumMessage::LocalEnumRepeated>(value)));
-    QCOMPARE(test.property(propertyName).value<SimpleEnumMessage::LocalEnumRepeated>(), value);
+    QVERIFY(test.setProperty(propertyName, QVariant::fromValue<QList<SimpleEnumMessage::LocalEnum>>(value)));
+    QCOMPARE(test.property(propertyName).value<QList<SimpleEnumMessage::LocalEnum>>(), value);
     QCOMPARE(test.localStepChildList(), value);
 }
 

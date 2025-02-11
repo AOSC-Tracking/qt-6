@@ -140,6 +140,9 @@ set(qml_sources
     requiredProperties.qml
 
     hpp.qml
+
+    attachedComponentProperty.qml
+    attachedNamespacedProperty.qml
 )
 
 set(js_sources
@@ -202,6 +205,11 @@ qt6_add_qml_module(qmltc_test_module
     LIBRARIES
         qmltc_test_module_translation_by_id
     ENABLE_TYPE_COMPILER
+    NO_GENERATE_EXTRA_QMLDIRS
+)
+
+target_compile_definitions(qmltc_test_module PRIVATE
+    QT_NO_CAST_FROM_ASCII
 )
 
 qt_autogen_tools_initial_setup(qmltc_test_moduleplugin)

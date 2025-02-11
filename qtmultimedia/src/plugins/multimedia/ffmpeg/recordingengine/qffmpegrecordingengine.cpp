@@ -34,11 +34,13 @@ RecordingEngine::RecordingEngine(const QMediaEncoderSettings &settings,
 
 RecordingEngine::~RecordingEngine()
 {
+    Q_ASSERT(m_state == State::Finalization);
 }
 
 void RecordingEngine::addAudioInput(QFFmpegAudioInput *input)
 {
     Q_ASSERT(input);
+    Q_ASSERT(m_state == State::FormatsInitialization);
 
     if (input->device.isNull()) {
         emit streamInitializationError(QMediaRecorder::ResourceError,
@@ -65,6 +67,8 @@ void RecordingEngine::addAudioBufferInput(QPlatformAudioBufferInput *input,
                                           const QAudioBuffer &firstBuffer)
 {
     Q_ASSERT(input);
+    Q_ASSERT(m_state == State::FormatsInitialization);
+
     const QAudioFormat format = firstBuffer.isValid() ? firstBuffer.format() : input->audioFormat();
 
     AudioEncoder *audioEncoder = createAudioEncoder(format);
@@ -82,7 +86,7 @@ AudioEncoder *RecordingEngine::createAudioEncoder(const QAudioFormat &format)
 
     auto audioEncoder = new AudioEncoder(*this, format, m_settings);
 
-    m_audioEncoders.push_back(audioEncoder);
+    m_audioEncoders.emplace_back(audioEncoder);
     connect(audioEncoder, &EncoderThread::endOfSourceStream, this,
             &RecordingEngine::handleSourceEndOfStream);
     connect(audioEncoder, &EncoderThread::initialized, this,
@@ -95,6 +99,8 @@ AudioEncoder *RecordingEngine::createAudioEncoder(const QAudioFormat &format)
 
 void RecordingEngine::addVideoSource(QPlatformVideoSource *source, const QVideoFrame &firstFrame)
 {
+    Q_ASSERT(m_state == State::FormatsInitialization);
+
     QVideoFrameFormat frameFormat =
             firstFrame.isValid() ? firstFrame.surfaceFormat() : source->frameFormat();
 
@@ -119,7 +125,7 @@ void RecordingEngine::addVideoSource(QPlatformVideoSource *source, const QVideoF
                               << "ffmpegHWPixelFormat=" << (hwPixelFormat ? *hwPixelFormat : AV_PIX_FMT_NONE);
 
     auto videoEncoder = new VideoEncoder(*this, m_settings, frameFormat, hwPixelFormat);
-    m_videoEncoders.append(videoEncoder);
+    m_videoEncoders.emplace_back(videoEncoder);
     if (m_autoStop)
         videoEncoder->setAutoStop(true);
 
@@ -136,16 +142,19 @@ void RecordingEngine::addVideoSource(QPlatformVideoSource *source, const QVideoF
     connectEncoderToSource(videoEncoder, source);
 }
 
-void RecordingEngine::start()
+void RecordingEngine::handleFormatsInitialization()
 {
-    Q_ASSERT(m_initializer);
-    m_initializer.reset();
+    Q_ASSERT(m_state == State::FormatsInitialization);
+    Q_ASSERT(m_formatsInitializer);
+    m_formatsInitializer.reset();
 
     if (m_audioEncoders.empty() && m_videoEncoders.empty()) {
         emit sessionError(QMediaRecorder::ResourceError,
                           QLatin1StringView("No valid stream found for encoding"));
         return;
     }
+
+    m_state = State::EncodersInitialization;
 
     qCDebug(qLcFFmpegEncoder) << "RecordingEngine::start!";
 
@@ -156,23 +165,28 @@ void RecordingEngine::initialize(const std::vector<QPlatformAudioBufferInputBase
                                  const std::vector<QPlatformVideoSource *> &videoSources)
 {
     qCDebug(qLcFFmpegEncoder) << ">>>>>>>>>>>>>>> initialize";
+    Q_ASSERT(m_state == State::None);
 
-    m_initializer = std::make_unique<EncodingInitializer>(*this);
-    m_initializer->start(audioSources, videoSources);
+    m_state = State::FormatsInitialization;
+    m_formatsInitializer = std::make_unique<EncodingInitializer>(*this);
+    m_formatsInitializer->start(audioSources, videoSources);
 }
 
-RecordingEngine::EncodingFinalizer::EncodingFinalizer(RecordingEngine &recordingEngine)
-    : m_recordingEngine(recordingEngine)
+RecordingEngine::EncodingFinalizer::EncodingFinalizer(RecordingEngine &recordingEngine,
+                                                      bool writeTrailer)
+    : m_recordingEngine(recordingEngine), m_writeTrailer(writeTrailer)
 {
+    Q_ASSERT(m_recordingEngine.m_state == State::Finalization);
     connect(this, &QThread::finished, this, &QObject::deleteLater);
 }
 
 void RecordingEngine::EncodingFinalizer::run()
 {
-    m_recordingEngine.forEachEncoder(&EncoderThread::stopAndDelete);
-    m_recordingEngine.m_muxer->stopAndDelete();
+    Q_ASSERT(m_recordingEngine.m_state == State::Finalization);
 
-    if (m_recordingEngine.m_isHeaderWritten) {
+    m_recordingEngine.stopAndDeleteThreads();
+
+    if (m_writeTrailer) {
         const int res = av_write_trailer(m_recordingEngine.avFormatContext());
         if (res < 0) {
             const auto errorDescription = err2str(res);
@@ -197,11 +211,21 @@ void RecordingEngine::finalize()
 {
     qCDebug(qLcFFmpegEncoder) << ">>>>>>>>>>>>>>> finalize";
 
-    m_initializer.reset();
+    Q_ASSERT(m_state == State::FormatsInitialization || m_state == State::EncodersInitialization
+             || m_state == State::Encoding);
+
+    Q_ASSERT((m_state == State::FormatsInitialization) == !!m_formatsInitializer);
+
+    m_formatsInitializer.reset();
 
     forEachEncoder(&disconnectEncoderFromSource);
+    if (m_state != State::Encoding)
+        forEachEncoder(&EncoderThread::startEncoding, false);
 
-    auto *finalizer = new EncodingFinalizer(*this);
+    const bool shouldWriteTrailer = m_state == State::Encoding;
+    m_state = State::Finalization;
+
+    EncodingFinalizer *finalizer = new EncodingFinalizer(*this, shouldWriteTrailer);
     finalizer->start();
 }
 
@@ -244,15 +268,19 @@ void RecordingEngine::handleSourceEndOfStream()
 
 void RecordingEngine::handleEncoderInitialization()
 {
+    Q_ASSERT(m_state == State::EncodersInitialization || m_state == State::Finalization);
+
+    if (m_state == State::Finalization)
+        return; // outdated event, drop it
+
     ++m_initializedEncodersCount;
 
-    Q_ASSERT(m_initializedEncodersCount <= m_videoEncoders.size() + m_audioEncoders.size());
+    Q_ASSERT(m_initializedEncodersCount <= encodersCount());
 
-    if (m_initializedEncodersCount < m_videoEncoders.size() + m_audioEncoders.size())
+    if (m_initializedEncodersCount < encodersCount())
         return;
 
     Q_ASSERT(allOfEncoders(&EncoderThread::isInitialized));
-    Q_ASSERT(!m_isHeaderWritten);
 
     qCDebug(qLcFFmpegEncoder) << "Encoders initialized; writing a header";
 
@@ -266,32 +294,38 @@ void RecordingEngine::handleEncoderInitialization()
         return;
     }
 
-    m_isHeaderWritten = true;
-
     qCDebug(qLcFFmpegEncoder) << "stream header is successfully written";
 
+    m_state = State::Encoding;
     m_muxer->start();
-    forEachEncoder(&EncoderThread::startEncoding);
+    forEachEncoder(&EncoderThread::startEncoding, true);
+}
+
+void RecordingEngine::stopAndDeleteThreads()
+{
+    m_audioEncoders.clear();
+    m_videoEncoders.clear();
+    m_muxer.reset();
 }
 
 template <typename F, typename... Args>
 void RecordingEngine::forEachEncoder(F &&f, Args &&...args)
 {
-    for (AudioEncoder *audioEncoder : m_audioEncoders)
-        std::invoke(f, audioEncoder, args...);
-    for (VideoEncoder *videoEncoder : m_videoEncoders)
-        std::invoke(f, videoEncoder, args...);
+    for (auto &audioEncoder : m_audioEncoders)
+        std::invoke(f, audioEncoder.get(), args...);
+    for (auto &videoEncoder : m_videoEncoders)
+        std::invoke(f, videoEncoder.get(), args...);
 }
 
 template <typename F>
 bool RecordingEngine::allOfEncoders(F &&f) const
 {
-    auto predicate = [&f](const EncoderThread *encoder) { return std::invoke(f, encoder); };
+    auto predicate = [&f](const auto &encoder) { return std::invoke(f, encoder.get()); };
 
     return std::all_of(m_audioEncoders.cbegin(), m_audioEncoders.cend(), predicate)
             && std::all_of(m_videoEncoders.cbegin(), m_videoEncoders.cend(), predicate);
 }
-}
+} // namespace QFFmpeg
 
 QT_END_NAMESPACE
 

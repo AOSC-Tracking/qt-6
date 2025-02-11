@@ -309,7 +309,7 @@ inline void QFactoryLoaderPrivate::updateSinglePath(const QString &path)
 #elif defined(Q_OS_ANDROID)
                 QStringList("libplugins_%1_*.so"_L1.arg(suffix)),
 #endif
-                QDirListing::IteratorFlag::FilesOnly);
+                QDirListing::IteratorFlag::FilesOnly | QDirListing::IteratorFlag::ResolveSymlinks);
 
     for (const auto &dirEntry : plugins) {
         const QString &fileName = dirEntry.fileName();
@@ -348,6 +348,16 @@ inline void QFactoryLoaderPrivate::updateSinglePath(const QString &path)
         if (!metaDataOk)
             continue;
 
+        static constexpr qint64 QtVersionNoPatch = QT_VERSION_CHECK(QT_VERSION_MAJOR, QT_VERSION_MINOR, 0);
+        int thisVersion = library->metaData.value(QtPluginMetaDataKeys::QtVersion).toInteger();
+        if (iid.startsWith(QStringLiteral("org.qt-project.Qt.QPA"))) {
+            // QPA plugins must match Qt Major.Minor
+            if (thisVersion != QtVersionNoPatch) {
+                qCDebug(lcFactoryLoader) << "Ignoring QPA plugin due to mismatching Qt versions" << QtVersionNoPatch << thisVersion;
+                continue;
+            }
+        }
+
         int keyUsageCount = 0;
         for (const QString &key : std::as_const(keys)) {
             QLibraryPrivate *&keyMapEntry = keyMap[key];
@@ -363,9 +373,7 @@ inline void QFactoryLoaderPrivate::updateSinglePath(const QString &path)
                 // If the existing library was built with a future Qt version,
                 // whereas the one we're considering has a Qt version that fits
                 // better, we prioritize the better match.
-                static constexpr qint64 QtVersionNoPatch = QT_VERSION_CHECK(QT_VERSION_MAJOR, QT_VERSION_MINOR, 0);
                 int existingVersion = existingLibrary->metaData.value(QtPluginMetaDataKeys::QtVersion).toInteger();
-                int thisVersion = library->metaData.value(QtPluginMetaDataKeys::QtVersion).toInteger();
                 if (!(existingVersion > QtVersionNoPatch && thisVersion <= QtVersionNoPatch))
                     continue; // Existing version is a better match
             }
@@ -386,6 +394,9 @@ void QFactoryLoader::update()
 #ifdef QT_SHARED
     Q_D(QFactoryLoader);
 
+    if (!d->extraSearchPath.isEmpty())
+        d->updateSinglePath(d->extraSearchPath);
+
     const QStringList paths = QCoreApplication::libraryPaths();
     for (const QString &pluginDir : paths) {
 #ifdef Q_OS_ANDROID
@@ -393,11 +404,8 @@ void QFactoryLoader::update()
 #else
         QString path = pluginDir + d->suffix;
 #endif
-
         d->updateSinglePath(path);
     }
-    if (!d->extraSearchPath.isEmpty())
-        d->updateSinglePath(d->extraSearchPath);
 #else
     Q_D(QFactoryLoader);
     qCDebug(lcFactoryLoader) << "ignoring" << d->iid

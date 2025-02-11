@@ -21,6 +21,11 @@ bool isAsciiAlpha(char c)
     return (unsigned char)c <= 127 && ::isalpha(c);
 }
 
+bool isAsciiAlnum(char c)
+{
+    return (unsigned char)c <= 127 && std::isalnum(c);
+}
+
 std::vector<std::string> split(std::string_view s, std::string_view c, bool keepEmpty)
 {
     assert(!c.empty());
@@ -87,6 +92,25 @@ std::string extractFileBasename(std::string fileName)
     if (dot != std::string::npos && (slash == std::string::npos || dot > slash))
         fileName.resize(dot);
     return slash != std::string::npos ? fileName.substr(slash + 1) : fileName;
+}
+
+std::string toValidIdentifier(std::string_view name)
+{
+    assert(!name.empty() && "empty names are not supported as identifier");
+    std::string out;
+    out.reserve(name.size() + 1);
+
+    if (!isAsciiAlpha(name[0]) && name[0] != '_') // omitted Unicode with XID_Start
+        out += '_';
+
+    for (const auto c : name) {
+        if (isAsciiAlnum(c) || c == '_') // omitted Unicode with XID_Continue
+            out += c;
+        else
+            out += '_'; // TODO: a deterministic hex - ASCII mapping algorithm would be better
+    }
+
+    return out;
 }
 
 std::string capitalizeAsciiName(std::string name)

@@ -11,6 +11,8 @@
 #include <QtQuick/private/qquickdraghandler_p.h>
 #include <QtQuick/private/qquicktextinput_p.h>
 
+#include <QtQuickTemplates2/private/qquickselectionrectangle_p.h>
+
 #include <QtQml/qqmlengine.h>
 #include <QtQml/qqmlcontext.h>
 #include <QtQml/qqmlexpression.h>
@@ -34,11 +36,18 @@ static const char *kModelDataBindingProp = "modelDataBinding";
 
 Q_DECLARE_METATYPE(QMarginsF);
 
-#define GET_QML_TABLEVIEW(PROPNAME) \
-    auto PROPNAME = view->rootObject()->property(#PROPNAME).value<QQuickTableView *>(); \
-    QVERIFY(PROPNAME); \
-    auto PROPNAME ## Private = QQuickTableViewPrivate::get(PROPNAME); \
-    Q_UNUSED(PROPNAME ## Private)
+#define LOAD_WINDOW()                          \
+  auto *window = view->rootObject()->window(); \
+  QVERIFY(window)
+
+#define GET_QML_PROPERTY(PROPTYPE, PROPNAME)                                    \
+  auto *PROPNAME = view->rootObject()->property(#PROPNAME).value<PROPTYPE *>(); \
+  QVERIFY(PROPNAME)
+
+#define GET_QML_TABLEVIEW(PROPNAME)                                \
+  GET_QML_PROPERTY(QQuickTableView, PROPNAME);                     \
+  auto *PROPNAME##Private = QQuickTableViewPrivate::get(PROPNAME); \
+  Q_UNUSED(PROPNAME##Private)
 
 #define LOAD_TABLEVIEW(fileName) \
     view->setSource(testFileUrl(fileName)); \
@@ -116,6 +125,8 @@ private slots:
     void checkExtents_moveTableToEdge();
     void checkContentXY();
     void noDelegate();
+    void selectionWhenNoDelegate_data();
+    void selectionWhenNoDelegate();
     void changeDelegateDuringUpdate();
     void changeModelDuringUpdate();
     void countDelegateItems_data();
@@ -198,6 +209,8 @@ private slots:
     void positionViewAtLastRow();
     void positionViewAtLastColumn_data();
     void positionViewAtLastColumn();
+    void positionViewAtRow_syncView();
+    void positionViewAtColumn_syncView();
     void itemAtCell_data();
     void itemAtCell();
     void leftRightTopBottomProperties_data();
@@ -1339,6 +1352,105 @@ void tst_QQuickTableView::noDelegate()
 
     items = tableViewPrivate->loadedItems;
     QVERIFY(items.isEmpty());
+}
+
+namespace NoDelegate {
+enum class EventType {
+    Click,
+    Drag,
+    PressAndHold,
+    PressAndRelease,
+};
+}
+
+void tst_QQuickTableView::selectionWhenNoDelegate_data()
+{
+    QTest::addColumn<NoDelegate::EventType>("eventType");
+    QTest::addColumn<Qt::KeyboardModifier>("modifier");
+    QTest::addColumn<QPoint>("point1");
+    QTest::addColumn<QPoint>("point2");
+
+    using namespace NoDelegate;
+
+    QTest::newRow("click") << EventType::Click << Qt::NoModifier << QPoint() << QPoint();
+    QTest::newRow("shift_click") << EventType::Click << Qt::ShiftModifier << QPoint() << QPoint();
+    QTest::newRow("control_click")
+            << EventType::Click << Qt::ControlModifier << QPoint() << QPoint();
+    QTest::newRow("drag") << EventType::Drag << Qt::NoModifier << QPoint(10, 10)
+                          << QPoint(100, 100);
+    QTest::newRow("shift_drag") << EventType::Drag << Qt::ShiftModifier << QPoint(10, 10)
+                                << QPoint(100, 100);
+    QTest::newRow("control_drag") << EventType::Drag << Qt::ControlModifier << QPoint(10, 10)
+                                  << QPoint(100, 100);
+    QTest::newRow("pressAndHold") << EventType::PressAndHold << Qt::NoModifier << QPoint()
+                                  << QPoint();
+    QTest::newRow("shift_pressAndHold")
+            << EventType::PressAndHold << Qt::ShiftModifier << QPoint() << QPoint();
+    QTest::newRow("control_pressAndHold")
+            << EventType::PressAndHold << Qt::ControlModifier << QPoint() << QPoint();
+    QTest::newRow("pressAndRelease")
+            << EventType::PressAndRelease << Qt::NoModifier << QPoint() << QPoint();
+    QTest::newRow("shift_pressAndRelease")
+            << EventType::PressAndRelease << Qt::ShiftModifier << QPoint() << QPoint();
+    QTest::newRow("control_pressAndRelease")
+            << EventType::PressAndRelease << Qt::ControlModifier << QPoint() << QPoint();
+}
+
+void tst_QQuickTableView::selectionWhenNoDelegate()
+{
+    QFETCH(NoDelegate::EventType, eventType);
+    QFETCH(Qt::KeyboardModifier, modifier);
+    QFETCH(QPoint, point1);
+    QFETCH(QPoint, point2);
+
+    // Check selection on the TableView which its delegate isn't set
+    LOAD_TABLEVIEW("uninitializeddelegate.qml");
+    LOAD_WINDOW();
+    GET_QML_PROPERTY(QQuickSelectionRectangle, selectionRectangle);
+
+    using namespace NoDelegate;
+
+    const auto simulateDrag = [window, startPoint = point1, stopPoint = point2,
+                               modifier](int delay) {
+        const qreal startDragDistance = qApp->styleHints()->startDragDistance();
+        const QPoint startDragPoint =
+                startPoint + QPoint(startDragDistance + 1, startDragDistance + 1);
+        QTest::mousePress(window, Qt::LeftButton, modifier, startPoint);
+        QTest::mouseMove(window, startDragPoint, delay);
+        for (qreal t = 0.2; t < 1.; t += .2) {
+            const auto &point = QQuickVisualTestUtils::lerpPoints(startDragPoint, stopPoint, t);
+            QTest::mouseMove(window, point, delay);
+        }
+        QTest::mouseMove(window, stopPoint, delay);
+        QTest::mouseRelease(window, Qt::LeftButton, modifier, stopPoint, delay);
+    };
+
+    bool shouldRelease = false;
+
+    switch (eventType) {
+    case EventType::Click:
+        QTest::mouseClick(window, Qt::LeftButton, modifier, point1);
+        break;
+    case EventType::Drag:
+        simulateDrag(100);
+        break;
+    case EventType::PressAndHold:
+        QTest::mousePress(window, Qt::LeftButton, modifier, point1);
+        QTest::qWait(QGuiApplication::styleHints()->mousePressAndHoldInterval());
+        shouldRelease = true;
+        break;
+    case EventType::PressAndRelease:
+        QTest::mousePress(window, Qt::LeftButton, modifier, point1);
+        shouldRelease = true;
+        break;
+    }
+
+    QVERIFY(!selectionRectangle->active());
+
+    if (shouldRelease) {
+        QTest::mouseRelease(window, Qt::LeftButton, modifier, point1);
+        QVERIFY(!selectionRectangle->active());
+    }
 }
 
 void tst_QQuickTableView::changeDelegateDuringUpdate()
@@ -4394,6 +4506,80 @@ void tst_QQuickTableView::positionViewAtLastColumn()
     }
 }
 
+void tst_QQuickTableView::positionViewAtRow_syncView()
+{
+    // Check that if you call positionViewAtRow on a sync child, both
+    // the syncView and the syncChild will be positioned.
+    LOAD_TABLEVIEW("syncviewsimple.qml");
+    GET_QML_TABLEVIEW(tableViewV);
+
+    auto model = TestModelAsVariant(100, 100);
+    tableView->setModel(model);
+    tableViewV->setModel(model);
+    QCOMPARE(tableViewV->syncDirection(), Qt::Vertical);
+    WAIT_UNTIL_POLISHED;
+
+    QCOMPARE(tableView->topRow(), 0);
+    QCOMPARE(tableView->leftColumn(), 0);
+    QCOMPARE(tableViewV->topRow(), 0);
+    QCOMPARE(tableViewV->leftColumn(), 0);
+
+    tableViewV->positionViewAtRow(50, QQuickTableView::AlignTop);
+    WAIT_UNTIL_POLISHED;
+
+    QCOMPARE(tableView->leftColumn(), 0);
+    QCOMPARE(tableView->topRow(), 50);
+    QCOMPARE(tableViewV->leftColumn(), 0);
+    QCOMPARE(tableViewV->topRow(), 50);
+
+    // Trying to position the sync child in an unsynced
+    // direction should only move the sync child.
+    tableViewV->positionViewAtColumn(90, QQuickTableView::AlignLeft);
+    WAIT_UNTIL_POLISHED_ARG(tableViewV);
+
+    QCOMPARE(tableView->leftColumn(), 0);
+    QCOMPARE(tableView->topRow(), 50);
+    QCOMPARE(tableViewV->leftColumn(), 90);
+    QCOMPARE(tableViewV->topRow(), 50);
+}
+
+void tst_QQuickTableView::positionViewAtColumn_syncView()
+{
+    // Check that if you call positionViewAtColumn on a sync child, both
+    // the syncView and the syncChild will be positioned.
+    LOAD_TABLEVIEW("syncviewsimple.qml");
+    GET_QML_TABLEVIEW(tableViewH);
+
+    auto model = TestModelAsVariant(100, 100);
+    tableView->setModel(model);
+    tableViewH->setModel(model);
+    QCOMPARE(tableViewH->syncDirection(), Qt::Horizontal);
+    WAIT_UNTIL_POLISHED;
+
+    QCOMPARE(tableView->topRow(), 0);
+    QCOMPARE(tableView->leftColumn(), 0);
+    QCOMPARE(tableViewH->topRow(), 0);
+    QCOMPARE(tableViewH->leftColumn(), 0);
+
+    tableViewH->positionViewAtColumn(50, QQuickTableView::AlignLeft);
+    WAIT_UNTIL_POLISHED;
+
+    QCOMPARE(tableView->leftColumn(), 50);
+    QCOMPARE(tableView->topRow(), 0);
+    QCOMPARE(tableViewH->leftColumn(), 50);
+    QCOMPARE(tableViewH->topRow(), 0);
+
+    // Trying to position the sync child in an unsynced
+    // direction should only move the sync child.
+    tableViewH->positionViewAtRow(90, QQuickTableView::AlignTop);
+    WAIT_UNTIL_POLISHED_ARG(tableViewH);
+
+    QCOMPARE(tableView->leftColumn(), 50);
+    QCOMPARE(tableView->topRow(), 0);
+    QCOMPARE(tableViewH->leftColumn(), 50);
+    QCOMPARE(tableViewH->topRow(), 90);
+}
+
 void tst_QQuickTableView::itemAtCell_data()
 {
     QTest::addColumn<QPoint>("cell");
@@ -6563,9 +6749,12 @@ void tst_QQuickTableView::columnResizing()
     QTest::mouseMove(window, startPos + dragLength);
     QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, startPos + dragLength);
 
+    // There is a probable chance that the polish scheduled during the resize would have
+    // been completed even before the mouse release events, so it's better to try to verify
+    // instead of always assuming that the polish has been scheduled at this stage.
+    QTRY_VERIFY(!QQuickTest::qIsPolishScheduled(tableView));
     const qreal newColumnWidth = columnStartWidth + dragLength.x() - startDragDist.x();
     QCOMPARE(tableView->explicitColumnWidth(column), newColumnWidth);
-    WAIT_UNTIL_POLISHED;
     QCOMPARE(tableView->columnWidth(column), newColumnWidth);
 
     QCOMPARE(currentIndexSpy.count(), 0);
@@ -6614,9 +6803,12 @@ void tst_QQuickTableView::rowResizing()
     QTest::mouseMove(window, startPos + dragLength);
     QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, startPos + dragLength);
 
+    // There is a probable chance that the polish scheduled during the resize would have
+    // been completed even before the mouse release events, so it's better to try to verify
+    // instead of always assuming that the polish has been scheduled at this stage.
+    QTRY_VERIFY(!QQuickTest::qIsPolishScheduled(tableView));
     const qreal newRowHeight = rowStartHeight + dragLength.y() - startDragDist.y();
     QCOMPARE(tableView->explicitRowHeight(row), newRowHeight);
-    WAIT_UNTIL_POLISHED;
     QCOMPARE(tableView->rowHeight(row), newRowHeight);
 
     QCOMPARE(currentIndexSpy.count(), 0);
@@ -6679,11 +6871,14 @@ void tst_QQuickTableView::rowAndColumnResizing()
     QTest::mouseMove(window, startPos + dragLength);
     QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, startPos + dragLength);
 
+    // There is a probable chance that the polish scheduled during the resize would have
+    // been completed even before the mouse release events, so it's better to try to verify
+    // instead of always assuming that the polish has been scheduled at this stage.
+    QTRY_VERIFY(!QQuickTest::qIsPolishScheduled(tableView));
     const qreal newColumnWidth = columnStartWidth + dragLength.x() - startDragDist.x();
     const qreal newRowHeight = rowStartHeight + dragLength.y() - startDragDist.y();
     QCOMPARE(tableView->explicitColumnWidth(rowAndColumn), newColumnWidth);
     QCOMPARE(tableView->explicitRowHeight(rowAndColumn), newRowHeight);
-    WAIT_UNTIL_POLISHED;
     QCOMPARE(tableView->columnWidth(rowAndColumn), newColumnWidth);
     QCOMPARE(tableView->rowHeight(rowAndColumn), newRowHeight);
 
@@ -7710,10 +7905,9 @@ void tst_QQuickTableView::invalidateTableInstanceModelContextObject()
 
     auto tableView = window->property("tableView").value<QQuickTableView *>();
     QVERIFY(tableView);
-    WAIT_UNTIL_POLISHED;
 
     const int modelData = window->property("modelData").toInt();
-    QCOMPARE(tableView->rows(), modelData);
+    QTRY_COMPARE(tableView->rows(), modelData);
 
     bool tableViewDestroyed = false;
     connect(tableView, &QObject::destroyed, [&] {
@@ -7851,8 +8045,10 @@ void tst_QQuickTableView::checkColumnRowResizeAfterReorder()
     QTest::mouseMove(window, startPos + dragLength);
     QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, startPos + dragLength);
 
-    WAIT_UNTIL_POLISHED;
-
+    // There is a probable chance that the polish scheduled during the resize would have
+    // been completed even before the mouse release events, so it's better to try to verify
+    // instead of always assuming that the polish has been scheduled at this stage.
+    QTRY_VERIFY(!QQuickTest::qIsPolishScheduled(tableView));
     QCOMPARE(tableView->explicitColumnWidth(moveIndex), columnStartWidth + dragLength.x() - startDragDist.x());
     QCOMPARE(tableView->explicitRowHeight(moveIndex), rowStartHeight + dragLength.y() - startDragDist.y());
 }

@@ -30,7 +30,7 @@
 #include <QMediaFormat>
 #include <QtMultimediaWidgets/QVideoWidget>
 
-#include <mediabackendutils.h>
+#include <private/mediabackendutils_p.h>
 
 QT_USE_NAMESPACE
 
@@ -96,7 +96,11 @@ private slots:
     void capture_is_not_available_when_Camera_is_null();
     void can_add_ImageCapture_and_capture_during_recording();
 
-    void can_reset_audio_input_output();
+    void can_switch_audio_output();
+    void can_switch_audio_input();
+
+    void can_clear_audio_output();
+    void can_clear_audio_input();
 
 private:
     void recordOk(QMediaCaptureSession &session);
@@ -1001,6 +1005,8 @@ void tst_QMediaCaptureSession::recording_stops_when_recorder_removed()
     if (input.device().isNull())
         QSKIP("Recording source not available");
 
+    QSKIP_GSTREAMER("spurious failures on gstreamer");
+
     QMediaRecorder recorder;
     QMediaCaptureSession session;
 
@@ -1120,6 +1126,8 @@ void tst_QMediaCaptureSession::capture_is_not_available_when_Camera_is_null()
     if (!camera.isAvailable())
         QSKIP("No video input available");
 
+    QSKIP_GSTREAMER("Spurious failures");
+
     QImageCapture capture;
     QMediaCaptureSession session;
 
@@ -1155,6 +1163,8 @@ void tst_QMediaCaptureSession::can_add_ImageCapture_and_capture_during_recording
 
     if (!camera.isAvailable())
         QSKIP("No video input available");
+
+    QSKIP_GSTREAMER("spurious failures with gstreamer");
 
     QImageCapture capture;
     QMediaCaptureSession session;
@@ -1272,26 +1282,86 @@ void tst_QMediaCaptureSession::testAudioMute()
     QCOMPARE(spy.last()[0], false);
 }
 
-void tst_QMediaCaptureSession::can_reset_audio_input_output()
+void tst_QMediaCaptureSession::can_switch_audio_input()
 {
-    QAudioInput in1;
+    // prepare
     QMediaCaptureSession session;
+    QAudioInput in1;
     session.setAudioInput(&in1);
     QVERIFY(session.audioInput() != nullptr);
-    QAudioInput in2;
-    QSignalSpy changeSpy1(&session, &QMediaCaptureSession::audioInputChanged);
-    session.setAudioInput(&in2);
-    QVERIFY(session.audioInput() != nullptr);
-    QCOMPARE(changeSpy1.count(), 1);
+    QAudioOutput out;
+    session.setAudioOutput(&out);
+    QVERIFY(session.audioOutput() != nullptr);
 
+    // exercise
+    QAudioInput in2;
+    QSignalSpy changeSpy(&session, &QMediaCaptureSession::audioInputChanged);
+    session.setAudioInput(&in2);
+
+    // validate
+    QVERIFY(session.audioInput() != nullptr);
+    QCOMPARE(changeSpy.count(), 1);
+}
+
+void tst_QMediaCaptureSession::can_switch_audio_output()
+{
+    // prepare
+    QMediaCaptureSession session;
+    QAudioInput in;
+    session.setAudioInput(&in);
+    QVERIFY(session.audioInput() != nullptr);
     QAudioOutput out1;
     session.setAudioOutput(&out1);
     QVERIFY(session.audioOutput() != nullptr);
-    QSignalSpy changeSpy2(&session, &QMediaCaptureSession::audioOutputChanged);
+
+    // exercise
+    QSignalSpy changeSpy(&session, &QMediaCaptureSession::audioOutputChanged);
     QAudioOutput out2;
     session.setAudioOutput(&out2);
+
+    // validate
     QVERIFY(session.audioOutput() != nullptr);
-    QCOMPARE(changeSpy2.count(), 1);
+    QCOMPARE(changeSpy.count(), 1);
+}
+
+void tst_QMediaCaptureSession::can_clear_audio_input()
+{
+    // prepare
+    QMediaCaptureSession session;
+    QAudioInput in1;
+    session.setAudioInput(&in1);
+    QVERIFY(session.audioInput() != nullptr);
+    QAudioOutput out;
+    session.setAudioOutput(&out);
+    QVERIFY(session.audioOutput() != nullptr);
+
+    // exercise
+    QSignalSpy changeSpy(&session, &QMediaCaptureSession::audioInputChanged);
+    session.setAudioInput(nullptr);
+
+    // validate
+    QVERIFY(session.audioInput() == nullptr);
+    QCOMPARE(changeSpy.count(), 1);
+}
+
+void tst_QMediaCaptureSession::can_clear_audio_output()
+{
+    // prepare
+    QMediaCaptureSession session;
+    QAudioInput in;
+    session.setAudioInput(&in);
+    QVERIFY(session.audioInput() != nullptr);
+    QAudioOutput out1;
+    session.setAudioOutput(&out1);
+    QVERIFY(session.audioOutput() != nullptr);
+
+    // exercise
+    QSignalSpy changeSpy(&session, &QMediaCaptureSession::audioOutputChanged);
+    session.setAudioOutput(nullptr);
+
+    // validate
+    QVERIFY(session.audioOutput() == nullptr);
+    QCOMPARE(changeSpy.count(), 1);
 }
 
 QTEST_MAIN(tst_QMediaCaptureSession)

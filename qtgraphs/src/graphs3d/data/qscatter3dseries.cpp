@@ -40,21 +40,21 @@ QT_BEGIN_NAMESPACE
  *   \row
  *     \li @xLabel    \li Item value formatted using the format of the x-axis.
  *                        For more information, see
- *                        \l{QValue3DAxis::setLabelFormat()}.
+ *                        \l{QValue3DAxis::labelFormat}.
  *   \row
  *     \li @yLabel    \li Item value formatted using the format of the y-axis.
  *                        For more information, see
- *                        \l{QValue3DAxis::setLabelFormat()}.
+ *                        \l{QValue3DAxis::labelFormat}.
  *   \row
  *     \li @zLabel    \li Item value formatted using the format of the z-axis.
  *                        For more information, see
- *                        \l{QValue3DAxis::setLabelFormat()}.
+ *                        \l{QValue3DAxis::labelFormat}.
  *   \row
  *     \li @seriesName \li Name of the series
  * \endtable
  *
  * For example:
- * \snippet doc_src_qtgraphs.cpp labelformat
+ * \snippet doc_src_qtgraphs.cpp labelformat-scatter
  *
  * \sa {Qt Graphs Data Handling with 3D}
  */
@@ -69,6 +69,30 @@ QT_BEGIN_NAMESPACE
  *
  * This type manages the series specific visual elements, as well as the series
  * data (via a data proxy).
+ *
+ * Scatter3DSeries supports the following format tags for itemLabelFormat:
+ * \table
+ *   \row
+ *     \li @xTitle    \li Title from x-axis
+ *   \row
+ *     \li @yTitle    \li Title from y-axis
+ *   \row
+ *     \li @zTitle    \li Title from z-axis
+ *   \row
+ *     \li @xLabel    \li Item value formatted using the format of the x-axis.
+ *                        For more information, see
+ *                        \l{QValue3DAxis::labelFormat}{labelFormat}.
+ *   \row
+ *     \li @yLabel    \li Item value formatted using the format of the y-axis.
+ *                        For more information, see
+ *                        \l{QValue3DAxis::labelFormat}{labelFormat}.
+ *   \row
+ *     \li @zLabel    \li Item value formatted using the format of the z-axis.
+ *                        For more information, see
+ *                        \l{QValue3DAxis::labelFormat}{labelFormat}.
+ *   \row
+ *     \li @seriesName \li Name of the series
+ * \endtable
  *
  * For a more complete description, see QScatter3DSeries.
  *
@@ -404,7 +428,7 @@ void QScatter3DSeriesPrivate::createItemLabel()
     static const QString seriesNameTag(QStringLiteral("@seriesName"));
 
     if (m_selectedItem == QScatter3DSeries::invalidSelectionIndex()) {
-        m_itemLabel = QString();
+        m_itemLabel = hiddenLabelTag;
         return;
     }
 

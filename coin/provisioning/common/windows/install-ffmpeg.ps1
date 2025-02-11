@@ -6,9 +6,9 @@
 # This script will install FFmpeg
 $msys = "C:\Utils\msys64\usr\bin\bash"
 
-$version="n7.0.2"
+$version="n7.1"
 $url_public="https://github.com/FFmpeg/FFmpeg/archive/refs/tags/$version.tar.gz"
-$sha1="e017c72dd84a9bac1519eaa33c203b82dd850bc0"
+$sha1="f008a93710a7577e3f85a90f4b632cc615164712"
 $url_cached="http://ci-files01-hki.ci.qt.io/input/ffmpeg/$version.tar.gz"
 $ffmpeg_name="FFmpeg-$version"
 
@@ -188,7 +188,7 @@ function InstallAndroidArmv7 {
     Start-Process -NoNewWindow -Wait -PassThru -ErrorAction Stop -FilePath $msys -ArgumentList ("-lc", "`"pacman -Sy --noconfirm libtool`"")
 
     $patchelf_sha1 = "DDD46A2E2A16A308245C008721D877455B23BBA8"
-    $patchelf_sources = "https://ci-files01-hki.intra.qt.io/input/android/patchelf/0.17.2.tar.gz"
+    $patchelf_sources = "https://ci-files01-hki.ci.qt.io/input/android/patchelf/0.17.2.tar.gz"
     $patchelf_download_location = "C:\Windows\Temp\0.17.2.tar.gz"
 
     Invoke-WebRequest -UseBasicParsing $patchelf_sources -OutFile $patchelf_download_location

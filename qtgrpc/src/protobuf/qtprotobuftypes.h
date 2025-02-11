@@ -158,6 +158,15 @@ template <typename T>
 using if_protobuf_type = std::enable_if_t<is_protobuf_type<T>::value, bool>;
 
 template <typename T>
+using is_protobuf_message_without_ordering = std::conjunction<
+    std::negation<std::is_pointer<T>>, std::is_base_of<QProtobufMessage, T>,
+    std::negation<has_q_protobuf_object_macro<T>>>;
+
+template <typename T>
+using if_protobuf_message_without_ordering = std::enable_if_t<
+    is_protobuf_message_without_ordering<T>::value, bool>;
+
+template <typename T>
 inline constexpr bool IsProtobufMapKeyType = false;
 template <>
 constexpr inline bool IsProtobufMapKeyType<QtProtobuf::int32> = true;

@@ -150,6 +150,11 @@ void QGstreamerVideoSink::setActive(bool isActive)
         m_gstQtSink.setActive(isActive);
 }
 
+void QGstreamerVideoSink::setAsync(bool isAsync)
+{
+    m_sinkIsAsync = isAsync;
+}
+
 void QGstreamerVideoSink::setRhi(QRhi *rhi)
 {
     if (rhi && rhi->backend() != QRhi::OpenGLES2)
@@ -173,7 +178,8 @@ void QGstreamerVideoSink::createQtSink()
     Q_ASSERT(!m_gstQtSink);
 
     m_gstQtSink = QGstVideoRendererSink::createSink(this);
-    m_gstQtSink.set("async", false); // no asynchronous state changes
+    if (!m_sinkIsAsync)
+        m_gstQtSink.set("async", false);
     m_gstQtSink.setActive(m_isActive);
 }
 
@@ -194,7 +200,7 @@ void QGstreamerVideoSink::updateSinkElement(QGstVideoRendererSinkElement newSink
         m_gstVideoSink.syncStateWithParent();
     });
 
-    m_sinkBin.dumpPipelineGraph("updateVideoSink");
+    m_sinkBin.dumpPipelineGraph("updateSinkElement");
 }
 
 void QGstreamerVideoSink::unrefGstContexts()
@@ -270,6 +276,7 @@ void QGstreamerVideoSink::updateGstContexts()
     GstGLAPI glApi = QOpenGLContext::openGLModuleType() == QOpenGLContext::LibGL ? GST_GL_API_OPENGL : GST_GL_API_GLES2;
     QGstGLContextHandle appContext{
         gst_gl_context_new_wrapped(gstGlDisplay.get(), guintptr(nativeContext), glPlatform, glApi),
+        QGstGLContextHandle::HasRef,
     };
     if (!appContext)
         qWarning() << "Could not create wrappped context for platform:" << glPlatform;
@@ -298,10 +305,8 @@ void QGstreamerVideoSink::updateGstContexts()
     gst_structure_set(structure, "context", GST_TYPE_GL_CONTEXT, displayContext.get(), nullptr);
     displayContext.close();
 
-    QGstPipeline pipeline = m_sinkBin.getPipeline();
-
-    if (pipeline)
-        gst_element_set_context(pipeline.element(), m_gstGlLocalContext.get());
+    // Note: after updating the context, we switch the sink and send gst_event_new_reconfigure()
+    // upstream. this will cause the context to be queried again.
 #endif // #if QT_CONFIG(gstreamer_gl)
 }
 

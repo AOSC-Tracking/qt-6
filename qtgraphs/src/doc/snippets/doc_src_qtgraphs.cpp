@@ -5,6 +5,10 @@
 proxy->setItemLabelFormat(QStringLiteral("@valueTitle for (@rowLabel, @colLabel): %.1f"));
 //! [labelformat]
 
+//! [labelformat-scatter]
+proxy->setItemLabelFormat(QStringLiteral("@yTitle for (@xLabel, @zLabel): %.1f"));
+//! [labelformat-scatter]
+
 //! [barmodelproxy]
 // By defining row and column categories, you tell the mapping which row and column each item
 // belongs to. The categories must match the data stored in the model in the roles you define

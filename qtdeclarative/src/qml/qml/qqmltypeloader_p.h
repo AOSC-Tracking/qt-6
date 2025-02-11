@@ -149,10 +149,10 @@ public:
     QQmlRefPointer<QQmlTypeData> getType(const QUrl &unNormalizedUrl, Mode mode = PreferSynchronous);
     QQmlRefPointer<QQmlTypeData> getType(const QByteArray &, const QUrl &url, Mode mode = PreferSynchronous);
 
-    void injectScript(const QUrl &relativeUrl, const QV4::Value &value);
-    QQmlRefPointer<QQmlScriptBlob> injectedScript(const QUrl &relativeUrl);
+    QQmlRefPointer<QV4::CompiledData::CompilationUnit> injectScript(
+            const QUrl &relativeUrl, const QV4::CompiledData::Unit *unit);
 
-    QQmlRefPointer<QQmlScriptBlob> getScript(const QUrl &unNormalizedUrl);
+    QQmlRefPointer<QQmlScriptBlob> getScript(const QUrl &unNormalizedUrl, const QUrl &relativeUrl);
     QQmlRefPointer<QQmlQmldirData> getQmldir(const QUrl &);
 
     QString absoluteFilePath(const QString &path);
@@ -174,6 +174,7 @@ public:
     void load(QQmlDataBlob *, Mode = PreferSynchronous);
     void loadWithStaticData(QQmlDataBlob *, const QByteArray &, Mode = PreferSynchronous);
     void loadWithCachedUnit(QQmlDataBlob *blob, const QQmlPrivate::CachedQmlUnit *unit, Mode mode = PreferSynchronous);
+    void drop(const QQmlDataBlob::Ptr &blob);
 
     QQmlEngine *engine() const;
     void initializeEngine(QQmlEngineExtensionInterface *, const char *);

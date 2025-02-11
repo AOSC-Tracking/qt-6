@@ -44,6 +44,7 @@ else()
             input
             utils
             qml
+            ../common/utils/
     )
 
     qt_internal_extend_target(Graphs CONDITION QT_FEATURE_graphs_3d_bars3d
@@ -92,8 +93,6 @@ else()
             data/qsurfacedataitem.cpp data/qsurfacedataitem.h
             data/qsurfacedataproxy.cpp data/qsurfacedataproxy.h data/qsurfacedataproxy_p.h
             data/surfaceitemmodelhandler.cpp data/surfaceitemmodelhandler_p.h
-
-            engine/surfaceselectioninstancing.cpp engine/surfaceselectioninstancing_p.h
 
             qml/foreigntypessurface_p.h
             qml/qquickgraphssurface.cpp qml/qquickgraphssurface_p.h

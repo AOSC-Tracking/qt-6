@@ -60,6 +60,7 @@
 #include "QtWidgets/qgraphicsproxywidget.h"
 #include "QtWidgets/qgraphicsscene.h"
 #include "private/qgraphicsproxywidget_p.h"
+#include "private/qgraphicsview_p.h"
 #endif
 #include "QtWidgets/qabstractscrollarea.h"
 #include "private/qabstractscrollarea_p.h"
@@ -1400,9 +1401,12 @@ void QWidgetPrivate::create()
 
     if (data.crect.width() == 0 || data.crect.height() == 0) {
         q->setAttribute(Qt::WA_OutsideWSRange, true);
-    } else if (q->isVisible()) {
-        // If widget is already shown, set window visible, too
-        win->setNativeWindowVisibility(true);
+    } else {
+        q->setAttribute(Qt::WA_OutsideWSRange, false);
+        if (q->isVisible()) {
+            // If widget is already shown, set window visible, too
+            win->setNativeWindowVisibility(true);
+        }
     }
 }
 
@@ -1580,6 +1584,7 @@ QWidget::~QWidget()
 #if QT_CONFIG(graphicseffect)
     delete d->graphicsEffect;
 #endif
+    d->deleteExtra();
 
     d->isWidget = false;
 }
@@ -4217,10 +4222,12 @@ QPointF QWidget::mapTo(const QWidget *parent, const QPointF &pos) const
     if (parent) {
         const QWidget * w = this;
         while (w != parent) {
-            Q_ASSERT_X(w, "QWidget::mapTo(const QWidget *parent, const QPointF &pos)",
-                       "parent must be in parent hierarchy");
             p = w->mapToParent(p);
             w = w->parentWidget();
+            if (!w) {
+                qWarning("QWidget::mapTo(): parent must be in parent hierarchy");
+                break;
+            }
         }
     }
     return p;
@@ -4249,11 +4256,12 @@ QPointF QWidget::mapFrom(const QWidget *parent, const QPointF &pos) const
     if (parent) {
         const QWidget * w = this;
         while (w != parent) {
-            Q_ASSERT_X(w, "QWidget::mapFrom(const QWidget *parent, const QPoint &pos)",
-                       "parent must be in parent hierarchy");
-
             p = w->mapFromParent(p);
             w = w->parentWidget();
+            if (!w) {
+                qWarning("QWidget::mapFrom(): parent must be in parent hierarchy");
+                break;
+            }
         }
     }
     return p;
@@ -12644,8 +12652,8 @@ static MapToGlobalTransformResult mapToGlobalTransform(const QWidget *w)
             if (const QGraphicsScene *scene = qgpw->scene()) {
                 const QList <QGraphicsView *> views = scene->views();
                 if (!views.isEmpty()) {
-                    result.transform *= qgpw->sceneTransform();
-                    result.transform *= views.first()->viewportTransform();
+                    auto *viewP = static_cast<QGraphicsViewPrivate *>(qt_widget_private(views.constFirst()));
+                    result.transform *= viewP->mapToViewTransform(qgpw);
                     w = views.first()->viewport();
                 }
             }
@@ -12657,8 +12665,8 @@ static MapToGlobalTransformResult mapToGlobalTransform(const QWidget *w)
             break;
         }
 
-        const QPoint topLeft = w->geometry().topLeft();
-        result.transform.translate(topLeft.x(), topLeft.y());
+        const auto &geometry = w->geometry();
+        result.transform *= QTransform::fromTranslate(geometry.x(), geometry.y());
         if (w->isWindow())
             break;
     }

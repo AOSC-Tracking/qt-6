@@ -16,22 +16,37 @@
     \ingroup graphs_qml_2D
     \brief A container in which all animations are defined.
 
-GraphTransition is a container for animations inside on Graphs2D. Define this class
-inside a graph type to enable animated changes for XYSeries within 2D graphs. To
-define individual animations, add them inside of the GraphTransition. The
-individual animations within the same GraphTransition are animated in parallel. If
-a GraphTransition is found by the graph during a call to a supported function
-which appends or replaces a point, then the values are interpolated according to
-the animations that are added.
+    GraphTransition is a container for animations inside on Graphs2D. Define this class
+    inside a graph type to enable animated changes for XYSeries within 2D graphs. To
+    define individual animations, add them inside of the GraphTransition. The
+    individual animations within the same GraphTransition are animated in parallel. If
+    a GraphTransition is found by the graph during a call to a supported function
+    which appends or replaces a point, then the values are interpolated according to
+    the animations that are added.
 
-This example shows how to define a GraphTransition within a graph.
+    This example shows how to define a GraphTransition within a graph.
 
-\snippet doc_src_qmlgraphs.cpp 11
+    \snippet doc_src_qmlgraphs.cpp 11
 
-Note: GraphTransition requires it to be defined directly inside the graph which needs to be animated.
-Currently only XYSeries are supported.
+    \note GraphTransition requires it to be defined directly inside the graph which needs to be animated.
+    Currently only XYSeries are supported.
 
-\sa GraphPointAnimation, SplineControlAnimation
+    \sa GraphPointAnimation, SplineControlAnimation
+*/
+
+/*!
+    \qmlproperty enumeration GraphTransition::TransitionType
+
+    Type of the transition.
+
+    \value None
+        No transition.
+    \value PointAdded
+        A point has been added.
+    \value PointReplaced
+        A point has been replaced.
+    \value PointRemoved
+        A point has been removed.
 */
 
 QGraphTransition::QGraphTransition(QObject *parent)

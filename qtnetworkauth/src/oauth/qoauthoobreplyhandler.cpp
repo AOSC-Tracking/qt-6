@@ -1,8 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QT_NO_HTTP
-
 #include "qoauthoobreplyhandler.h"
 #include "qoauthoobreplyhandler_p.h"
 #include "qabstractoauthreplyhandler_p.h"
@@ -13,6 +11,7 @@
 #include <QtCore/qloggingcategory.h>
 
 #include <QtNetwork/qnetworkreply.h>
+#include <QtNetwork/qrestreply.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -34,12 +33,18 @@ QString QOAuthOobReplyHandler::callback() const
 
 void QOAuthOobReplyHandler::networkReplyFinished(QNetworkReply *reply)
 {
-    if (reply->error() != QNetworkReply::NoError) {
+    QRestReply restReply(reply);
+
+    if (restReply.hasError()) {
         emit tokenRequestErrorOccurred(QAbstractOAuth::Error::NetworkError, reply->errorString());
         return;
     }
+    if (!restReply.isHttpStatusSuccess()) {
+        emit tokenRequestErrorOccurred(QAbstractOAuth::Error::ServerError, reply->errorString());
+        return;
+    }
     if (reply->header(QNetworkRequest::ContentTypeHeader).isNull()) {
-        emit tokenRequestErrorOccurred(QAbstractOAuth::Error::NetworkError,
+        emit tokenRequestErrorOccurred(QAbstractOAuth::Error::ServerError,
                                        u"Empty Content-type header"_s);
         return;
     }
@@ -48,7 +53,7 @@ void QOAuthOobReplyHandler::networkReplyFinished(QNetworkReply *reply)
                 reply->header(QNetworkRequest::ContentTypeHeader).toString();
     const QByteArray data = reply->readAll();
     if (data.isEmpty()) {
-        emit tokenRequestErrorOccurred(QAbstractOAuth::Error::NetworkError, u"No received data"_s);
+        emit tokenRequestErrorOccurred(QAbstractOAuth::Error::ServerError, u"No data received"_s);
         return;
     }
 
@@ -69,8 +74,9 @@ void QOAuthOobReplyHandler::networkReplyFinished(QNetworkReply *reply)
         }
         const QJsonObject object = document.object();
         if (object.isEmpty()) {
-            qCWarning(lcReplyHandler, "Received empty JSON object: %s",
-                      qPrintable(QString::fromUtf8(data)));
+            emit tokenRequestErrorOccurred(QAbstractOAuth::Error::ServerError,
+                                           u"Received an empty JSON object"_s);
+            return;
         }
         ret = object.toVariantMap();
     } else {
@@ -95,5 +101,3 @@ QVariantMap QOAuthOobReplyHandler::parseResponse(const QByteArray &response)
 QT_END_NAMESPACE
 
 #include "moc_qoauthoobreplyhandler.cpp"
-
-#endif // QT_NO_HTTP

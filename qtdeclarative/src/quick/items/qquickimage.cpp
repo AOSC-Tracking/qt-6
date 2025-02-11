@@ -25,7 +25,15 @@ QQuickImageTextureProvider::QQuickImageTextureProvider()
 void QQuickImageTextureProvider::updateTexture(QSGTexture *texture) {
     if (m_texture == texture)
         return;
+
+    if (m_texture)
+        disconnect(m_texture, &QSGTexture::destroyed, this, nullptr);
+
     m_texture = texture;
+
+    if (m_texture)
+        connect(m_texture, &QSGTexture::destroyed, this, [this]() { updateTexture(nullptr); });
+
     emit textureChanged();
 }
 
@@ -66,6 +74,8 @@ QQuickImagePrivate::QQuickImagePrivate()
     By default, specifying the width and height of the item causes the image
     to be scaled to that size. This behavior can be changed by setting the
     \l fillMode property, allowing the image to be stretched and tiled instead.
+
+    It is possible to provide \l {High Resolution Versions of Images}{"@nx" high DPI syntax}.
 
     \section1 Example Usage
 

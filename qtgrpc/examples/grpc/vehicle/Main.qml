@@ -3,299 +3,286 @@
 
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Controls.Material
+import QtQuick.Layouts
+import QtQuick.VectorImage
+import QtQuick.Controls.Basic
 
 import qtgrpc.examples.vehicle
 
 ApplicationWindow {
     id: root
-    width: 1280
-    height: 518
 
-    minimumWidth: width
-    maximumWidth: width
-    minimumHeight: height
-    maximumHeight: height
+    property int speed: -1
+    property int rpm: -1
+    property int totalDistance: -1
+    property int traveledDistance: -1
+    property int estimatedAutonomy: -1
+    property string directionImageSource: ""
+    property string street: ""
+    property string vehicleErrors: ""
+    property string navigationErrors: ""
 
-    property int speed: 0
-    property int rpm: 0
-    property int totalDistance: 0
-    property int remainingDistance: 0
-    property int direction: ClusterDataManager.BACKWARD
-    property int fuelLevel: 0
-    property bool availableBtn: false
-
+    width: 1200
+    height: 500
     visible: true
-    title: qsTr("Cluster Qt GRPC Example")
-    Material.theme: Material.Light
+    title: qsTr("Vehicle Qt GRPC example")
 
-    Rectangle {
-        anchors.fill: parent
-        color: "#040a16"
+//! [Connections]
+    Connections {
+        target: VehicleManager
+
+        // This slot will be executed when the VehicleManager::totalDistanceChanged
+        // signal is emitted
+        function onTotalDistanceChanged(distance: int): void {
+            root.totalDistance = distance;
+        }
+
+        function onSpeedChanged(speed: int): void {
+            root.speed = speed;
+        }
+
+        function onRpmChanged(rpm: int): void {
+            root.rpm = rpm;
+        }
+
+        function onTraveledDistanceChanged(distance: int): void {
+            root.traveledDistance = distance;
+        }
+
+        function onDirectionChanged(direction: int): void {
+            if (direction == VehicleManager.RIGHT) {
+                root.directionImageSource = "qrc:/direction_right.svg";
+            } else if (direction == VehicleManager.LEFT) {
+                root.directionImageSource =  "qrc:/direction_left.svg";
+            } else if (direction == VehicleManager.STRAIGHT) {
+                root.directionImageSource =  "qrc:/direction_straight.svg";
+            } else {
+                root.directionImageSource =  "";
+            }
+        }
+//! [Connections]
+        function onStreetChanged(street: string): void {
+            root.street = street;
+        }
+
+        function onAutonomyChanged(autonomy: int): void {
+            root.estimatedAutonomy = autonomy;
+        }
+
+        function onVehicleErrorsChanged(vehicleErrors: string): void {
+            root.vehicleErrors = vehicleErrors;
+        }
+
+        function onNavigationErrorsChanged(navigationErrors: string): void {
+            root.navigationErrors = navigationErrors;
+        }
     }
 
-    Item {
-        id: background
+    // Background
+    Rectangle {
         anchors.fill: parent
-        visible: !root.availableBtn
+        color: "#160404"
+    }
 
-        Row {
-            id: textsBar
-            anchors.horizontalCenter: background.horizontalCenter
-            anchors.bottom: progressBars.top
-            spacing: 130
+    // Information screen
+    GridLayout {
+        anchors.fill: parent
+        anchors.margins: 40
+        visible: !(root.vehicleErrors && root.navigationErrors)
+        columnSpacing: 20
+        rowSpacing: 10
+        columns: 2
+        uniformCellWidths: true
 
-            width: root.width - 110
-            height: 200
+        Item {
+            Layout.fillHeight: true
+            Layout.fillWidth: true
 
-            Item {
-                width: 300
-                height: 200
-
-                ClusterText {
-                    width: 200
-                    height: 200
-                    anchors.bottom: parent.bottom
-                    anchors.left: parent.left
-
-                    verticalAlignment: Text.AlignBottom
-                    font.pointSize: 90
-                    text: root.speed
-                }
-
-                ClusterText {
-                    width: 100
-                    height: 200
-                    anchors.bottom: parent.bottom
-                    anchors.bottomMargin: 27
-                    anchors.right: parent.right
-
-                    verticalAlignment: Text.AlignBottom
-                    horizontalAlignment: Text.AlignRight
-                    text: "Kmph"
-                }
+            StyledText {
+                id: speedText
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.speed == -1 ? "-" : root.speed
+                font.pointSize: 90
             }
 
-            Item {
-                width: 300
-                height: 200
+            StyledText {
+                id: speedUnitText
+                anchors.bottom: parent.bottom
+                anchors.right: parent.right
+                text: "Km/h"
+            }
+        }
 
-                Image {
-                    id: arrow
-                    anchors.left: parent.left
-                    anchors.bottom: parent.bottom
-                    anchors.bottomMargin: 33
-                    source: root.getImage()
-                    width: implicitWidth
-                    height: implicitHeight
+        Item {
+            Layout.fillHeight: true
+            Layout.fillWidth: true
 
-                    Timer {
-                        interval: 2000
-                        running: arrow.source !== ""
-                        repeat: true
-                        onTriggered: arrow.visible = !arrow.visible
+            VectorImage {
+                id: directionImage
+                source: root.directionImageSource
+
+                width: 100
+                height: 100
+
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.left: parent.left
+            }
+
+            Rectangle {
+                visible: root.directionImageSource
+                anchors.fill: directionImage
+                color: "#363636"
+                radius: 10
+                z: -1
+            }
+
+            StyledText {
+                anchors.right: parent.right
+                anchors.bottom: streetText.top
+                font.pointSize: 24
+                horizontalAlignment: Text.AlignRight
+                text: {
+                    if (root.totalDistance == -1 || root.traveledDistance == -1) {
+                        return "- km";
                     }
-                }
 
-                ClusterText {
-                    width: 200
-                    height: 40
-                    anchors.bottom: street.top
-                    anchors.right: parent.right
+                    let remainingDistance = root.totalDistance - root.traveledDistance;
 
-                    verticalAlignment: Text.AlignBottom
-                    horizontalAlignment: Text.AlignRight
-                    text: Number(root.remainingDistance * 0.001).toFixed(2) + " km"
-                }
-
-                ClusterText {
-                    id: street
-                    width: 200
-                    height: 40
-                    anchors.bottom: parent.bottom
-                    anchors.bottomMargin: 27
-                    anchors.right: parent.right
-
-                    verticalAlignment: Text.AlignBottom
-                    horizontalAlignment: Text.AlignRight
-                    color: "#828284"
-                    text: (root.getImage() !== "") ? "Erich-Thilo St" : "None"
+                    if (remainingDistance > 1000) {
+                        return `${Number(remainingDistance * 0.001).toFixed(2)} km`;
+                    }
+                    return `${remainingDistance} m`
                 }
             }
 
-            Item {
-                width: 300
-                height: 200
+            StyledText {
+                id: streetText
 
-                ClusterText {
-                    id: rightSide
-                    width: 200
-                    height: 200
-                    anchors.bottom: parent.bottom
-                    anchors.bottomMargin: 27
-                    anchors.right: parent.right
-
-                    verticalAlignment: Text.AlignBottom
-                    horizontalAlignment: Text.AlignRight
-                    text: root.rpm + " rpm"
-                }
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                horizontalAlignment: Text.AlignRight
+                color: "#828284"
+                text: root.street
             }
         }
 
-        Row {
-            id: progressBars
+        StyledProgressBar {
+            Layout.fillWidth: true
+            value: root.speed
+            to: 200
+            activeColor: "#04e2ed"
+            bgColor: "#023061"
+        }
 
-            anchors.horizontalCenter: background.horizontalCenter
-            anchors.verticalCenter: background.verticalCenter
-            anchors.verticalCenterOffset: 50
-            spacing: 130
+        StyledProgressBar {
+            Layout.fillWidth: true
+            value: root.traveledDistance
+            to: root.totalDistance != -1 ? root.totalDistance : 0
+            activeColor: "#dde90000"
+            bgColor: "#860000"
+        }
 
-            width: root.width - 110
-            height: 20
+        Item {
+            Layout.fillHeight: true
+            Layout.fillWidth: true
 
-            ClusterProgressBar {
-                currentBarValue: root.speed;
-                totalBarValue: 200
-                activeColor: "#04e2ed"
-                bgColor: "#023061"
+            StyledText {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.rpm == -1 ? "-" : root.rpm
+                font.pointSize: 60
             }
-            ClusterProgressBar {
-                currentBarValue: root.remainingDistance;
-                totalBarValue: root.totalDistance
-                activeColor: "#04e2ed"
-                bgColor: "#023061"
-            }
-            ClusterProgressBar {
-                currentBarValue: root.rpm;
-                totalBarValue: 9000
-                activeColor: "#f8c607"
-                bgColor: "#5f3f04"
+
+            StyledText {
+                anchors.bottom: parent.bottom
+                anchors.right: parent.right
+                text: "rpm"
             }
         }
 
-        ClusterProgressBar {
-            id: fuelLevel
-            anchors.leftMargin: 55
-            anchors.left: parent.left
-            anchors.topMargin: 100
-            anchors.top: progressBars.bottom
-            currentBarValue: root.fuelLevel
-            totalBarValue: 250
+        Item {
+            Layout.fillHeight: true
+            Layout.fillWidth: true
+
+            VectorImage {
+                id: fuelIcon
+                width: 28
+                height: 28
+                source: "qrc:/fuel_icon.svg"
+                anchors.bottom: parent.bottom
+                anchors.right: autonomyText.left
+                anchors.rightMargin: 12
+            }
+
+            StyledText {
+                id: autonomyText
+                text: `${root.estimatedAutonomy == -1 ? "-" : root.estimatedAutonomy} km`
+                anchors.bottom: parent.bottom
+                anchors.right: parent.right
+            }
+        }
+
+        StyledProgressBar {
+            Layout.fillWidth: true
+            value: root.rpm
+            to: 9000
+            activeColor: "#f8c607"
+            bgColor: "#5f3f04"
+        }
+
+        StyledProgressBar {
+            Layout.fillWidth: true
+            value: root.estimatedAutonomy
+            to: 250
             activeColor: "#05c848"
             bgColor: "#03511f"
         }
-
-        ClusterText {
-            id: miles
-            anchors.bottom: fuelLevel.bottom
-            anchors.bottomMargin: 27
-            anchors.right: fuelLevel.right
-
-            verticalAlignment: Text.AlignBottom
-            horizontalAlignment: Text.AlignRight
-            text: root.fuelLevel + " Km"
-        }
-
-        Image {
-            anchors.bottom: fuelLevel.bottom
-            anchors.bottomMargin: 35
-            anchors.left: fuelLevel.left
-
-            source:"qrc:/fuel_lvl.png"
-        }
     }
 
-    Item {
-        anchors.fill: parent
-        visible: root.availableBtn
-        ClusterText {
-            anchors.top: parent.top
-            anchors.topMargin: 60
-            anchors.right: restartBtn.left
-            anchors.rightMargin: 10
+    // No connection error screen
+    ColumnLayout {
+        anchors.centerIn: parent
+        visible: root.vehicleErrors && root.navigationErrors
 
-            width: 200
-            height: 80
+        StyledText {
+            Layout.alignment: Qt.AlignHCenter
             font.pointSize: 14
-            visible: root.availableBtn
-            text: "Please, start server and press run."
+            text: qsTr("Please, start vehicle server. Then, press try again.")
         }
 
-        Rectangle {
-            id: restartBtn
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.margins: 60
+        Button {
+            id: runButton
+            property string baseColor: "white"
+            property string clickedColor: "#828284"
+            property string hoverColor: "#a9a9a9"
 
-            width: 100
-            height: 50
-            radius: 80
-            color: "#040a16"
-            border.color: btn.btnPressed ? "#828284" : "white"
-            border.width: 2
-            visible: root.availableBtn
+            Layout.alignment: Qt.AlignHCenter
 
-            ClusterText {
-                anchors.centerIn: parent
-                color: btn.btnPressed ? "#828284" : "white"
-                text: "RUN"
+            background: Rectangle {
+                border.color: runButton.down ?
+                    runButton.clickedColor
+                    : (runButton.hovered ? runButton.hoverColor : runButton.baseColor)
+                border.width: 2
+                radius: 2
+                color: "transparent"
             }
 
-            MouseArea {
-                id: btn
-                property bool btnPressed: false
-                anchors.fill: parent
-
-                enabled: root.availableBtn
-                onClicked: ClusterDataManager.restart()
-                onPressed: btnPressed = true
-                onReleased:  btnPressed = false
+            contentItem: Text {
+                text: qsTr("Try again")
+                font.pointSize: 16
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                color: runButton.down ?
+                    runButton.clickedColor
+                    : (runButton.hovered ? runButton.hoverColor : runButton.baseColor)
             }
-        }
-    }
 
-    function getImage() {
-        switch (root.direction) {
-        case ClusterDataManager.RIGHT:
-            return "qrc:/right.png"
-        case ClusterDataManager.LEFT:
-            return "qrc:/left.png"
-        case ClusterDataManager.STRAIGHT:
-            return "qrc:/forward.png"
-        default:
-            return ""
-        }
-    }
-
-    Connections {
-        target: ClusterDataManager
-
-        function onTotalDistanceChanged(distance) {
-            root.totalDistance = distance
-        }
-
-        function onSpeedChanged(speed) {
-            root.speed = speed
-        }
-
-        function onRpmChanged(rpm) {
-            root.rpm = rpm
-        }
-
-        function onRemainingDistanceChanged(distance) {
-            root.remainingDistance = distance
-        }
-
-        function onDirectionChanged(direction) {
-            root.direction = direction
-        }
-
-        function onFuelLevelChanged(level) {
-            root.fuelLevel = level
-        }
-
-        function onShowRestartClient(value) {
-            root.availableBtn = value
+            onClicked: {
+                root.vehicleErrors = "";
+                root.navigationErrors = "";
+                VehicleManager.restart();
+            }
         }
     }
 }

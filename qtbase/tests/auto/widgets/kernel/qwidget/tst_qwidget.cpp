@@ -2458,8 +2458,8 @@ void tst_QWidget::tabOrderWithProxyDisabled()
     container.show();
     container.activateWindow();
 
-    if (!QTest::qWaitForWindowActive(&container))
-        QSKIP("Window failed to activate, skipping test");
+    if (!QTest::qWaitForWindowFocused(&container))
+        QSKIP("Window failed to activate and be focused, skipping test");
 
     QVERIFY2(lineEdit1.hasFocus(),
              qPrintable(focusWidgetName()));
@@ -2591,6 +2591,9 @@ void tst_QWidget::tabOrderWithCompoundWidgets()
 
 void tst_QWidget::tabOrderWithProxyOutOfOrder()
 {
+    if (QGuiApplication::styleHints()->tabFocusBehavior() != Qt::TabFocusAllControls)
+        QSKIP("Test requires Qt::TabFocusAllControls tab focus behavior");
+
     Container container;
     container.setWindowTitle(QLatin1String(QTest::currentTestFunction()));
     container.setObjectName(QLatin1StringView("Container"));
@@ -2629,8 +2632,8 @@ void tst_QWidget::tabOrderWithProxyOutOfOrder()
 
     container.show();
     container.activateWindow();
-    if (!QTest::qWaitForWindowActive(&container))
-        QSKIP("Window failed to activate, skipping test");
+    if (!QTest::qWaitForWindowFocused(&container))
+        QSKIP("Window failed to activate and be focused, skipping test");
 
     QCOMPARE(QApplication::focusWidget(), &outsideButton);
     container.tab();
@@ -2786,8 +2789,8 @@ void tst_QWidget::tabOrderWithCompoundWidgetsNoFocusPolicy()
     container.show();
     container.activateWindow();
 
-    if (!QTest::qWaitForWindowActive(&container))
-        QSKIP("Window failed to activate, skipping test");
+    if (!QTest::qWaitForWindowFocused(&container))
+        QSKIP("Window failed to activate and be focused, skipping test");
 
     QVERIFY2(spinbox1.hasFocus(),
              qPrintable(focusWidgetName()));
@@ -4333,18 +4336,12 @@ void tst_QWidget::saveRestoreGeometry()
 
     {
         QWidget widget;
+        widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
         widget.move(position);
         widget.resize(size);
         widget.showNormal();
         QVERIFY(QTest::qWaitForWindowExposed(&widget));
         QApplication::processEvents();
-
-
-    /* ---------------------------------------------------------------------
-     * This test function is likely to flake when debugged with Qt Creator.
-     * (29px offset making the following QTRY_VERIFY2 fail)
-     * ---------------------------------------------------------------------
-     */
 
         QTRY_VERIFY2(HighDpi::fuzzyCompare(widget.pos(), position, m_fuzz),
                      qPrintable(HighDpi::msgPointMismatch(widget.pos(), position)));
@@ -4354,6 +4351,7 @@ void tst_QWidget::saveRestoreGeometry()
 
     {
         QWidget widget;
+        widget.setWindowFlags(Qt::X11BypassWindowManagerHint);
         widget.setWindowTitle(QLatin1String(QTest::currentTestFunction()));
 
         const QByteArray empty;
@@ -4373,7 +4371,6 @@ void tst_QWidget::saveRestoreGeometry()
         QVERIFY(widget.restoreGeometry(savedGeometry));
         widget.showNormal();
         QVERIFY(QTest::qWaitForWindowExposed(&widget));
-        QApplication::processEvents();
 
         QVERIFY2(HighDpi::fuzzyCompare(widget.pos(), position, m_fuzz),
                  qPrintable(HighDpi::msgPointMismatch(widget.pos(), position)));
@@ -4399,65 +4396,46 @@ void tst_QWidget::saveRestoreGeometry()
         geom = widget.geometry();
         widget.setWindowState(widget.windowState() | Qt::WindowFullScreen);
         QTRY_VERIFY((widget.windowState() & Qt::WindowFullScreen));
-        QTest::qWait(500);
         QVERIFY(widget.restoreGeometry(savedGeometry));
-        QTest::qWait(120);
         QTRY_VERIFY(!(widget.windowState() & Qt::WindowFullScreen));
         QTRY_COMPARE(widget.geometry(), geom);
 
         //Restore to full screen
         widget.setWindowState(widget.windowState() | Qt::WindowFullScreen);
-        QTest::qWait(120);
         QTRY_VERIFY((widget.windowState() & Qt::WindowFullScreen));
-        QTest::qWait(500);
         savedGeometry = widget.saveGeometry();
         geom = widget.geometry();
         widget.setWindowState(widget.windowState() ^ Qt::WindowFullScreen);
-        QTest::qWait(120);
         QTRY_VERIFY(!(widget.windowState() & Qt::WindowFullScreen));
-        QTest::qWait(400);
         QVERIFY(widget.restoreGeometry(savedGeometry));
-        QTest::qWait(120);
         QTRY_VERIFY((widget.windowState() & Qt::WindowFullScreen));
         QTRY_COMPARE(widget.geometry(), geom);
         QVERIFY((widget.windowState() & Qt::WindowFullScreen));
         widget.setWindowState(widget.windowState() ^ Qt::WindowFullScreen);
-        QTest::qWait(120);
         QTRY_VERIFY(!(widget.windowState() & Qt::WindowFullScreen));
-        QTest::qWait(120);
 
         //Restore from Maximised
         widget.move(position);
         widget.resize(size);
-        QTest::qWait(10);
         QTRY_COMPARE(widget.size(), size);
-        QTest::qWait(500);
         savedGeometry = widget.saveGeometry();
         geom = widget.geometry();
         widget.setWindowState(widget.windowState() | Qt::WindowMaximized);
-        QTest::qWait(120);
         QTRY_VERIFY((widget.windowState() & Qt::WindowMaximized));
         QTRY_VERIFY(widget.geometry() != geom);
-        QTest::qWait(500);
         QVERIFY(widget.restoreGeometry(savedGeometry));
-        QTest::qWait(120);
         QTRY_COMPARE(widget.geometry(), geom);
 
         QVERIFY(!(widget.windowState() & Qt::WindowMaximized));
 
         //Restore to maximised
         widget.setWindowState(widget.windowState() | Qt::WindowMaximized);
-        QTest::qWait(120);
         QTRY_VERIFY((widget.windowState() & Qt::WindowMaximized));
-        QTest::qWait(500);
         geom = widget.geometry();
         savedGeometry = widget.saveGeometry();
         widget.setWindowState(widget.windowState() ^ Qt::WindowMaximized);
-        QTest::qWait(120);
         QTRY_VERIFY(!(widget.windowState() & Qt::WindowMaximized));
-        QTest::qWait(500);
         QVERIFY(widget.restoreGeometry(savedGeometry));
-        QTest::qWait(120);
         QTRY_VERIFY((widget.windowState() & Qt::WindowMaximized));
         QTRY_COMPARE(widget.geometry(), geom);
     }
@@ -8501,6 +8479,9 @@ void tst_QWidget::render_windowOpacity()
     painter.setOpacity(opacity);
     child.render(&painter);
     painter.end();
+#if defined(Q_OS_WIN) && defined(Q_PROCESSOR_ARM_64)
+    QEXPECT_FAIL("", "QTBUG-128371", Abort);
+#endif
     QCOMPARE(result, expected);
     }
 
@@ -11797,10 +11778,26 @@ void tst_QWidget::childAt()
     grandChild->setAutoFillBackground(true);
     grandChild->setGeometry(-20, -20, 220, 220);
 
+    QWidget *emptyChild = new QWidget(child);
+    emptyChild->setPalette(Qt::green);
+    emptyChild->setAutoFillBackground(true);
+    emptyChild->setGeometry(0, 159, 160, 0);
+
     QVERIFY(!parent.childAt(19, 19));
     QVERIFY(!parent.childAt(180, 180));
     QCOMPARE(parent.childAt(20, 20), grandChild);
     QCOMPARE(parent.childAt(179, 179), grandChild);
+
+    QCOMPARE(parent.childAt(120, 179), grandChild);
+    QCOMPARE(parent.childAt(QPointF(120.0, 178.9)), grandChild);
+    QVERIFY(!parent.childAt(120, 180));
+    QVERIFY(!parent.childAt(QPointF(120, 179.1)));
+
+    emptyChild->setGeometry(100, 0, 0, 160);
+
+    QCOMPARE(parent.childAt(120, 120), grandChild);
+    QCOMPARE(parent.childAt(QPointF(120.5, 120.0)), grandChild);
+    QCOMPARE(parent.childAt(QPointF(119.5, 120.0)), grandChild);
 
     grandChild->setAttribute(Qt::WA_TransparentForMouseEvents);
     QCOMPARE(parent.childAt(20, 20), child);

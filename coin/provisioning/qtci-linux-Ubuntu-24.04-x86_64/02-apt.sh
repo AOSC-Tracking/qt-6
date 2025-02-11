@@ -99,6 +99,12 @@ installPackages+=(libgstreamer-plugins-base1.0-dev)
 installPackages+=(libgstreamer-plugins-good1.0-dev)
 installPackages+=(libgstreamer-plugins-bad1.0-dev)
 installPackages+=(libgstreamer-gl1.0-0)
+installPackages+=(gstreamer1.0-libav)
+installPackages+=(gstreamer1.0-plugins-base)
+installPackages+=(gstreamer1.0-plugins-good)
+installPackages+=(gstreamer1.0-plugins-bad)
+installPackages+=(gstreamer1.0-plugins-rtp)
+installPackages+=(gstreamer1.0-plugins-ugly)
 installPackages+=(gir1.2-gst-plugins-base-1.0)
 installPackages+=(gir1.2-gst-plugins-bad-1.0)
 installPackages+=(yasm)
@@ -251,6 +257,11 @@ pip config --user set global.extra-index-url https://pypi.org/simple/
 
 source "${BASH_SOURCE%/*}/../common/unix/SetEnvVar.sh"
 # SetEnvVar "PATH" "/usr/lib/nodejs-mozilla/bin:\$PATH"
+
+# Provisioning during installation says:
+# 'The script sbom2doc is installed in '/home/qt/.local/bin' which is not on PATH.'
+# hence the explicit assignment to SBOM_PYTHON_APPS_PATH.
+SetEnvVar "SBOM_PYTHON_APPS_PATH" "/home/qt/.local/bin"
 
 OpenSSLVersion="$(openssl version |cut -b 9-14)"
 echo "System's OpenSSL = $OpenSSLVersion" >> ~/versions.txt

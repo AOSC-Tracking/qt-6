@@ -37,22 +37,21 @@
 
     \badcode
     $ sudo nano /etc/apt/sources.list.d/tqtc.list
-
-        deb [arch=arm64 signed-by=/home/<user>/keyrings/tqtc/qt-company-debian-repo.gpg] https://debian-packages.qt.io/debian/enterprise/qt-6.8.0-arm64 tqtc-jammy main
+      deb [arch=arm64 signed-by=/etc/apt/keyrings/tqtc/qt-company-debian-repo.gpg] https://debian-packages.qt.io/debian/enterprise/qt-\1-arm64 tqtc-jammy main
     \endcode
 
     See \l{Repository information for Qt Releases} for detailed information
     on how you can configure repositories per Qt release and architecture.
 
-    \section1 Installing Public GPG Key
+    \section1 Installing a Public GPG Key
 
     Install a public GPG (GNU Privacy Guard) key for Enterprise Qt Debian
     repositories as follows:
 
     \badcode
-    $ mkdir -p $HOME/keyrings/tqtc  # pick a suitable location for you!
-    $ cd $HOME/keyrings/tqtc
-    $ wget https://cdn.qt.io/debian/keys/qt-company-debian-repo.gpg
+    $ sudo mkdir -p /etc/apt/keyrings/tqtc  # Create the directory with appropriate permissions
+    $ cd /etc/apt/keyrings/tqtc
+    $ sudo wget https://cdn.qt.io/debian/keys/qt-company-debian-repo.gpg
     \endcode
 
     \section1 Configuring Authentication
@@ -160,9 +159,9 @@
 
     \badcode
     # install repository key
-    $ mkdir -p $HOME/keyrings/tqtc
-    $ cd $HOME/keyrings/tqtc
-    $ wget https://cdn.qt.io/debian/keys/qt-company-debian-repo.gpg
+    $ sudo mkdir -p /etc/apt/keyrings/tqtc
+    $ cd /etc/apt/keyrings/tqtc
+    $ sudo wget https://cdn.qt.io/debian/keys/qt-company-debian-repo.gpg
 
     # configure Qt Account based authentication to Qt Debian repositories
     $ sudo nano /etc/apt/auth.conf
@@ -172,7 +171,7 @@
 
     # add repositories
     $ sudo nano /etc/apt/sources.list.d/tqtc.list
-        deb [arch=arm64 signed-by=/home/<user>/keyrings/tqtc/qt-company-debian-repo.gpg] https://debian-packages.qt.io/debian/enterprise/qt-6.8.0-arm64 tqtc-jammy main
+      deb [arch=arm64 signed-by=/etc/apt/keyrings/tqtc/qt-company-debian-repo.gpg] https://debian-packages.qt.io/debian/enterprise/qt\1-arm64 tqtc-jammy main
 
     # update local package cache
     $ sudo apt-get update

@@ -103,8 +103,9 @@ QT_BEGIN_NAMESPACE
  *
  * The label format for data items in this series. This format is used for
  * single item labels, for example, when an item is selected. How the format is
- * interpreted depends on series type: Bar3DSeries, Scatter3DSeries,
- * Surface3DSeries.
+ * interpreted depends on series type.
+ *
+ * \sa Bar3DSeries, Scatter3DSeries, Surface3DSeries.
  */
 
 /*!
@@ -152,8 +153,8 @@ QT_BEGIN_NAMESPACE
  * Sets the filename for a user defined custom mesh for objects that is used
  * when \l mesh is
  * \l{QAbstract3DSeries::Mesh::UserDefined}{Abstract3DSeries.Mesh.UserDefined}.
- * \note The file needs to be in the Wavefront OBJ format and include
- * vertices, normals, and UVs. It also needs to be in triangles.
+ * \note The file needs to be in the QtQuick3D mesh format. Use the \c balsam
+ * conversion tool to create a mesh from other 3D model formats.
  */
 
 /*!
@@ -363,7 +364,9 @@ QAbstract3DSeries::SeriesType QAbstract3DSeries::type() const
  *
  * This format is used for single item labels,
  * for example, when an item is selected. How the format is interpreted depends
- * on series type: QBar3DSeries, QScatter3DSeries, QSurface3DSeries.
+ * on series type.
+ *
+ * \sa QBar3DSeries, QScatter3DSeries, QSurface3DSeries.
  */
 void QAbstract3DSeries::setItemLabelFormat(const QString &format)
 {
@@ -501,8 +504,8 @@ void QAbstract3DSeries::setMeshAxisAndAngle(QVector3D axis, float angle)
  * \brief The filename for a user defined custom mesh for objects.
  *
  * The custom mesh is used when \l mesh is MeshUserDefined.
- * \note The file needs to be in the Wavefront OBJ format and include
- * vertices, normals, and UVs. It also needs to be in triangles.
+ * \note The file needs to be in the QtQuick3D mesh format. Use the \c balsam
+ * conversion tool to create a mesh from other 3D model formats.
  */
 void QAbstract3DSeries::setUserDefinedMesh(const QString &fileName)
 {
@@ -790,9 +793,9 @@ void QAbstract3DSeriesPrivate::setDataProxy(QAbstractDataProxy *proxy)
 void QAbstract3DSeriesPrivate::setGraph(QQuickGraphsItem *graph)
 {
     Q_Q(QAbstract3DSeries);
-    connectGraphAndProxy(graph);
     m_graph = graph;
     q->setParent(graph);
+    connectGraphAndProxy(graph);
     markItemLabelDirty();
 }
 

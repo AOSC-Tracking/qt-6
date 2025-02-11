@@ -154,20 +154,18 @@ TypeMap common::produceQtTypeMap(const Descriptor *type, const Descriptor *scope
     std::string fullName = name;
     std::string scopeName = name;
 
-    std::string listName = std::string("QList<") + CommonTemplates::RepeatedSuffix() + ">";
-    std::string fullListName = listName;
-    std::string scopeListName = listName;
+    std::string listName = "QList<" + name + ">";
 
     return { { "type", name },
              { "full_type", fullName },
              { "scope_type", scopeName },
              { "list_type", listName },
-             { "full_list_type", fullListName },
-             { "scope_list_type", scopeListName },
+             { "full_list_type", listName },
+             { "scope_list_type", listName },
              { "scope_namespaces", scopeNamespaces },
              { "qml_package", qmlPackage },
              { "property_type", fullName },
-             { "property_list_type", fullListName },
+             { "property_list_type", listName },
              { "getter_type", scopeName },
              { "setter_type", scopeName } };
 }
@@ -191,21 +189,20 @@ TypeMap common::produceOverriddenTypeMap(const Descriptor *type, const Descripto
             getScopeNamespace(namespaces, getFullNamespace(scope, "::"));
     const std::string fullName = name;
     const std::string scopeName = fullName;
-    const std::string fullListName = listName;
-    const std::string scopeListName = listName;
 
     return { { "type", name },
              { "full_type", fullName },
              { "scope_type", scopeName },
              { "list_type", listName },
-             { "full_list_type", fullListName },
-             { "scope_list_type", scopeListName },
+             { "full_list_type", listName },
+             { "scope_list_type", listName },
              { "scope_namespaces", scopeNamespaces },
              { "qml_package", qmlPackage },
              { "property_type", fullName },
-             { "property_list_type", fullListName },
+             { "property_list_type", listName },
              { "getter_type", scopeName },
-             { "setter_type", scopeName } };
+             { "setter_type", scopeName },
+             { "initializer", "{}" } };
 }
 
 TypeMap common::produceMessageTypeMap(const Descriptor *type, const Descriptor *scope)
@@ -221,10 +218,9 @@ TypeMap common::produceMessageTypeMap(const Descriptor *type, const Descriptor *
     std::string fullName = namespaces.empty() ? name : (namespaces + "::" + name);
     std::string scopeName = scopeNamespaces.empty() ? name : (scopeNamespaces + "::" + name);
 
-    std::string listName = name + CommonTemplates::RepeatedSuffix();
-    std::string fullListName = namespaces.empty() ? listName : (namespaces + "::" + listName);
-    std::string scopeListName =
-            scopeNamespaces.empty() ? listName : (scopeNamespaces + "::" + listName);
+    std::string listName = "QList<" + name + ">";
+    std::string fullListName = namespaces.empty() ? listName : "QList<" + fullName + ">";
+    std::string scopeListName = scopeNamespaces.empty() ? listName : "QList<" + scopeName + ">";
 
     std::string exportMacro = common::buildExportMacro();
 
@@ -271,10 +267,9 @@ TypeMap common::produceEnumTypeMap(const EnumDescriptor *type, const Descriptor 
     std::string fullName = namespaces.empty() ? name : (namespaces + "::" + name);
     std::string scopeName = scopeNamespaces.empty() ? name : (scopeNamespaces + "::" + name);
 
-    std::string listName = name + CommonTemplates::RepeatedSuffix();
-    std::string fullListName = namespaces.empty() ? listName : (namespaces + "::" + listName);
-    std::string scopeListName =
-            scopeNamespaces.empty() ? listName : (scopeNamespaces + "::" + listName);
+    std::string listName = "QList<" + name + '>';
+    std::string fullListName = namespaces.empty() ? listName : "QList<" + fullName + '>';
+    std::string scopeListName = scopeNamespaces.empty() ? listName : "QList<" + scopeName + '>';
 
     // Note: For local enum classes it's impossible to use class name space in Q_PROPERTY
     // declaration. So please avoid addition of namespaces in line bellow

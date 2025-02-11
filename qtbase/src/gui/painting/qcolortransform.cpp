@@ -84,6 +84,14 @@ void QColorTransformPrivate::updateLutsOut() const
     It can be applied on color and pixels to convert them from one color space to
     another.
 
+    To create a QColorTransform, use QColorSpace::transformationToColorSpace():
+
+    \code
+    QColorSpace sourceColorSpace(QColorSpace::SRgb);
+    QColorSpace targetColorSpace(QColorSpace::DisplayP3);
+    QColorTransform srgbToP3Transform = sourceColorSpace.transformationToColorSpace(targetColorSpace);
+    \endcode
+
     Setting up a QColorTransform takes some preprocessing, so keeping around
     QColorTransforms that you need often is recommended, instead of generating
     them on the fly.
@@ -662,21 +670,12 @@ static inline bool test_all_zero(uint32x4_t p)
 #endif
 }
 
-static inline uint32x4_t vsetq_u32(uint32_t a, uint32_t b, uint32_t c, uint32_t d)
-{
-#ifdef _MSC_VER
-    return uint32x4_t{ (uint64_t(b) << 32) | a, (uint64_t(d) << 32) | c };
-#else
-    return uint32x4_t{ a, b, c, d };
-#endif
-}
-
 template<typename T>
 static void loadPremultiplied(QColorVector *buffer, const T *src, const qsizetype len, const QColorTransformPrivate *d_ptr)
 {
     constexpr bool isARGB = isArgb<T>();
     const float iFF00 = 1.0f / (255 * 256);
-    const uint32x4_t vRangeMax = vsetq_u32(
+    const uint32x4_t vRangeMax = qvsetq_n_u32(
             isARGB ? d_ptr->colorSpaceIn->lut[2]->m_unclampedToLinear
                    : d_ptr->colorSpaceIn->lut[0]->m_unclampedToLinear,
             d_ptr->colorSpaceIn->lut[1]->m_unclampedToLinear,
@@ -749,7 +748,7 @@ void loadUnpremultiplied(QColorVector *buffer, const T *src, const qsizetype len
 {
     constexpr bool isARGB = isArgb<T>();
     const float iFF00 = 1.0f / (255 * 256);
-    const uint32x4_t vRangeMax = vsetq_u32(
+    const uint32x4_t vRangeMax = qvsetq_n_u32(
             isARGB ? d_ptr->colorSpaceIn->lut[2]->m_unclampedToLinear
                    : d_ptr->colorSpaceIn->lut[0]->m_unclampedToLinear,
             d_ptr->colorSpaceIn->lut[1]->m_unclampedToLinear,
@@ -1976,7 +1975,7 @@ void QColorTransformPrivate::apply(D *dst, const S *src, qsizetype count, Transf
     if (colorSpaceOut->isThreeComponentMatrix())
         updateLutsOut();
 
-    QUninitialized<QColorVector, WorkBlockSize> buffer;
+    Q_DECL_UNINITIALIZED QUninitialized<QColorVector, WorkBlockSize> buffer;
     qsizetype i = 0;
     while (i < count) {
         const qsizetype len = qMin(count - i, WorkBlockSize);

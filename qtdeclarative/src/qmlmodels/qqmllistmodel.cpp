@@ -628,7 +628,9 @@ void ListModel::set(int elementIndex, QV4::Object *object, QVector<int> *roles)
                 if (role.type == ListLayout::Role::QObject)
                     roleIndex = e->setQObjectProperty(role, wrapper);
             } else if (QVariant maybeUrl = QV4::ExecutionEngine::toVariant(
-                           o->asReturnedValue(), QMetaType::fromType<QUrl>(), true);
+                           // gc will hold on to o via the scoped propertyValue; fromReturnedValue is safe
+                           QV4::Value::fromReturnedValue(o->asReturnedValue()),
+                           QMetaType::fromType<QUrl>(), true);
                        maybeUrl.metaType() == QMetaType::fromType<QUrl>()) {
                 const ListLayout::Role &r = m_layout->getRoleOrCreate(propertyName, ListLayout::Role::Url);
                 QUrl qurl = maybeUrl.toUrl();
@@ -713,7 +715,9 @@ void ListModel::set(int elementIndex, QV4::Object *object, ListModel::SetElement
                     e->setQObjectPropertyFast(r, wrapper);
             } else {
                 QVariant maybeUrl = QV4::ExecutionEngine::toVariant(
-                            o->asReturnedValue(), QMetaType::fromType<QUrl>(), true);
+                            // gc will hold on to o via the scoped propertyValue; fromReturnedValue is safe
+                            QV4::Value::fromReturnedValue(o->asReturnedValue()),
+                            QMetaType::fromType<QUrl>(), true);
                 if (maybeUrl.metaType() == QMetaType::fromType<QUrl>()) {
                     const QUrl qurl = maybeUrl.toUrl();
                     const ListLayout::Role &r = m_layout->getRoleOrCreate(propertyName, ListLayout::Role::Url);
@@ -1535,7 +1539,9 @@ int ListElement::setJsProperty(const ListLayout::Role &role, const QV4::Value &d
             roleIndex = setVariantMapProperty(role, o);
         } else if (role.type == ListLayout::Role::Url) {
             QVariant maybeUrl = QV4::ExecutionEngine::toVariant(
-                        o.asReturnedValue(), QMetaType::fromType<QUrl>(), true);
+                        // gc will hold on to o via the scoped propertyValue; fromReturnedValue is safe
+                        QV4::Value::fromReturnedValue(o.asReturnedValue()),
+                        QMetaType::fromType<QUrl>(), true);
             if (maybeUrl.metaType() == QMetaType::fromType<QUrl>()) {
                 roleIndex = setUrlProperty(role, maybeUrl.toUrl());
             }
@@ -1742,9 +1748,11 @@ PropertyKey ModelObjectOwnPropertyKeyIterator::next(const Object *o, Property *p
             if (auto recursiveListModel = qvariant_cast<QQmlListModel*>(value)) {
                 auto size = recursiveListModel->count();
                 auto array = ScopedArrayObject{scope, v4->newArrayObject(size)};
+                QV4::ScopedValue val(scope);
                 for (auto i = 0; i < size; i++) {
-                    array->arrayPut(i, QJSValuePrivate::convertToReturnedValue(
-                                        v4, recursiveListModel->get(i)));
+                    val = QJSValuePrivate::convertToReturnedValue(
+                            v4, recursiveListModel->get(i));
+                    array->arrayPut(i, val);
                 }
                 pd->value = array;
             } else {
@@ -2812,7 +2820,9 @@ void QQmlListModel::sync()
     qmlWarning(this) << "List sync() can only be called from a WorkerScript";
 }
 
-bool QQmlListModelParser::verifyProperty(const QQmlRefPointer<QV4::ExecutableCompilationUnit> &compilationUnit, const QV4::CompiledData::Binding *binding)
+bool QQmlListModelParser::verifyProperty(
+        const QQmlRefPointer<QV4::CompiledData::CompilationUnit> &compilationUnit,
+        const QV4::CompiledData::Binding *binding)
 {
     if (binding->type() >= QV4::CompiledData::Binding::Type_Object) {
         const quint32 targetObjectIndex = binding->value.objectIndex;
@@ -2926,7 +2936,7 @@ bool QQmlListModelParser::applyProperty(
                 if (v4->hasException)
                     v4->catchException();
                 else
-                    QJSValuePrivate::setValue(&v, result->asReturnedValue());
+                    QJSValuePrivate::setValue(&v, result);
                 value.setValue(v);
             } else {
                 bool ok;
@@ -2952,7 +2962,9 @@ bool QQmlListModelParser::applyProperty(
     return roleSet;
 }
 
-void QQmlListModelParser::verifyBindings(const QQmlRefPointer<QV4::ExecutableCompilationUnit> &compilationUnit, const QList<const QV4::CompiledData::Binding *> &bindings)
+void QQmlListModelParser::verifyBindings(
+        const QQmlRefPointer<QV4::CompiledData::CompilationUnit> &compilationUnit,
+        const QList<const QV4::CompiledData::Binding *> &bindings)
 {
     listElementTypeName = QString(); // unknown
 
@@ -2967,7 +2979,9 @@ void QQmlListModelParser::verifyBindings(const QQmlRefPointer<QV4::ExecutableCom
     }
 }
 
-void QQmlListModelParser::applyBindings(QObject *obj, const QQmlRefPointer<QV4::ExecutableCompilationUnit> &compilationUnit, const QList<const QV4::CompiledData::Binding *> &bindings)
+void QQmlListModelParser::applyBindings(
+        QObject *obj, const QQmlRefPointer<QV4::ExecutableCompilationUnit> &compilationUnit,
+        const QList<const QV4::CompiledData::Binding *> &bindings)
 {
     QQmlListModel *rv = static_cast<QQmlListModel *>(obj);
 

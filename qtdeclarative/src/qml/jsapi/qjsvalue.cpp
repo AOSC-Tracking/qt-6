@@ -909,7 +909,10 @@ QJSValue& QJSValue::operator=(const QJSValue& other)
     if (const QString *string = QJSValuePrivate::asQString(&other))
         QJSValuePrivate::setString(this, *string);
     else
-        QJSValuePrivate::setValue(this, QJSValuePrivate::asReturnedValue(&other));
+        // fomReturnedValue is safe, as the QJSValue still has a persistent reference
+        QJSValuePrivate::setValue(
+            this,
+            QV4::Value::fromReturnedValue(QJSValuePrivate::asReturnedValue(&other)));
 
     return *this;
 }
@@ -997,17 +1000,19 @@ static bool js_equal(const QString &string, const QV4::Value &value)
 */
 bool QJSValue::equals(const QJSValue& other) const
 {
+    // QJSValue stores heap items in persistent values, which already ensures marking
+    // therefore, fromReturnedValue below is safe
     if (const QString *string = QJSValuePrivate::asQString(this)) {
         if (const QString *otherString = QJSValuePrivate::asQString(&other))
             return *string == *otherString;
-        return js_equal(*string, QJSValuePrivate::asReturnedValue(&other));
+        return js_equal(*string, Value::fromReturnedValue(QJSValuePrivate::asReturnedValue(&other)));
     }
 
     if (const QString *otherString = QJSValuePrivate::asQString(&other))
-        return js_equal(*otherString, QJSValuePrivate::asReturnedValue(this));
+        return js_equal(*otherString, Value::fromReturnedValue(QJSValuePrivate::asReturnedValue(this)));
 
-    return Runtime::CompareEqual::call(QJSValuePrivate::asReturnedValue(this),
-                                       QJSValuePrivate::asReturnedValue(&other));
+    return Runtime::CompareEqual::call(Value::fromReturnedValue(QJSValuePrivate::asReturnedValue(this)),
+                                       Value::fromReturnedValue(QJSValuePrivate::asReturnedValue(&other)));
 }
 
 /*!
@@ -1048,8 +1053,10 @@ bool QJSValue::strictlyEquals(const QJSValue& other) const
         return false;
     }
 
-    return RuntimeHelpers::strictEqual(QJSValuePrivate::asReturnedValue(this),
-                                       QJSValuePrivate::asReturnedValue(&other));
+    // QJSValue stores heap objects persistently, so we can be sure that they'll be marked
+    // thus we can safely use fromReturnedValue
+    return RuntimeHelpers::strictEqual(Value::fromReturnedValue(QJSValuePrivate::asReturnedValue(this)),
+                                       Value::fromReturnedValue(QJSValuePrivate::asReturnedValue(&other)));
 }
 
 /*!

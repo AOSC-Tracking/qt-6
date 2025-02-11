@@ -41,7 +41,7 @@ to the \c{MyMessages} library.
 cmake_minimum_required(VERSION 3.16...3.22)
 project(MyThings)
 
-find_package(Qt6 REQUIRED COMPONENTS Protobuf Quick)
+find_package(Qt6 REQUIRED COMPONENTS Protobuf ProtobufQuick Quick)
 qt_standard_project_setup()
 
 qt_add_protobuf(MyMessagesPlugin

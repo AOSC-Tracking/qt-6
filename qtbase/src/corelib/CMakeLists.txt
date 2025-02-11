@@ -152,7 +152,6 @@ qt_internal_add_module(Core
         kernel/qchronotimer.cpp kernel/qchronotimer.h
         kernel/qcoreapplication.cpp kernel/qcoreapplication.h kernel/qcoreapplication_p.h
         kernel/qcoreapplication_platform.h
-        kernel/qcorecmdlineargs_p.h
         kernel/qcoreevent.cpp kernel/qcoreevent.h kernel/qcoreevent_p.h
         kernel/qdeadlinetimer.cpp kernel/qdeadlinetimer.h
         kernel/qelapsedtimer.cpp kernel/qelapsedtimer.h
@@ -305,6 +304,7 @@ qt_internal_add_module(Core
         tools/qsharedpointer.cpp tools/qsharedpointer.h
         tools/qsharedpointer_impl.h
         tools/qsize.cpp tools/qsize.h
+        tools/qsmallbytearray_p.h
         tools/qspan.h
         tools/qspan_p.h
         tools/qstack.h
@@ -312,6 +312,7 @@ qt_internal_add_module(Core
         tools/qtools_p.h
         tools/qtyperevision.cpp tools/qtyperevision.h
         tools/quniquehandle_p.h
+        tools/quniquehandle_types.cpp tools/quniquehandle_types_p.h
         tools/qvarlengtharray.h
         tools/qvector.h
         tools/qversionnumber.cpp tools/qversionnumber.h
@@ -320,15 +321,18 @@ qt_internal_add_module(Core
         # despite the fact that appropriate checks are in place to avoid that!
         tools/qshareddata.cpp tools/qshareddata.h
         text/qlocale.cpp text/qlocale.h
+        global/qassert.cpp # Windows: inconsistent linkage of qAbort()
         global/qglobal.cpp  # undef qFatal
         global/qlogging.cpp # undef qFatal/qInfo/qDebug
         global/qrandom.cpp # undef Q_ASSERT/_X
         text/qstringconverter.cpp # enum Data
         tools/qcryptographichash.cpp # KeccakNISTInterface/Final
         io/qdebug.cpp # undef qDebug
+        io/qresource.cpp # QTBUG-132114
     NO_PCH_SOURCES
         compat/removed_api.cpp
         global/qsimd.cpp
+        kernel/qsocketnotifier.cpp # defines BUILDING_QSOCKETNOTIFIER
     DEFINES
         QT_NO_CONTEXTLESS_CONNECT
         QT_NO_FOREACH
@@ -410,6 +414,9 @@ set(core_metatype_args MANUAL_MOC_JSON_FILES ${core_qobject_metatypes_json_list}
 
 if(QT_WILL_INSTALL)
     set(metatypes_install_dir ${INSTALL_ARCHDATADIR}/metatypes)
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.31")
+        cmake_path(SET metatypes_install_dir NORMALIZE "${metatypes_install_dir}")
+    endif()
     list(APPEND core_metatype_args
         __QT_INTERNAL_INSTALL __QT_INTERNAL_INSTALL_DIR "${metatypes_install_dir}")
 endif()
@@ -460,6 +467,7 @@ if(QT_FEATURE_reduce_relocations AND UNIX AND GCC)
 endif()
 
 if(ANDROID)
+    _qt_internal_add_android_executable_finalizer(Core)
     set_property(TARGET Core APPEND PROPERTY QT_ANDROID_BUNDLED_JAR_DEPENDENCIES
         jar/Qt${QtBase_VERSION_MAJOR}Android.jar
     )
@@ -1385,6 +1393,8 @@ if(QT_FEATURE_mimetype AND QT_FEATURE_mimetype_database)
     qt_internal_extend_target(Core
         SOURCES ${qmimeprovider_db_output}
         INCLUDE_DIRECTORIES "${CMAKE_CURRENT_BINARY_DIR}/.rcc"
+        ATTRIBUTION_FILE_DIR_PATHS
+            mimetypes/3rdparty
     )
     set_source_files_properties(${qmimeprovider_db_output} PROPERTIES
         GENERATED TRUE
@@ -1529,6 +1539,8 @@ function(qt_internal_library_deprecation_level)
     # QT_DISABLE_DEPRECATED_UP_TO controls which version we use as a cut-off
     # compiling in to the library. E.g. if it is set to QT_VERSION then no
     # code which was deprecated before QT_VERSION will be compiled in.
+    set(digit "[0-9a-fA-F]")
+    string(REPEAT "${digit}" 6 six_digits)
     if(NOT DEFINED QT_DISABLE_DEPRECATED_UP_TO)
         if(WIN32)
             # On Windows, due to the way DLLs work, we need to export all functions,
@@ -1538,7 +1550,7 @@ function(qt_internal_library_deprecation_level)
             # On other platforms, Qt's own compilation does need to compile the Qt 5.0 API
             set(QT_DISABLE_DEPRECATED_UP_TO "0x050000")
         endif()
-    elseif(NOT QT_DISABLE_DEPRECATED_UP_TO MATCHES "^0x[0-9][0-9][0-9][0-9][0-9][0-9]$")
+    elseif(NOT QT_DISABLE_DEPRECATED_UP_TO MATCHES "^0x${six_digits}$")
         message(FATAL_ERROR "Ivalid format of the QT_DISABLE_DEPRECATED_UP_TO macro:"
             " ${QT_DISABLE_DEPRECATED_UP_TO}. The expected format is the hexadecimal number,"
             " e.g. 0x060102")

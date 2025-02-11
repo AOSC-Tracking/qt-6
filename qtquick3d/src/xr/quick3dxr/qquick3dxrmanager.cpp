@@ -33,6 +33,8 @@
 
 QT_BEGIN_NAMESPACE
 
+Q_DECLARE_LOGGING_CATEGORY(lcQuick3DXr);
+Q_LOGGING_CATEGORY(lcQuick3DXr, "qt.quick3d.xr");
 
 QQuick3DXrManager::QQuick3DXrManager(QObject *parent)
     : QObject(parent)
@@ -115,8 +117,8 @@ bool QQuick3DXrManager::isMultiViewRenderingEnabled() const
 
 bool QQuick3DXrManager::isMultiViewRenderingSupported() const
 {
-    Q_D(const QQuick3DXrManager);
-    return d->isMultiViewRenderingSupported();
+    QRhi *rhi = m_renderControl->rhi();
+    return rhi ? rhi->isFeatureSupported(QRhi::MultiView) : false;
 }
 
 void QQuick3DXrManager::setXROrigin(QQuick3DXrOrigin *origin)
@@ -197,109 +199,8 @@ void QQuick3DXrManager::setSamples(int samples)
 
 void QQuick3DXrManager::update()
 {
-    if (m_quickWindow && m_renderControl && m_xrOrigin && m_vrViewport) {
-        QEvent *request = new QEvent(QEvent::UpdateRequest);
-        QCoreApplication::postEvent(this, request);
-    }
-}
-
-void QQuick3DXrManager::processSpatialEvents(const QJsonObject &events)
-{
-    static qint64 lastId = -1;
-
-    QJsonArray eventArray = events.value(QStringLiteral("events")).toArray();
-    for (const auto &event : eventArray) {
-        QJsonObject eventObj = event.toObject();
-        // qDebug() << eventObj;
-
-        // ID (unique per event)
-        const qint64 id = eventObj.value(QStringLiteral("id")).toDouble();
-        // timestamp (in seconds)
-        //const double timestamp = eventObj.value(QStringLiteral("timestamp")).toDouble();
-        // kind
-        const QString kind = eventObj.value(QStringLiteral("kind")).toString();
-        if (kind != QStringLiteral("indirectPinch"))
-            qWarning() << "kind is " << kind << "!";
-
-
-        // phase
-        const QString phase = eventObj.value(QStringLiteral("phase")).toString();
-
-        // selectionRay (check if exists first)
-        QJsonObject selectionRayObj = eventObj.value(QStringLiteral("selectionRay")).toObject();
-        if (!selectionRayObj.isEmpty()) {
-            // origin
-            QJsonObject originObj = selectionRayObj.value(QStringLiteral("origin")).toObject();
-            QVector3D origin(originObj.value(QStringLiteral("x")).toDouble(), originObj.value(QStringLiteral("y")).toDouble(), originObj.value(QStringLiteral("z")).toDouble());
-            // convert meters to cm
-            origin *= 100.0;
-
-            // direction
-            QJsonObject directionObj = selectionRayObj.value(QStringLiteral("direction")).toObject();
-            QVector3D direction(directionObj.value(QStringLiteral("x")).toDouble(), directionObj.value(QStringLiteral("y")).toDouble(), directionObj.value(QStringLiteral("z")).toDouble());
-
-            QEvent::Type eventType;
-
-            if (phase == QStringLiteral("active")) {
-                if (lastId != id) {
-                    // Press
-                    lastId = id;
-                    eventType = QEvent::MouseButtonPress;
-                } else {
-                    // Move
-                    eventType = QEvent::MouseMove;
-                }
-            } else {
-                // Release
-                lastId = -1;
-                eventType = QEvent::MouseButtonRelease;
-            }
-
-            QMouseEvent *event = new QMouseEvent(eventType, QPointF(), QPointF(), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-            m_vrViewport->processPointerEventFromRay(origin, direction, event);
-            delete event;
-        }
-    }
-        // An example of the input data
-        // {
-        //     "id":4404736049417834088,
-        //     "inputDevicePose": {
-        //         "altitude":0,
-        //         "azimuth":1.5707963267948966,
-        //         "pose3D":{
-        //             "position":{
-        //                 "x":0.227996826171875,
-        //                 "y":0.957000732421875,
-        //                 "z":-0.55999755859375
-        //             },
-        //             "rotation":{
-        //                 "vector":[0,0,0,1]
-        //             }
-        //         }
-        //     },
-        //     "kind":"indirectPinch",
-        //     "location":[0,0],
-        //     "location3D":{
-        //         "x":0,
-        //         "y":0,
-        //         "z":0
-        //     },
-        //     "modifierKeys":0,
-        //     "phase":"ended",
-        //     "selectionRay":{
-        //         "direction":{
-        //             "x":0.3321685791015625,
-        //             "y":0.25982666015625,
-        //             "z":-0.9067230224609375
-        //         },
-        //         "origin":{
-        //             "x":0.227996826171875,
-        //             "y":0.957000732421875,
-        //             "z":0
-        //         }
-        //     },
-        //     "timestamp":74368.590710375
-        // }
+    Q_D(QQuick3DXrManager);
+    d->update();
 }
 
 bool QQuick3DXrManager::event(QEvent *e)
@@ -308,10 +209,16 @@ bool QQuick3DXrManager::event(QEvent *e)
 
     if (e->type() == QEvent::UpdateRequest) {
         d->processXrEvents();
-        update();
+        d->update();
         return true;
     }
     return QObject::event(e);
+}
+
+bool QQuick3DXrManager::isMultiviewRenderingDisabled()
+{
+    static bool disabled = qEnvironmentVariableIntValue("QT_QUICK3D_XR_DISABLE_MULTIVIEW") != 0;
+    return disabled;
 }
 
 QQuick3DXrInputManager *QQuick3DXrManager::getInputManager() const
@@ -339,6 +246,9 @@ bool QQuick3DXrManager::setupGraphics()
 
     QRhi *rhi = m_quickWindow->rhi();
     QSSG_ASSERT_X(rhi != nullptr, "No RHI handle!", return false);
+
+    if (!d->isMultiViewRenderingEnabled())
+        emit multiViewRenderingEnabledChanged();
 
     return d->finalizeGraphics(rhi);
 }
@@ -389,12 +299,7 @@ bool QQuick3DXrManager::setupQuickScene()
         return false;
     }
 
-    qDebug("Quick 3D XR: QRhi initialized with backend %s", rhi->backendName());
-
-    if (qEnvironmentVariableIntValue("QT_QUICK3D_XR_MULTIVIEW")) {
-        qDebug("Quick3D XR: multiview rendering requested via the environment");
-        setMultiViewRenderingEnabled(true);
-    }
+    qCDebug(lcQuick3DXr, "Quick 3D XR: QRhi initialized with backend %s", rhi->backendName());
 
     return true;
 }

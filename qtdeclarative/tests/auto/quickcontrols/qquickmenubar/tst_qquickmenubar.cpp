@@ -62,6 +62,7 @@ private slots:
     void closeByClickingOutside_data();
     void closeByClickingOutside();
     void AA_DontUseNativeMenuBar();
+    void AA_DontUseNativeMenuWindows();
     void containerItems_data();
     void containerItems();
     void mixedContainerItems_data();
@@ -103,10 +104,11 @@ tst_qquickmenubar::tst_qquickmenubar()
 
 void tst_qquickmenubar::init()
 {
-    // Enable non-native menubars by default.
+    // Enable native menubars and windows by default.
     // Note that some tests will set this property to 'true', which
     // is why we need to set it back to 'false' here.
     QCoreApplication::setAttribute(Qt::AA_DontUseNativeMenuBar, false);
+    QCoreApplication::setAttribute(Qt::AA_DontUseNativeMenuWindows, false);
 }
 
 void tst_qquickmenubar::cleanup()
@@ -141,15 +143,12 @@ void tst_qquickmenubar::mouse_data()
 
 void tst_qquickmenubar::mouse()
 {
+    SKIP_IF_NO_WINDOW_ACTIVATION;
+    SKIP_IF_NO_MOUSE_HOVER;
+
     QFETCH(QQuickPopup::PopupType, popupType);
     QCoreApplication::setAttribute(Qt::AA_DontUseNativeMenuBar);
     QCoreApplication::setAttribute(Qt::AA_DontUseNativeMenuWindows);
-
-    SKIP_IF_NO_WINDOW_ACTIVATION
-
-    if ((QGuiApplication::platformName() == QLatin1String("offscreen"))
-        || (QGuiApplication::platformName() == QLatin1String("minimal")))
-        QSKIP("Mouse highlight not functional on offscreen/minimal platforms");
 
     QQmlApplicationEngine engine(testFileUrl("menubaritems.qml"));
 
@@ -1142,13 +1141,12 @@ void tst_qquickmenubar::checkHighlightWhenMenuDismissed_data()
 
 void tst_qquickmenubar::checkHighlightWhenMenuDismissed()
 {
+    SKIP_IF_NO_MOUSE_HOVER;
+
     QFETCH(QQuickPopup::PopupType, popupType);
 
     QCoreApplication::setAttribute(Qt::AA_DontUseNativeMenuBar);
     QCoreApplication::setAttribute(Qt::AA_DontUseNativeMenuWindows);
-    if ((QGuiApplication::platformName() == QLatin1String("offscreen"))
-        || (QGuiApplication::platformName() == QLatin1String("minimal")))
-        QSKIP("Mouse highlight not functional on offscreen/minimal platforms");
 
     QQmlApplicationEngine engine(testFileUrl("checkHighlightWhenDismissed.qml"));
     QScopedPointer<QQuickApplicationWindow> window(qobject_cast<QQuickApplicationWindow *>(engine.rootObjects().value(0)));
@@ -1215,11 +1213,10 @@ void tst_qquickmenubar::hoverAfterClosingWithEscape_data()
 
 void tst_qquickmenubar::hoverAfterClosingWithEscape()
 {
+    SKIP_IF_NO_MOUSE_HOVER;
+
     QCoreApplication::setAttribute(Qt::AA_DontUseNativeMenuBar);
     QCoreApplication::setAttribute(Qt::AA_DontUseNativeMenuWindows);
-    if ((QGuiApplication::platformName() == QLatin1String("offscreen"))
-        || (QGuiApplication::platformName() == QLatin1String("minimal")))
-        QSKIP("Mouse highlight not functional on offscreen/minimal platforms");
 
     QQuickControlsApplicationHelper helper(this, QLatin1String("hoverAfterClosingWithEscape.qml"));
     QVERIFY2(helper.ready, helper.failureMessage());
@@ -1259,12 +1256,11 @@ void tst_qquickmenubar::closeByClickingOutside_data()
 
 void tst_qquickmenubar::closeByClickingOutside()
 {
+    SKIP_IF_NO_MOUSE_HOVER;
+
     QFETCH(QQuickPopup::PopupType, popupType);
 
     QCoreApplication::setAttribute(Qt::AA_DontUseNativeMenuBar);
-    if ((QGuiApplication::platformName() == QLatin1String("offscreen"))
-        || (QGuiApplication::platformName() == QLatin1String("minimal")))
-        QSKIP("Mouse highlight not functional on offscreen/minimal platforms");
 
     QQuickControlsApplicationHelper helper(this, QLatin1String("hoverAfterClosingWithEscape.qml"));
     QVERIFY2(helper.ready, helper.failureMessage());
@@ -1327,6 +1323,32 @@ void tst_qquickmenubar::AA_DontUseNativeMenuBar()
     const auto firstMenu = menuBar->menuAt(0);
     QVERIFY(firstMenu);
     QVERIFY(!QQuickMenuPrivate::get(firstMenu)->maybeNativeHandle());
+}
+
+void tst_qquickmenubar::AA_DontUseNativeMenuWindows()
+{
+    if (!nativeMenuBarSupported)
+        QSKIP("this test is only valid when native menu bars are supported!");
+
+    // Check that we end up with a native menu bar _with_ native
+    // menus, even if AA_DontUseNativeMenuWindows is set.
+    QCoreApplication::setAttribute(Qt::AA_DontUseNativeMenuBar, false);
+    QCoreApplication::setAttribute(Qt::AA_DontUseNativeMenuWindows, true);
+    QQmlApplicationEngine engine;
+    engine.load(testFileUrl("menus.qml"));
+
+    QScopedPointer<QQuickApplicationWindow> window(qobject_cast<QQuickApplicationWindow *>(engine.rootObjects().value(0)));
+    QVERIFY(window);
+    QQuickMenuBar *menuBar = window->property("menuBar").value<QQuickMenuBar *>();
+    QVERIFY(menuBar);
+    auto menuBarPrivate = QQuickMenuBarPrivate::get(menuBar);
+    QQuickItem *contents = window->property("contents").value<QQuickItem *>();
+    QVERIFY(contents);
+
+    QVERIFY(menuBarPrivate->nativeHandle());
+    const auto firstMenu = menuBar->menuAt(0);
+    QVERIFY(firstMenu);
+    QVERIFY(QQuickMenuPrivate::get(firstMenu)->maybeNativeHandle());
 }
 
 void tst_qquickmenubar::containerItems_data()

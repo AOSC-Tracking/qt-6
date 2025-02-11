@@ -1,6 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
+#include <QtCore/qfileinfo.h>
 #include "qcustom3ditem_p.h"
 
 QT_BEGIN_NAMESPACE
@@ -229,6 +230,11 @@ QCustom3DItem::~QCustom3DItem() {}
 void QCustom3DItem::setMeshFile(const QString &meshFile)
 {
     Q_D(QCustom3DItem);
+    QFileInfo validfile(meshFile);
+    if (!validfile.exists() || !validfile.isFile()) {
+        qWarning("Mesh file %ls does not exist.", qUtf16Printable(meshFile));
+        return;
+    }
     if (d->m_meshFile != meshFile) {
         d->m_meshFile = meshFile;
         d->m_dirtyBits.meshDirty = true;

@@ -51,19 +51,19 @@ namespace Qt3DExtras {
  */
 
 /*!
- * \qmlproperty QString Text2DEntity::text
+ * \qmlproperty string Text2DEntity::text
  *
  * Holds the text used for the mesh.
  */
 
 /*!
- * \qmlproperty QFont Text2DEntity::font
+ * \qmlproperty font Text2DEntity::font
  *
  * Holds the font of the text.
  */
 
 /*!
- * \qmlproperty QColor Text2DEntity::color
+ * \qmlproperty color Text2DEntity::color
  *
  * Holds the color of the text.
  */

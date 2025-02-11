@@ -24,10 +24,15 @@ class QAbstractAxis;
 class QXYSeriesPrivate : public QAbstractSeriesPrivate
 {
 public:
+    static QXYSeriesPrivate *get(QXYSeries *item) { return item->d_func(); }
+    static const QXYSeriesPrivate *get(const QXYSeries *item) { return item->d_func(); }
+
     QXYSeriesPrivate();
 
     void setPointSelected(qsizetype index, bool selected, bool &callSignal);
     bool isPointSelected(qsizetype index) const;
+
+    void append(const QList<QPointF> &points);
 
 protected:
     QList<QPointF> m_points;

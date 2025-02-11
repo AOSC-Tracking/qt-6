@@ -8,6 +8,7 @@
 #include "private/foreign_p.h"
 #include "inaccessible/base.h"
 #include "inaccessible/property.h"
+#include "inaccessible/invisible.h"
 
 #include <QtQmlTypeRegistrar/private/qqmltyperegistrar_p.h>
 
@@ -875,6 +876,46 @@ private:
     InaccessibleProperty *m_p = nullptr;
 };
 
+class EnumsExplicitlyScoped : public QObject
+{
+    Q_OBJECT
+    QML_ELEMENT
+    Q_CLASSINFO("RegisterEnumClassesUnscoped", "false")
+};
+
+class DerivedFromInvisible : public InvisibleBase
+{
+    Q_OBJECT
+    QML_ELEMENT
+    Q_PROPERTY(int b READ b CONSTANT)
+
+public:
+    int b() const { return m_b; }
+
+private:
+    int m_b = 7;
+};
+
+namespace F {
+class ForeignQObject : public QObject {
+    Q_OBJECT
+public:
+    enum class Enum{
+        ValueA,
+        ValueB
+    };
+    Q_ENUM(Enum)
+};
+
+class ForeignQOjbectQml
+{
+    Q_GADGET
+    QML_FOREIGN(ForeignQObject)
+    QML_NAMED_ELEMENT(ForeignQObject)
+    QML_UNCREATABLE("can only be created in C++")
+};
+}
+
 class tst_qmltyperegistrar : public QObject
 {
     Q_OBJECT
@@ -943,6 +984,8 @@ private slots:
     void javaScriptExtension();
 
     void consistencyWarnings();
+    void enumWarnings();
+
     void relatedAddedInVersion();
     void longNumberTypes();
     void enumList();
@@ -959,9 +1002,18 @@ private slots:
     void preserveVoidStarPropTypes();
 
     void inaccessibleBase();
+    void enumsExplicitlyScoped();
+    void namespacedExtracted();
+    void derivedFromInvisible();
+    void foreignNamespacedWithEnum();
+
+#ifdef QT_QMLJSROOTGEN_PRESENT
+    void verifyJsRoot();
+#endif
 
 private:
     QByteArray qmltypesData;
+    QString m_qmljsrootgenPath;
 };
 
 #endif // TST_QMLTYPEREGISTRAR_H

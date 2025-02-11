@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
 #include "qgraphstheme.h"
+#include "commonutils_p.h"
 
 #include <QGuiApplication>
 #include <QLinearGradient>
@@ -224,7 +225,7 @@ QT_BEGIN_NAMESPACE
  *     \li seriesColors
  *     \li Qt::black
  *   \row
- *     \li seriesGradients
+ *     \li baseGradients
  *     \li QLinearGradient. Essentially fully black.
  *   \row
  *     \li colorStyle
@@ -267,27 +268,37 @@ QT_BEGIN_NAMESPACE
  */
 
 /*!
- * \qmlproperty list<color> GraphsTheme::seriesColors
- *
- * The list of base colors to be used for all the objects in the graph, series
- * by series. If there are more series than colors, color list wraps and starts
- * again with the first color in the list. Has no immediate effect if colorStyle
- * is not \c GraphsTheme.ColorStyle.Uniform.
- *
- * This can be overridden by setting \l{Abstract3DSeries::baseColor}
- * {Abstract3DSeries.baseColor} explicitly in the series.
+    \qmlproperty list<color> GraphsTheme::seriesColors
+
+    The list of colors to be used for all the objects in the graph, series
+    by series. If there are more series than colors, color list wraps and starts
+    again with the first color in the list. Has no immediate effect if \l colorStyle
+    is not \c GraphsTheme.ColorStyle.Uniform.
+
+    Example usage:
+    \badcode
+    seriesColors: [ "red" ]
+    \endcode
+
+    This can be overridden by setting \l{Abstract3DSeries::baseColor}
+    {Abstract3DSeries.baseColor} explicitly in the series.
  */
 
 /*!
- * \qmlproperty list<Color> GraphsTheme::baseColors
- *
- * The list of base colors to be used for all the objects in the graph, series
- * by series. If there are more series than colors, color list wraps and starts
- * again with the first color in the list. Has no immediate effect if colorStyle
- * is not \c GraphsTheme.ColorStyle.Uniform.
- *
- * This can be overridden by setting \l{Abstract3DSeries::baseColor}
- * {Abstract3DSeries.baseColor} explicitly in the series.
+    \qmlproperty list<Color> GraphsTheme::baseColors
+
+    The list of base colors of type Color to be used for all the objects in the graph, series
+    by series. If there are more series than colors, color list wraps and starts
+    again with the first color in the list. Has no immediate effect if \l colorStyle
+    is not \c GraphsTheme.ColorStyle.Uniform.
+
+    Example usage:
+    \badcode
+    baseColors: [ Color { color: "red" } ]
+    \endcode
+
+    This can be overridden by setting \l{Abstract3DSeries::baseColor}
+    {Abstract3DSeries.baseColor} explicitly in the series.
  */
 
 /*!
@@ -320,6 +331,10 @@ QT_BEGIN_NAMESPACE
  * \qmlproperty color GraphsTheme::labelTextColor
  *
  * The color of the font used for labels.
+ *
+ * If an axis has specified \l{graphsline.labelTextColor}{labelTextColor} explicitly,
+ * this has no effect.
+ *
  * The default value depends on \l colorScheme.
  */
 
@@ -336,8 +351,10 @@ QT_BEGIN_NAMESPACE
  *
  * The highlight color for a selected object. Used if
  * \l{GraphsItem3D::selectionMode}{selectionMode}
- * has the \c GraphsItem3D.SelectionFlag.Item flag set.
+ * has the \c Graphs3D.SelectionFlag.Item flag set.
  * The default value depends on \l colorScheme.
+ *
+ * \sa Graphs3D.SelectionFlag
  */
 
 /*!
@@ -345,23 +362,33 @@ QT_BEGIN_NAMESPACE
  *
  * The highlight color for selected objects. Used if
  * \l{GraphsItem3D::selectionMode}{selectionMode}
- * has the \c GraphsItem3D.SelectionFlag.Row or \c GraphsItem3D.SelectionFlag.Column
+ * has the \c Graphs3D.SelectionFlag.Row or \c Graphs3D.SelectionFlag.Column
  * flag set.
  * The default value depends on \l colorScheme.
+ *
+ * \sa Graphs3D.SelectionFlag
  */
 
 /*!
- * \qmlproperty list<Gradient> GraphsTheme::baseGradients
- *
- * The list of base gradients to be used for all the objects in the graph,
- * series by series. If there are more series than gradients, the gradient list
- * wraps and starts again with the first gradient in the list.
- *
- * Has no immediate effect if colorStyle is \l{QGraphsTheme::ColorStyle::Uniform}
- * {GraphsTheme.ColorStyle.Uniform}.
- *
- * This value can be overridden by setting \l{Abstract3DSeries::baseGradient}
- *{Abstract3DSeries.baseGradient} explicitly in the series.
+   \qmlproperty list<Gradient> GraphsTheme::baseGradients
+
+    The list of base gradients to be used for all the objects in the graph,
+    series by series. If there are more series than gradients, the gradient list
+    wraps and starts again with the first gradient in the list.
+
+    Has no immediate effect if colorStyle is \l{QGraphsTheme::ColorStyle::Uniform}
+    {GraphsTheme.ColorStyle.Uniform}.
+
+    Example usage:
+    \badcode
+    baseGradients: [ Gradient {
+        GradientStop { position: 1.0; color: "#DBEB00" }
+        GradientStop { position: 0.0; color: "#373F26" }
+    } ]
+    \endcode
+
+   This value can be overridden by setting \l{Abstract3DSeries::baseGradient}
+   {Abstract3DSeries.baseGradient} explicitly in the series.
  */
 
 /*!
@@ -369,8 +396,10 @@ QT_BEGIN_NAMESPACE
  *
  * The highlight gradient for a selected object. Used if
  * \l{GraphsItem3D::selectionMode}{selectionMode}
- * has the \c GraphsItem3D.SelectionFlag.Item flag set.
+ * has the \c Graphs3D.SelectionFlag.Item flag set.
  * The default value depends on \l colorScheme.
+ *
+ * \sa Graphs3D.SelectionFlag
  */
 
 /*!
@@ -378,9 +407,11 @@ QT_BEGIN_NAMESPACE
  *
  * The highlight gradient for selected objects. Used if
  * \l{GraphsItem3D::selectionMode}{selectionMode}
- * has the \c GraphsItem3D.SelectionFlag.Row or \c GraphsItem3D.SelectionFlag.Column
+ * has the \c Graphs3D.SelectionFlag.Row or \c Graphs3D.SelectionFlag.Column
  * flag set.
  * The default value depends on \l colorScheme.
+ *
+ * \sa Graphs3D.SelectionFlag
  */
 
 /*!
@@ -542,17 +573,21 @@ QT_BEGIN_NAMESPACE
  * The default value is \c 2.0.
  *
  * If it is set for grid lines, only has effect if
- * \l{Q3DGraphsWidgetItem::gridLineType} is \c Graphs3D.GridLineType.Shader
+ * \l{GraphsItem3D::gridLineType} is \c Graphs3D.GridLineType.Shader
+ *
+ * \sa Graphs3D.GridLineType
  */
 
 /*!
  * \qmlproperty real GraphsTheme::GraphsLine.subWidth
  *
- * The color of the main lines.
+ * The width of the sub lines.
  * The default value is \c 1.0.
  *
  * If it is set for grid lines, only has effect if
- * \l{Q3DGraphsWidgetItem::gridLineType} is \c Graphs3D.GridLineType.Shader
+ * \l{GraphsItem3D::gridLineType} is \c Graphs3D.GridLineType.Shader
+ *
+ * \sa Graphs3D.GridLineType
  */
 
 /*!
@@ -726,8 +761,10 @@ QGraphsTheme::Theme QGraphsTheme::theme() const
 void QGraphsTheme::setTheme(Theme newTheme, ForceTheme force)
 {
     Q_D(QGraphsTheme);
-    if (force == ForceTheme::No && d->m_theme == newTheme)
+    if ((force == ForceTheme::No && d->m_theme == newTheme)
+        || newTheme < QGraphsTheme::Theme::QtGreen || newTheme > QGraphsTheme::Theme::UserDefined) {
         return;
+    }
     d->m_dirtyBits.themeDirty = true;
     d->m_theme = newTheme;
     d->m_themeDirty = true;
@@ -1014,24 +1051,28 @@ void QGraphsTheme::setLabelBackgroundColor(QColor newLabelBackgroundColor)
  * \property QGraphsTheme::labelTextColor
  *
  * \brief The color of the font used for labels.
+ *
+ * If an axis has specified \l{QGraphsLine::labelTextColor}{labelTextColor} explicitly,
+ * this has no effect.
+ *
  * The default value depends on \l colorScheme.
  */
 QColor QGraphsTheme::labelTextColor() const
 {
     Q_D(const QGraphsTheme);
-    if (d->m_customBits.labelTextColorCustom)
-        return d->m_labelTextColor;
     return d->m_labelTextThemeColor;
 }
 
 void QGraphsTheme::setLabelTextColor(QColor newLabelTextColor)
 {
     Q_D(QGraphsTheme);
-    d->m_customBits.labelTextColorCustom = true;
-    if (d->m_labelTextColor == newLabelTextColor)
+    if (d->m_labelTextThemeColor == newLabelTextColor)
         return;
+    d->m_customBits.labelTextColorCustom = true;
     d->m_dirtyBits.labelTextColorDirty = true;
-    d->m_labelTextColor = newLabelTextColor;
+    d->m_labelTextThemeColor = newLabelTextColor;
+    axisX().d->m_labelTextThemeColor = newLabelTextColor;
+    axisY().d->m_labelTextThemeColor = newLabelTextColor;
     Q_EMIT labelTextColorChanged();
     Q_EMIT update();
 }
@@ -1479,10 +1520,21 @@ void QGraphsTheme::setColorSchemePalette()
                                                            defaultColorLevel);
         d->m_multiHighlightThemeGradient = createGradient(QColor(QRgb(0x22D489)), defaultColorLevel);
 
-        d->m_labelTextThemeColor = QColor(QRgb(0xAEAEAE));
-        d->m_axisX.d->m_labelTextThemeColor = QColor(QRgb(0xAEAEAE));
-        d->m_axisY.d->m_labelTextThemeColor = QColor(QRgb(0xAEAEAE));
-        d->m_axisZ.d->m_labelTextThemeColor = QColor(QRgb(0xAEAEAE));
+        // If a label text color has been overridden already, do not change it back
+        if (!d->m_labelTextThemeColor.isValid() || !d->m_customBits.labelTextColorCustom)
+            d->m_labelTextThemeColor = QColor(QRgb(0xAEAEAE));
+        if (!d->m_axisX.d->m_labelTextThemeColor.isValid()
+            || !d->m_axisX.d->m_bits.labelTextColorCustom) {
+            d->m_axisX.d->m_labelTextThemeColor = QColor(QRgb(0xAEAEAE));
+        }
+        if (!d->m_axisY.d->m_labelTextThemeColor.isValid()
+            || !d->m_axisY.d->m_bits.labelTextColorCustom) {
+            d->m_axisY.d->m_labelTextThemeColor = QColor(QRgb(0xAEAEAE));
+        }
+        if (!d->m_axisZ.d->m_labelTextThemeColor.isValid()
+            || !d->m_axisZ.d->m_bits.labelTextColorCustom) {
+            d->m_axisZ.d->m_labelTextThemeColor = QColor(QRgb(0xAEAEAE));
+        }
     } else {
         d->m_backgroundThemeColor = QColor(QRgb(0xF2F2F2));
         d->m_plotAreaBackgroundThemeColor = QColor(QRgb(0xFCFCFC));
@@ -1503,10 +1555,21 @@ void QGraphsTheme::setColorSchemePalette()
                                                            defaultColorLevel);
         d->m_multiHighlightThemeGradient = createGradient(QColor(QRgb(0x22D47B)), defaultColorLevel);
 
-        d->m_labelTextThemeColor = QColor(QRgb(0x6A6A6A));
-        d->m_axisX.d->m_labelTextThemeColor = QColor(QRgb(0x6A6A6A));
-        d->m_axisY.d->m_labelTextThemeColor = QColor(QRgb(0x6A6A6A));
-        d->m_axisZ.d->m_labelTextThemeColor = QColor(QRgb(0x6A6A6A));
+        // If a label text color has been overridden already, do not change it back
+        if (!d->m_labelTextThemeColor.isValid() || !d->m_customBits.labelTextColorCustom)
+            d->m_labelTextThemeColor = QColor(QRgb(0x6A6A6A));
+        if (!d->m_axisX.d->m_labelTextThemeColor.isValid()
+            || !d->m_axisX.d->m_bits.labelTextColorCustom) {
+            d->m_axisX.d->m_labelTextThemeColor = QColor(QRgb(0x6A6A6A));
+        }
+        if (!d->m_axisY.d->m_labelTextThemeColor.isValid()
+            || !d->m_axisY.d->m_bits.labelTextColorCustom) {
+            d->m_axisY.d->m_labelTextThemeColor = QColor(QRgb(0x6A6A6A));
+        }
+        if (!d->m_axisZ.d->m_labelTextThemeColor.isValid()
+            || !d->m_axisZ.d->m_bits.labelTextColorCustom) {
+            d->m_axisZ.d->m_labelTextThemeColor = QColor(QRgb(0x6A6A6A));
+        }
     }
 
     d->m_dirtyBits.backgroundColorDirty = true;
@@ -1607,8 +1670,8 @@ void QGraphsTheme::setThemePalette()
 QLinearGradient QGraphsTheme::createGradient(QColor color, float colorLevel)
 {
     QColor startColor;
-    QLinearGradient gradient = QLinearGradient(qreal(gradientTextureWidth),
-                                               qreal(gradientTextureHeight),
+    QLinearGradient gradient = QLinearGradient(CommonUtils::maxTextureSize(),
+                                               gradientTextureHeight,
                                                0.0,
                                                0.0);
     startColor.setRed(color.red() * colorLevel);

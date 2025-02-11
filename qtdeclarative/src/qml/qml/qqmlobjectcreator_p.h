@@ -78,6 +78,17 @@ private:
 
 class RequiredProperties : public QHash<RequiredPropertyKey, RequiredPropertyInfo> {};
 
+class RequiredPropertiesAndTarget : public RequiredProperties
+{
+public:
+    RequiredPropertiesAndTarget(QObject *target) : target(target) {}
+    RequiredPropertiesAndTarget(const RequiredPropertiesAndTarget &) = default;
+    RequiredPropertiesAndTarget(RequiredPropertiesAndTarget &&) = default;
+    RequiredPropertiesAndTarget &operator=(const RequiredPropertiesAndTarget &) = default;
+    RequiredPropertiesAndTarget &operator=(RequiredPropertiesAndTarget &&) = default;
+    QObject *target = nullptr;
+};
+
 struct DeferredQPropertyBinding {
     QObject *target = nullptr;
     int properyIndex = -1;
@@ -119,9 +130,10 @@ class Q_QML_EXPORT QQmlObjectCreator
 {
     Q_DECLARE_TR_FUNCTIONS(QQmlObjectCreator)
 public:
-    QQmlObjectCreator(QQmlRefPointer<QQmlContextData> parentContext,
+    QQmlObjectCreator(const QQmlRefPointer<QQmlContextData> &parentContext,
                       const QQmlRefPointer<QV4::ExecutableCompilationUnit> &compilationUnit,
                       const QQmlRefPointer<QQmlContextData> &creationContext,
+                      const QString &inlineComponentName,
                       QQmlIncubatorPrivate  *incubator = nullptr);
     ~QQmlObjectCreator();
 
@@ -171,12 +183,13 @@ public:
     }
 
 private:
-    QQmlObjectCreator(QQmlRefPointer<QQmlContextData> contextData,
-                      const QQmlRefPointer<QV4::ExecutableCompilationUnit> &compilationUnit,
-                      QQmlObjectCreatorSharedState *inheritedSharedState,
-                      bool isContextObject);
+    QQmlObjectCreator(
+            const QQmlRefPointer<QQmlContextData> &contextData,
+            const QQmlRefPointer<QV4::ExecutableCompilationUnit> &compilationUnit,
+            const QString inlineComponentName,
+            QQmlObjectCreatorSharedState *inheritedSharedState, bool isContextObject);
 
-    void init(QQmlRefPointer<QQmlContextData> parentContext);
+    void init(const QQmlRefPointer<QQmlContextData> &parentContext);
 
     QObject *createInstance(int index, QObject *parent = nullptr, bool isContextObject = false);
 
@@ -225,6 +238,7 @@ private:
 
     QQmlEngine *engine;
     QV4::ExecutionEngine *v4;
+    QString m_inlineComponentName;
     QQmlRefPointer<QV4::ExecutableCompilationUnit> compilationUnit;
     const QV4::CompiledData::Unit *qmlUnit;
     QQmlGuardedContextData parentContext;
@@ -272,7 +286,7 @@ private:
         QV4::Scope valueScope(v4);
         QScopedValueRollback<ObjectInCreationGCAnchorList> jsObjectGuard(
                 sharedState->allJavaScriptObjects,
-                ObjectInCreationGCAnchorList(valueScope, compilationUnit->totalObjectCount()));
+                ObjectInCreationGCAnchorList(valueScope, compilationUnit->totalObjectCount(m_inlineComponentName)));
 
         Q_ASSERT(topLevelCreator);
         QV4::QmlContext *qmlContext = static_cast<QV4::QmlContext *>(valueScope.alloc());

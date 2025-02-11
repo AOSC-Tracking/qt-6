@@ -206,6 +206,7 @@ private slots:
     void cursorRectangle_QTBUG_38947();
     void textCached_QTBUG_41583();
     void doubleSelect_QTBUG_38704();
+    void textChanged_QTBUG_130676();
 
     void padding();
     void paddingAndWrap();
@@ -236,6 +237,8 @@ private slots:
 
     void fontManipulationWithCursorSelection();
     void resizeTextEditPolish();
+
+    void setTextDocument();
 
 private:
     void simulateKeys(QWindow *window, const QList<Key> &keys);
@@ -2180,6 +2183,9 @@ void tst_qquicktextedit::mouseSelection()
     // press-and-drag-and-release from x1 to x2
     QPoint p1 = textEditObject->positionToRectangle(from).center().toPoint();
     QPoint p2 = textEditObject->positionToRectangle(to).center().toPoint();
+    QCursor::setPos(p2);
+    if (QCursor::pos() != p2)
+        QSKIP("Can't move mouse");
     if (clicks == 2)
         QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier, p1, moreThanDoubleClickInterval);
     else if (clicks == 3)
@@ -2421,7 +2427,7 @@ void tst_qquicktextedit::keyboardSelection()
     QQuickView window;
     QVERIFY(QQuickTest::showView(window, testFileUrl("focusByDefault.qml")));
     QQuickTextEdit *textEdit = qobject_cast<QQuickTextEdit *>(window.rootObject());
-    QVERIFY(textEdit->hasActiveFocus());
+    QTRY_VERIFY(textEdit->hasActiveFocus());
 
     textEdit->setText(text);
     textEdit->setSelectByKeyboard(selectByKeyboard);
@@ -2828,7 +2834,7 @@ void tst_qquicktextedit::cursorVisible()
     QQuickView window;
     QVERIFY(QQuickTest::showView(window, testFileUrl("cursorVisible.qml")));
 
-    QCOMPARE(qGuiApp->focusWindow(), &window);
+    QTRY_COMPARE(qGuiApp->focusWindow(), &window);
 
     QCOMPARE(edit.isCursorVisible(), false);
 
@@ -5629,7 +5635,7 @@ void tst_qquicktextedit::undo()
     QVERIFY(QQuickTest::showView(window, testFileUrl("focusByDefault.qml")));
     QQuickTextEdit *textEdit = qobject_cast<QQuickTextEdit *>(window.rootObject());
 
-    QVERIFY(textEdit->hasActiveFocus());
+    QTRY_VERIFY(textEdit->hasActiveFocus());
     QVERIFY(!textEdit->canUndo());
 
     QSignalSpy spy(textEdit, SIGNAL(canUndoChanged()));
@@ -5707,7 +5713,7 @@ void tst_qquicktextedit::redo()
     QVERIFY(QQuickTest::showView(window, testFileUrl("focusByDefault.qml")));
     QQuickTextEdit *textEdit = qobject_cast<QQuickTextEdit *>(window.rootObject());
 
-    QVERIFY(textEdit->hasActiveFocus());
+    QTRY_VERIFY(textEdit->hasActiveFocus());
 
     QVERIFY(!textEdit->canUndo());
     QVERIFY(!textEdit->canRedo());
@@ -5923,7 +5929,7 @@ void tst_qquicktextedit::undo_keypressevents()
     QVERIFY(QQuickTest::showView(window, testFileUrl("focusByDefault.qml")));
     QQuickTextEdit *textEdit = qobject_cast<QQuickTextEdit *>(window.rootObject());
 
-    QVERIFY(textEdit->hasActiveFocus());
+    QTRY_VERIFY(textEdit->hasActiveFocus());
 
     simulateKeys(&window, keys);
 
@@ -5941,7 +5947,7 @@ void tst_qquicktextedit::clear()
     QQuickView window;
     QVERIFY(QQuickTest::showView(window, testFileUrl("focusByDefault.qml")));
     QQuickTextEdit *textEdit = qobject_cast<QQuickTextEdit *>(window.rootObject());
-    QVERIFY(textEdit->hasActiveFocus());
+    QTRY_VERIFY(textEdit->hasActiveFocus());
 
     QSignalSpy spy(textEdit, SIGNAL(canUndoChanged()));
 
@@ -6144,7 +6150,7 @@ void tst_qquicktextedit::emptytags_QTBUG_22058()
     QQuickView window;
     QVERIFY(QQuickTest::showView(window, testFileUrl("qtbug-22058.qml")));
     QQuickTextEdit *input = qobject_cast<QQuickTextEdit *>(qvariant_cast<QObject *>(window.rootObject()->property("inputField")));
-    QVERIFY(input->hasActiveFocus());
+    QTRY_VERIFY(input->hasActiveFocus());
 
     QInputMethodEvent event("", QList<QInputMethodEvent::Attribute>());
     event.setCommitString("<b>Bold<");
@@ -6211,6 +6217,15 @@ void tst_qquicktextedit::doubleSelect_QTBUG_38704()
     QCOMPARE(selectionSpy.size(), 2);
     textEdit->select(1,2); //Change selection start
     QCOMPARE(selectionSpy.size(), 3);
+}
+
+void tst_qquicktextedit::textChanged_QTBUG_130676()
+{
+    QQuickTextEdit textEdit;
+    QSignalSpy spy(&textEdit, SIGNAL(textChanged()));
+    QVERIFY(spy.isValid());
+    textEdit.setText("Hello Qt");
+    QVERIFY(spy.count() == 1);
 }
 
 void tst_qquicktextedit::padding()
@@ -6340,7 +6355,7 @@ void tst_qquicktextedit::keys_shortcutoverride()
     QCOMPARE(window.rootObject()->property("who").value<QString>(), QLatin1String("nobody"));
 
     // send Key_Escape to the Rectangle
-    QVERIFY(rectangle->hasActiveFocus());
+    QTRY_VERIFY(rectangle->hasActiveFocus());
     QTest::keyPress(&window, Qt::Key_Escape);
     QCOMPARE(window.rootObject()->property("who").value<QString>(), QLatin1String("Rectangle"));
 
@@ -6381,7 +6396,7 @@ void tst_qquicktextedit::keyEventPropagation()
     QSignalSpy upSpy(root, SIGNAL(keyUp(int)));
 
     QQuickTextEdit *textEdit = root->findChild<QQuickTextEdit *>();
-    QVERIFY(textEdit->hasActiveFocus());
+    QTRY_VERIFY(textEdit->hasActiveFocus());
     simulateKey(&window, Qt::Key_Back);
     QCOMPARE(downSpy.size(), 1);
     QCOMPARE(upSpy.size(), 1);
@@ -6728,6 +6743,55 @@ void tst_qquicktextedit::resizeTextEditPolish()
     auto *editPriv = QQuickTextEditPrivate::get(edit);
     QCOMPARE(editPriv->xoff, 0);
     QCOMPARE(editPriv->yoff, 0);
+}
+
+void tst_qquicktextedit::setTextDocument()
+{
+    QString componentStr = "import QtQuick\nTextEdit {}";
+    QQmlComponent texteditComponent(&engine);
+    texteditComponent.setData(componentStr.toLatin1(), QUrl());
+    auto textEdit = qobject_cast<QQuickTextEdit *>(texteditComponent.create());
+    QVERIFY(textEdit != nullptr);
+
+    QPointer<QTextDocument> docPtr = textEdit->textDocument()->textDocument();
+    QVERIFY(!docPtr.isNull());
+
+    // make sure the setter replaces the document and cleans up the default-created document
+    auto firstDoc = std::make_unique<QTextDocument>();
+    textEdit->textDocument()->setTextDocument(firstDoc.get());
+    QCOMPARE(textEdit->textDocument()->textDocument(), firstDoc.get());
+
+    QVERIFY(docPtr.isNull());
+    docPtr = firstDoc.get();
+
+    // make sure replacing a custom document does not delete the document
+    auto secondDoc = std::make_unique<QTextDocument>();
+    textEdit->textDocument()->setTextDocument(secondDoc.get());
+    QCOMPARE(textEdit->textDocument()->textDocument(), secondDoc.get());
+    QCOMPARE(docPtr.data(), firstDoc.get());
+
+    auto currentDoc = textEdit->textDocument()->textDocument();
+    docPtr = currentDoc;
+
+    // ensure two independent edits can both watch the same document
+    auto textEdit2 = qobject_cast<QQuickTextEdit *>(texteditComponent.create());
+    QVERIFY(textEdit2 != nullptr);
+
+    textEdit2->textDocument()->setTextDocument(currentDoc);
+    QVERIFY(!docPtr.isNull());
+
+    currentDoc->setPlainText("reset document");
+    QCOMPARE(textEdit->text(), textEdit2->text());
+
+    // resizing a single TextEdit should not break or livelock
+    textEdit2->setWidth(100);
+
+    // verify that deleting the textedit doesn't delete the document
+    // or leave behind connections to the document
+    delete textEdit;
+    textEdit = nullptr;
+    QCOMPARE(docPtr.data(), currentDoc);
+    currentDoc->setPlainText("hello world");
 }
 
 QT_END_NAMESPACE

@@ -6,7 +6,6 @@
 #include <QtCore/qloggingcategory.h>
 #include <QtCore/qmetaobject.h>
 #include <QtCore/qthread.h>
-#include <QtCore/qtimer.h>
 #include <QtCore/qpointer.h>
 #include <QtHttpServer/qabstracthttpserver.h>
 #include <QtHttpServer/qhttpserverrequest.h>
@@ -99,7 +98,8 @@ struct IOChunkedTransfer
     // TODO Can we implement it without the buffer? Direct write to the target buffer
     // would be great.
 
-    const qint64 bufferSize = BUFFERSIZE;
+    static constexpr qint64 bufferSize = BUFFERSIZE;
+    static constexpr qint64 targetWriteBufferSaturation = bufferSize / 2;
     char buffer[BUFFERSIZE];
     qint64 beginIndex = -1;
     qint64 endIndex = -1;
@@ -107,17 +107,14 @@ struct IOChunkedTransfer
     const QPointer<QIODevice> sink;
     const QMetaObject::Connection bytesWrittenConnection;
     const QMetaObject::Connection readyReadConnection;
+    bool inRead = false;
+
     IOChunkedTransfer(QIODevice *input, QIODevice *output) :
           source(input),
           sink(output),
-          bytesWrittenConnection(QObject::connect(sink.data(), &QIODevice::bytesWritten,
-                                                  sink.data(), [this]() {
-              writeToOutput();
-          })),
-          readyReadConnection(QObject::connect(source.data(), &QIODevice::readyRead,
-                                               source.data(), [this]() {
-              readFromInput();
-          }))
+          bytesWrittenConnection(connectToBytesWritten(this, output)),
+          readyReadConnection(QObject::connect(source.data(), &QIODevice::readyRead, source.data(),
+                                               [this]() { readFromInput(); }))
     {
         Q_ASSERT(!source->atEnd());  // TODO error out
         QObject::connect(sink.data(), &QObject::destroyed, source.data(), &QObject::deleteLater);
@@ -133,6 +130,18 @@ struct IOChunkedTransfer
         QObject::disconnect(readyReadConnection);
     }
 
+    static QMetaObject::Connection connectToBytesWritten(IOChunkedTransfer *that, QIODevice *device)
+    {
+        auto send = [that]() { that->writeToOutput(); };
+#if QT_CONFIG(ssl)
+        if (auto *sslSocket = qobject_cast<QSslSocket *>(device)) {
+            return QObject::connect(sslSocket, &QSslSocket::encryptedBytesWritten, sslSocket,
+                                    std::move(send));
+        }
+#endif
+        return QObject::connect(device, &QIODevice::bytesWritten, device, std::move(send));
+    }
+
     inline bool isBufferEmpty()
     {
         Q_ASSERT(beginIndex <= endIndex);
@@ -141,18 +150,26 @@ struct IOChunkedTransfer
 
     void readFromInput()
     {
+        if (inRead)
+            return;
         if (source.isNull())
             return;
 
         if (!isBufferEmpty()) // We haven't consumed all the data yet.
             return;
-        beginIndex = 0;
-        endIndex = source->read(buffer, bufferSize);
-        if (endIndex < 0) {
-            endIndex = beginIndex; // Mark the buffer as empty
-            qCWarning(lcHttpServerHttp1Handler, "Error reading chunk: %ls",
-                      qUtf16Printable(source->errorString()));
-        } else if (endIndex) {
+        QScopedValueRollback inReadGuard(inRead, true);
+
+        while (isBufferEmpty()) {
+            beginIndex = 0;
+            endIndex = source->read(buffer, bufferSize);
+            if (endIndex < 0) {
+                endIndex = beginIndex; // Mark the buffer as empty
+                qCWarning(lcHttpServerHttp1Handler, "Error reading chunk: %ls",
+                        qUtf16Printable(source->errorString()));
+                break;
+            }
+            if (endIndex == 0)
+                break;
             memset(buffer + endIndex, 0, sizeof(buffer) - std::size_t(endIndex));
             writeToOutput();
         }
@@ -166,6 +183,19 @@ struct IOChunkedTransfer
         if (isBufferEmpty())
             return;
 
+        // If downstream has enough data to write already,
+        // don't bother writing more now. That would only lead to
+        // higher, unnecessary memory usage.
+        if (sink->bytesToWrite() >= targetWriteBufferSaturation)
+            return;
+#if QT_CONFIG(ssl)
+        if (auto *sslSocket = qobject_cast<QSslSocket *>(sink.data())) {
+            const qint64 budget = targetWriteBufferSaturation - sink->bytesToWrite();
+            if (sslSocket->encryptedBytesToWrite() >= budget)
+                return;
+        }
+#endif
+
         const auto writtenBytes = sink->write(buffer + beginIndex, endIndex);
         if (writtenBytes < 0) {
             qCWarning(lcHttpServerHttp1Handler, "Error writing chunk: %ls",
@@ -174,9 +204,9 @@ struct IOChunkedTransfer
         }
         beginIndex += writtenBytes;
         if (isBufferEmpty()) {
-            if (source->bytesAvailable())
-                QTimer::singleShot(0, source.data(), [this]() { readFromInput(); });
-            else if (source->atEnd()) // Finishing
+            if (source->bytesAvailable() && !inRead)
+                readFromInput();
+            else if (source->atEnd())  // Finishing
                 source->deleteLater();
         }
     }
@@ -218,6 +248,10 @@ QHttpServerHttp1ProtocolHandler::QHttpServerHttp1ProtocolHandler(QAbstractHttpSe
 void QHttpServerHttp1ProtocolHandler::responderDestroyed()
 {
     Q_ASSERT(QThread::currentThread() == thread());
+    if (protocolChanged) {
+        deleteLater();
+        return;
+    }
     Q_ASSERT(handlingRequest);
     handlingRequest = false;
 
@@ -292,8 +326,10 @@ void QHttpServerHttp1ProtocolHandler::handleReadyRead()
                     if (upgradeResponse.type()
                         == QHttpServerWebSocketUpgradeResponse::ResponseType::Accept) {
                         // Socket will now be managed by websocketServer
+                        protocolChanged = true;
                         socket->disconnect();
                         socket->rollbackTransaction();
+                        socket->setParent(nullptr);
                         server->d_func()->websocketServer.handleConnection(tcpSocket);
                         Q_EMIT socket->readyRead();
                     } else {

@@ -1,6 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
+#include "commonutils_p.h"
 #include "qquickgraphstexturedata_p.h"
 
 #include <QtGraphs/private/qgraphsglobal_p.h>
@@ -11,18 +12,19 @@ QQuickGraphsTextureData::~QQuickGraphsTextureData() {}
 
 void QQuickGraphsTextureData::createGradient(QLinearGradient gradient)
 {
-    setSize(QSize(gradientTextureWidth, gradientTextureHeight));
+    const qreal textureWidth = CommonUtils::maxTextureSize();
+    setSize(QSize(textureWidth, gradientTextureHeight));
     setFormat(QQuick3DTextureData::RGBA8);
     setHasTransparency(false);
 
     // Make sure the gradient fills the whole image
-    gradient.setFinalStop(gradientTextureWidth, gradientTextureHeight);
+    gradient.setFinalStop(textureWidth, gradientTextureHeight);
     gradient.setStart(0., 0.);
 
     QByteArray imageData;
 
     QByteArray gradientScanline;
-    gradientScanline.resize(gradientTextureWidth * 4); // RGBA8
+    gradientScanline.resize(textureWidth * 4); // RGBA8
     auto stops = gradient.stops();
 
     int x = 0;
@@ -30,7 +32,7 @@ void QQuickGraphsTextureData::createGradient(QLinearGradient gradient)
         QColor startColor = stops.at(i - 1).second;
         QColor endColor = stops.at(i).second;
         int w = 0;
-        w = (stops.at(i).first - stops.at(i - 1).first) * gradientTextureWidth;
+        w = (stops.at(i).first - stops.at(i - 1).first) * textureWidth;
 
         if (startColor.alphaF() < 1.0 || endColor.alphaF() < 1.0)
             setHasTransparency(true);

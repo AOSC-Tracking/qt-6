@@ -249,16 +249,16 @@ static void addTranslucencyIrradiance(QSSGStageGeneratorBase &infragmentShader,
 using ShadowNameMap = QHash<QPair<qsizetype, quint32>, QSSGMaterialShaderGenerator::ShadowVariableNames>;
 Q_GLOBAL_STATIC(ShadowNameMap, q3ds_shadowMapVariableNames);
 
-static const QSSGMaterialShaderGenerator::ShadowVariableNames& setupShadowMapVariableNames(qsizetype lightIdx, quint32 shadowMapRes)
+static const QSSGMaterialShaderGenerator::ShadowVariableNames& setupShadowMapVariableNames(qsizetype shadowMapIdx, quint32 shadowMapRes)
 {
-    QSSGMaterialShaderGenerator::ShadowVariableNames &names = (*q3ds_shadowMapVariableNames)[{lightIdx, shadowMapRes}];
+    QSSGMaterialShaderGenerator::ShadowVariableNames &names = (*q3ds_shadowMapVariableNames)[{shadowMapIdx, shadowMapRes}];
     if (names.shadowMapTexture.isEmpty()) {
         names.shadowCube = QByteArrayLiteral("qt_shadowcube");
         char buf[std::numeric_limits<qsizetype>::digits10 + 1 + 2 + 1]; // digits10 is one short; 2 for [] and 1 for NUL
-        std::snprintf(buf, sizeof buf, "%lld", qlonglong(lightIdx));
+        std::snprintf(buf, sizeof buf, "%lld", qlonglong(shadowMapIdx));
         names.shadowCube.append(buf);
         names.shadowData = QByteArrayLiteral("ubShadows.shadowData");
-        std::snprintf(buf, sizeof buf, "[%lld]", qlonglong(lightIdx));
+        std::snprintf(buf, sizeof buf, "[%lld]", qlonglong(shadowMapIdx));
         names.shadowData.append(buf);
         names.shadowMapTexture = QByteArrayLiteral("qt_shadowmap_texture_");
         std::snprintf(buf, sizeof buf, "%d", shadowMapRes);
@@ -346,7 +346,7 @@ static QSSGMaterialShaderGenerator::LightVariableNames setupLightVariableNames(q
 
 static void generateShadowMapOcclusion(QSSGStageGeneratorBase &fragmentShader,
                                        QSSGMaterialVertexPipeline &vertexShader,
-                                       quint32 lightIdx,
+                                       quint32 shadowMapIdx,
                                        quint32 shadowMapRes,
                                        QSSGRenderLight::SoftShadowQuality softShadowQuality,
                                        bool inShadowEnabled,
@@ -356,7 +356,7 @@ static void generateShadowMapOcclusion(QSSGStageGeneratorBase &fragmentShader,
 {
     if (inShadowEnabled) {
         vertexShader.generateWorldPosition(inKey);
-        const auto& names = setupShadowMapVariableNames(lightIdx, shadowMapRes);
+        const auto& names = setupShadowMapVariableNames(shadowMapIdx, shadowMapRes);
         fragmentShader.addInclude("shadowMapping.glsllib");
 
         QByteArray sampleFunctionSuffix;
@@ -383,23 +383,21 @@ static void generateShadowMapOcclusion(QSSGStageGeneratorBase &fragmentShader,
                 Q_UNREACHABLE();
         };
 
-        fragmentShader << "    if (" << names.shadowData << ".factor > 0.01) {\n";
         if (inType == QSSGRenderLight::Type::PointLight) {
             fragmentShader.addUniform(names.shadowCube, "samplerCube");
-            fragmentShader << "      qt_shadow_map_occl = qt_samplePointLight_" << sampleFunctionSuffix << "(" << names.shadowCube << ", " << names.shadowData << ", " << lightVarNames.lightPos << ".xyz, qt_varWorldPos);\n";
+            fragmentShader << "    qt_shadow_map_occl = qt_samplePointLight_" << sampleFunctionSuffix << "(" << names.shadowCube << ", " << names.shadowData << ", " << lightVarNames.lightPos << ".xyz, qt_varWorldPos);\n";
         } else if (inType == QSSGRenderLight::Type::DirectionalLight || inType == QSSGRenderLight::Type::SpotLight) {
             if (!fragmentShader.m_uniforms.contains(names.shadowMapTexture)) {
                 fragmentShader.addUniform(names.shadowMapTexture, "sampler2DArray");
             }
             if (inType == QSSGRenderLight::Type::DirectionalLight) {
-                fragmentShader << "      qt_shadow_map_occl = qt_sampleDirectionalLight_" << sampleFunctionSuffix << "(" << names.shadowMapTexture << ", " << names.shadowData << ", qt_zDepthViewSpace, qt_varWorldPos);\n";
+                fragmentShader << "    qt_shadow_map_occl = qt_sampleDirectionalLight_" << sampleFunctionSuffix << "(" << names.shadowMapTexture << ", " << names.shadowData << ", qt_zDepthViewSpace, qt_varWorldPos);\n";
             } else {
-                fragmentShader << "      qt_shadow_map_occl = qt_sampleSpotLight_" << sampleFunctionSuffix << "(" << names.shadowMapTexture << ", " << names.shadowData << ", " << lightVarNames.lightPos << ".xyz, qt_varWorldPos, " << lightVarNames.lightDirection << ".xyz, " << lightVarNames.lightConeAngle << ");\n";
+                fragmentShader << "    qt_shadow_map_occl = qt_sampleSpotLight_" << sampleFunctionSuffix << "(" << names.shadowMapTexture << ", " << names.shadowData << ", " << lightVarNames.lightPos << ".xyz, qt_varWorldPos, " << lightVarNames.lightDirection << ".xyz, " << lightVarNames.lightConeAngle << ");\n";
             }
         } else {
             Q_UNREACHABLE();
         }
-        fragmentShader << "    }\n";
     } else {
         fragmentShader << "    qt_shadow_map_occl = 1.0;\n";
     }
@@ -812,8 +810,6 @@ static void generateMainLightCalculation(QSSGStageGeneratorBase &fragmentShader,
         const bool isDirectional = lightNode->type == QSSGRenderLight::Type::DirectionalLight;
         const bool isSpot = lightNode->type == QSSGRenderLight::Type::SpotLight;
         bool castsShadow = enableShadowMaps && lightNode->m_castShadow && shadowMapCount < QSSG_MAX_NUM_SHADOW_MAPS;
-        if (castsShadow)
-            ++shadowMapCount;
 
         fragmentShader.append("");
         char lightIdxStr[11];
@@ -835,7 +831,7 @@ static void generateMainLightCalculation(QSSGStageGeneratorBase &fragmentShader,
 
         lightVarPrefix.append("_");
 
-        generateShadowMapOcclusion(fragmentShader, vertexShader, lightIdx, lightNode->m_shadowMapRes, lightNode->m_softShadowQuality, castsShadow, lightNode->type, lightVarNames, inKey);
+        generateShadowMapOcclusion(fragmentShader, vertexShader, shadowMapCount, lightNode->m_shadowMapRes, lightNode->m_softShadowQuality, castsShadow, lightNode->type, lightVarNames, inKey);
 
         generateTempLightColor(fragmentShader, lightVarNames, materialAdapter);
 
@@ -879,6 +875,9 @@ static void generateMainLightCalculation(QSSGStageGeneratorBase &fragmentShader,
                                  enableTransmission);
             }
         }
+
+        if (castsShadow)
+            ++shadowMapCount;
     }
 
     fragmentShader.append("");
@@ -2126,7 +2125,7 @@ void QSSGMaterialShaderGenerator::setRhiMaterialProperties(const QSSGRenderConte
     const QVector2D camProperties(inCameras[0]->clipNear, inCameras[0]->clipFar);
     shaders.setUniform(ubufData, "qt_cameraProperties", &camProperties, 2 * sizeof(float), &cui.cameraPropertiesIdx);
 
-    const int viewCount = inCameras.count();
+    const int viewCount = inRenderProperties.layer.viewCount;
     if (viewCount < 2) {
         const QVector3D camGlobalPos = inCameras[0]->getGlobalPos();
         shaders.setUniform(ubufData, "qt_cameraPosition", &camGlobalPos, 3 * sizeof(float), &cui.cameraPositionIdx);
@@ -2307,14 +2306,12 @@ void QSSGMaterialShaderGenerator::setRhiMaterialProperties(const QSSGRenderConte
 
         if (lightShadows && shadowsUniformData.count < QSSG_MAX_NUM_SHADOW_MAPS) {
             QSSGRhiShadowMapProperties &theShadowMapProperties(shaders.addShadowMap());
-            ++shadowsUniformData.count;
-
             QSSGShadowMapEntry *pEntry = inRenderProperties.getShadowMapManager()->shadowMapEntry(lightIdx);
             Q_ASSERT(pEntry);
 
             const auto& names = setupShadowMapVariableNames(lightIdx, theLight->m_shadowMapRes);
 
-            QSSGShaderShadowData &shadowData(shadowsUniformData.shadowData[lightIdx]);
+            QSSGShaderShadowData &shadowData(shadowsUniformData.shadowData[shadowsUniformData.count]);
 
             if (theLight->type == QSSGRenderLight::Type::DirectionalLight ||
                 theLight->type == QSSGRenderLight::Type::SpotLight) {
@@ -2369,6 +2366,8 @@ void QSSGMaterialShaderGenerator::setRhiMaterialProperties(const QSSGRenderConte
             } else {
                 memset(&shadowData, '\0', sizeof(shadowData));
             }
+
+            ++shadowsUniformData.count;
         }
 
         if (theLight->type == QSSGRenderLight::Type::PointLight

@@ -4,20 +4,11 @@
 #ifndef VEHICLETHREAD_H
 #define VEHICLETHREAD_H
 
+#include "vehicleservice_client.grpc.qpb.h"
 #include <QtCore/QThread>
 #include <memory>
 
-QT_BEGIN_NAMESPACE
-class QGrpcServerStream;
-QT_END_NAMESPACE
-
-namespace qtgrpc {
-namespace examples {
-namespace VehicleService {
-class Client;
-}
-}
-}
+namespace qtgrpc::examples {
 
 class VehicleThread : public QThread
 {
@@ -26,17 +17,22 @@ class VehicleThread : public QThread
 public:
     explicit VehicleThread(QObject *parent = nullptr);
     ~VehicleThread() override;
+
     void run() override;
+
 signals:
     void speedChanged(int speed);
     void rpmChanged(int rpm);
-    void fuelLevelChanged(int level);
-    void connectionError(bool value);
+    void autonomyChanged(int level);
+
+    void connectionError(QString error);
 
 private:
-    std::shared_ptr<qtgrpc::examples::VehicleService::Client> m_client;
-    std::shared_ptr<QGrpcServerStream> m_streamSpeed;
-    std::shared_ptr<QGrpcServerStream> m_streamGear;
+    std::unique_ptr<qtgrpc::examples::VehicleService::Client> m_client;
+    std::unique_ptr<QGrpcServerStream> m_streamSpeed;
+    std::unique_ptr<QGrpcServerStream> m_streamRpm;
 };
+
+}
 
 #endif // VEHICLETHREAD_H

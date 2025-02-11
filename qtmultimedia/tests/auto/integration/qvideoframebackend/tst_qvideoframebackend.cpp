@@ -6,9 +6,9 @@
 #include <qvideoframe.h>
 #include <qdebug.h>
 
-#include "mediafileselector.h"
-#include "mediabackendutils.h"
-#include "testvideosink.h"
+#include <private/mediafileselector_p.h>
+#include <private/mediabackendutils_p.h>
+#include <private/testvideosink_p.h>
 #include "private/qvideotexturehelper_p.h"
 #include "private/qvideowindow_p.h"
 #include <thread>
@@ -220,7 +220,7 @@ void tst_QVideoFrameBackend::toImage_rendersUpdatedFrame_afterMappingInWriteMode
 
 void tst_QVideoFrameBackend::toImage_returnsImage_whenCalledFromSeparateThreadAndWhileRenderingToWindow()
 {
-    if (qEnvironmentVariable("QTEST_ENVIRONMENT").toLower() == "ci") {
+    if (isCI()) {
 #ifdef Q_OS_MACOS
         QSKIP("SKIP on macOS because of crash and error \"Failed to create QWindow::MetalSurface. Metal is not supported by any of the GPUs in this system.\"");
 #elif defined(Q_OS_ANDROID)

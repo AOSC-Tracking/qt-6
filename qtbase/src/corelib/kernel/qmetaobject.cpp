@@ -163,6 +163,8 @@ static auto parse_scope(QByteArrayView qualifiedKey) noexcept
         std::optional<QByteArrayView> scope;
         QByteArrayView key;
     };
+    if (qualifiedKey.startsWith("QFlags<") && qualifiedKey.endsWith('>'))
+        qualifiedKey.slice(7, qualifiedKey.length() - 8);
     const auto scopePos = qualifiedKey.lastIndexOf("::"_L1);
     if (scopePos < 0)
         return R{std::nullopt, qualifiedKey};
@@ -1785,9 +1787,7 @@ bool QMetaObject::invokeMethodImpl(QObject *object, QtPrivate::QSlotObjectBase *
 /*!
     \fn QMetaObject::Connection::swap(Connection &other)
     \since 5.15
-
-    Swaps this Connection instance with \a other. This operation is very fast
-    and never fails.
+    \memberswap{Connection instance}
 */
 
 /*!
@@ -2324,8 +2324,9 @@ int QMetaMethod::relativeMethodIndex() const
 // This method has been around for a while, but the documentation was marked \internal until 5.1
 /*!
     \since 5.1
-    Returns the method revision if one was
-    specified by Q_REVISION, otherwise returns 0.
+    Returns the method revision if one was specified by Q_REVISION, otherwise
+    returns 0. Since Qt 6.0, non-zero values are encoded and can be decoded
+    using QTypeRevision::fromEncodedVersion().
  */
 int QMetaMethod::revision() const
 {
@@ -3437,7 +3438,7 @@ int QMetaEnum::Data::index(const QMetaObject *mobj) const
 
     \section1 Property Meta-Data
 
-    A property has a name() and a type(), as well as various
+    A property has a name() and a metaType(), as well as various
     attributes that specify its behavior: isReadable(), isWritable(),
     isDesignable(), isScriptable(), revision(), and isStored().
 
@@ -3775,8 +3776,10 @@ bool QMetaProperty::write(QObject *object, QVariant &&v) const
         return false;
     QMetaType t(mobj->d.metaTypes[data.index(mobj)]);
     if (t != QMetaType::fromType<QVariant>() && t != v.metaType()) {
-        if (isEnumType() && !t.metaObject() && v.metaType().id() == QMetaType::QString) {
+        if (isEnumType() && !t.metaObject() && v.metaType() == QMetaType::fromType<QString>()) {
             // Assigning a string to a property of type Q_ENUMS (instead of Q_ENUM)
+            // means the QMetaType has no associated QMetaObject, so it can't
+            // do the conversion (see qmetatype.cpp:convertToEnum()).
             bool ok;
             if (isFlagType())
                 v = QVariant(menum.keysToValue(v.toByteArray(), &ok));
@@ -3784,7 +3787,8 @@ bool QMetaProperty::write(QObject *object, QVariant &&v) const
                 v = QVariant(menum.keyToValue(v.toByteArray(), &ok));
             if (!ok)
                 return false;
-        } else if (!v.isValid()) {
+        }
+        if (!v.isValid()) {
             if (isResettable())
                 return reset(object);
             v = QVariant(t, nullptr);
@@ -3995,8 +3999,9 @@ int QMetaProperty::notifySignalIndex() const
 /*!
     \since 5.1
 
-    Returns the property revision if one was
-    specified by REVISION, otherwise returns 0.
+    Returns the property revision if one was specified by Q_REVISION, otherwise
+    returns 0. Since Qt 6.0, non-zero values are encoded and can be decoded
+    using QTypeRevision::fromEncodedVersion().
  */
 int QMetaProperty::revision() const
 {

@@ -219,7 +219,7 @@ QParameter::~QParameter()
 }
 
 /*!
-  \qmlproperty QString Qt3D.Render::Parameter::name
+  \qmlproperty string Qt3D.Render::Parameter::name
     Specifies the name of the parameter
 */
 

@@ -206,7 +206,7 @@
 
     \section2 The FFmpeg backend
 
-    The FFmpeg media backend relies on the \b{FFmpeg 7.0} libraries,
+    The FFmpeg media backend relies on the \b{FFmpeg 7.1} libraries,
     which are included with the Qt Online Installer and tested by the
     maintainers. The binary packages from the online installer use
     dynamic linking to FFmpeg. Therefore, applications must either
@@ -273,7 +273,7 @@
 
     In the case of issues with the default FFmpeg backend, we suggest testing with a native backend.
     You can switch to native backends by setting the \c{QT_MEDIA_BACKEND} environment variable
-    to \c windows, \c GStreamer (on Linux), \c Darwin (on macOS and iOS), or \c android:
+    to \c windows, \c gstreamer (on Linux), \c darwin (on macOS and iOS), or \c android:
 
     \code
     export QT_MEDIA_BACKEND=darwin
@@ -293,6 +293,7 @@
     related to the multimedia backend.
 
     \list
+      \li \l{Qt Multimedia on Windows}{Windows}
       \li \l{Qt Multimedia on macOS and iOS}{macOS and iOS}
       \li \l{Qt Multimedia on WebAssembly}{WebAssembly}
       \li \l{Qt Multimedia on Linux using the Wayland compositor}{Linux using the Wayland compositor}

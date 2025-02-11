@@ -270,8 +270,15 @@ void BarItemModelHandler::resolveModel()
             }
         }
 
-        rowLabels = rowList;
-        columnLabels = columnList;
+        if (!m_proxy->series()->rowLabels().isEmpty())
+            rowLabels = m_proxy->series()->rowLabels();
+        else
+            rowLabels = rowList;
+        if (!m_proxy->series()->columnLabels().isEmpty())
+            columnLabels = m_proxy->series()->columnLabels();
+        else
+            columnLabels = columnList;
+
         m_columnCount = columnList.size();
 
         delete matchCountMap;

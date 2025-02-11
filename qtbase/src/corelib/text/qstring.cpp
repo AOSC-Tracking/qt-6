@@ -749,11 +749,7 @@ const char16_t *QtPrivate::qustrchr(QStringView str, char16_t c) noexcept
                                    [=](qsizetype i) { return n + i; });
 #  endif
 #elif defined(__ARM_NEON__)
-#ifdef _MSC_VER
-    const uint16x8_t vmask = { 0x0008000400020001ULL, 0x0080004000200010ULL };
-#else
-    const uint16x8_t vmask = { 1, 1 << 1, 1 << 2, 1 << 3, 1 << 4, 1 << 5, 1 << 6, 1 << 7 };
-#endif
+    const uint16x8_t vmask = qvsetq_n_u16(1, 1 << 1, 1 << 2, 1 << 3, 1 << 4, 1 << 5, 1 << 6, 1 << 7);
     const uint16x8_t ch_vec = vdupq_n_u16(c);
     for (const char16_t *next = n + 8; next <= e; n = next, next += 8) {
         uint16x8_t data = vld1q_u16(reinterpret_cast<const uint16_t *>(n));
@@ -1294,11 +1290,7 @@ static int ucstrncmp(const char16_t *a, const char16_t *b, size_t l)
 #  elif defined(__ARM_NEON__)
     if (l >= 8) {
         const char16_t *end = a + l;
-#ifdef _MSC_VER
-        const uint16x8_t mask = { 0x0008000400020001ULL, 0x0080004000200010ULL };
-#else
-        const uint16x8_t mask = { 1, 1 << 1, 1 << 2, 1 << 3, 1 << 4, 1 << 5, 1 << 6, 1 << 7 };
-#endif
+        const uint16x8_t mask = qvsetq_n_u16( 1, 1 << 1, 1 << 2, 1 << 3, 1 << 4, 1 << 5, 1 << 6, 1 << 7 );
         while (end - a > 7) {
             uint16x8_t da = vld1q_u16(reinterpret_cast<const uint16_t *>(a));
             uint16x8_t db = vld1q_u16(reinterpret_cast<const uint16_t *>(b));
@@ -2418,9 +2410,10 @@ encoded in \1, and is converted to QString using the \2 function.
 /*! \fn QString QString::fromWCharArray(const wchar_t *string, qsizetype size)
     \since 4.2
 
-    Returns a copy of the \a string, where the encoding of \a string depends on
-    the size of wchar. If wchar is 4 bytes, the \a string is interpreted as
-    UCS-4, if wchar is 2 bytes it is interpreted as UTF-16.
+    Reads the first \a size code units of the \c wchar_t array to whose start
+    \a string points, converting them to Unicode and returning the result as
+    a QString. The encoding used by \c wchar_t is assumed to be UTF-32 if the
+    type's size is four bytes or UTF-16 if its size is two bytes.
 
     If \a size is -1 (default), the \a string must be '\\0'-terminated.
 
@@ -2458,7 +2451,7 @@ qsizetype QString::toUcs4_helper(const char16_t *uc, qsizetype length, char32_t 
 
   Fills the \a array with the data contained in this QString object.
   The array is encoded in UTF-16 on platforms where
-  wchar_t is 2 bytes wide (e.g. windows) and in UCS-4 on platforms
+  wchar_t is 2 bytes wide (e.g. windows) and in UTF-32 on platforms
   where wchar_t is 4 bytes wide (most Unix systems).
 
   \a array has to be allocated by the caller and contain enough space to
@@ -2612,9 +2605,7 @@ QString::QString(QChar ch)
 
 /*! \fn void QString::swap(QString &other)
     \since 4.8
-
-    Swaps string \a other with this string. This operation is very fast and
-    never fails.
+    \memberswap{string}
 */
 
 /*! \fn void QString::detach()
@@ -5439,7 +5430,7 @@ QString QString::sliced_helper(QString &str, qsizetype pos, qsizetype n)
     \note The behavior is undefined if \a pos < 0, \a n < 0,
     or \a pos + \a n > size().
 
-    \snippet qstring/main.cpp 86
+    \snippet qstring/main.cpp slice97
 
     \sa sliced(), first(), last(), chopped(), chop(), truncate()
 */
@@ -5838,8 +5829,8 @@ static QList<uint> qt_convert_to_ucs4(QStringView string);
 
     Returns a UCS-4/UTF-32 representation of the string as a QList<uint>.
 
-    UCS-4 is a Unicode codec and therefore it is lossless. All characters from
-    this string will be encoded in UCS-4. Any invalid sequence of code units in
+    UTF-32 is a Unicode codec and therefore it is lossless. All characters from
+    this string will be encoded in UTF-32. Any invalid sequence of code units in
     this string is replaced by the Unicode's replacement character
     (QChar::ReplacementCharacter, which corresponds to \c{U+FFFD}).
 
@@ -5871,8 +5862,8 @@ static QList<uint> qt_convert_to_ucs4(QStringView string)
 
     Returns a UCS-4/UTF-32 representation of \a string as a QList<uint>.
 
-    UCS-4 is a Unicode codec and therefore it is lossless. All characters from
-    this string will be encoded in UCS-4. Any invalid sequence of code units in
+    UTF-32 is a Unicode codec and therefore it is lossless. All characters from
+    this string will be encoded in UTF-32. Any invalid sequence of code units in
     this string is replaced by the Unicode's replacement character
     (QChar::ReplacementCharacter, which corresponds to \c{U+FFFD}).
 
@@ -6095,7 +6086,7 @@ QString QString::fromUtf16(const char16_t *unicode, qsizetype size)
     \since 5.3
 
     Returns a QString initialized with the first \a size characters
-    of the Unicode string \a unicode (ISO-10646-UCS-4 encoded).
+    of the Unicode string \a unicode (encoded as UTF-32).
 
     If \a size is -1 (default), \a unicode must be \\0'-terminated.
 
@@ -6107,9 +6098,10 @@ QString QString::fromUcs4(const char32_t *unicode, qsizetype size)
     if (!unicode)
         return QString();
     if (size < 0) {
-        size = 0;
-        while (unicode[size] != 0)
-            ++size;
+        if constexpr (sizeof(char32_t) == sizeof(wchar_t))
+            size = wcslen(reinterpret_cast<const wchar_t *>(unicode));
+        else
+            size = std::char_traits<char32_t>::length(unicode);
     }
     QStringDecoder toUtf16(QStringDecoder::Utf32, QStringDecoder::Flag::Stateless);
     return toUtf16(QByteArrayView(reinterpret_cast<const char *>(unicode), size * 4));
@@ -9561,7 +9553,7 @@ QString &QString::setRawData(const QChar *unicode, qsizetype size)
 /*! \fn QString QString::fromStdU32String(const std::u32string &str)
     \since 5.5
 
-    \include qstring.cpp {from-std-string} {UCS-4} {fromUcs4()}
+    \include qstring.cpp {from-std-string} {UTF-32} {fromUcs4()}
 
     \sa fromUcs4(), fromStdWString(), fromStdU16String()
 */

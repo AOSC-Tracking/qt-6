@@ -22,7 +22,7 @@ QT_BEGIN_NAMESPACE
     \nativetype QSplineSeries
     \inqmlmodule QtGraphs
     \ingroup graphs_qml_2D
-    \inherits QXYSeries
+    \inherits XYSeries
 
     \brief SplineSeries presents data in spline graphs.
 
@@ -87,6 +87,11 @@ void QSplineSeries::componentComplete()
     connect(this, &QSplineSeries::pointRemoved, this, [d]([[maybe_unused]] int index) {
         d->calculateSplinePoints();
     });
+
+    connect(this, &QSplineSeries::pointsRemoved, this
+            , [d]([[maybe_unused]] int index, [[maybe_unused]] int count) {
+       d->calculateSplinePoints();
+   });
 
     connect(this, &QSplineSeries::pointReplaced, this, [d]([[maybe_unused]] int index) {
         d->calculateSplinePoints();

@@ -10,7 +10,7 @@ Configurations:
     Compiler: 'Clang'
     Features: ['DisableTests']
 -
-    Template: 'qtci-linux-RHEL-9.2-x86_64-51'
+    Template: 'qtci-linux-RHEL-9.4-x86_64-50'
     Compiler: 'GCC'
     Features: ['DisableTests']
 -

@@ -834,7 +834,7 @@ void tst_QSvgRenderer::testGzLoading()
     QVERIFY(resourceRenderer.isValid());
 
     QFile largeFileGz(QFINDTESTDATA("large.svgz"));
-    largeFileGz.open(QIODevice::ReadOnly);
+    QVERIFY(largeFileGz.open(QIODevice::ReadOnly));
     QByteArray data = largeFileGz.readAll();
     QSvgRenderer autoDetectGzData(data);
     QVERIFY(autoDetectGzData.isValid());
@@ -856,9 +856,9 @@ void tst_QSvgRenderer::testGzHelper_data()
             "cbcfe70200a865327e04000000")) << QByteArray("foo\n");
 
     QFile largeFileGz(QFINDTESTDATA("large.svgz"));
-    largeFileGz.open(QIODevice::ReadOnly);
+    QVERIFY(largeFileGz.open(QIODevice::ReadOnly));
     QFile largeFile(QFINDTESTDATA("large.svg"));
-    largeFile.open(QIODevice::ReadOnly);
+    QVERIFY(largeFile.open(QIODevice::ReadOnly));
     QTest::newRow("large") << largeFileGz.readAll() << largeFile.readAll();
 
     QTest::newRow("zeroes") << QByteArray::fromHex(QByteArray("1f8b0800131f9348000333"
@@ -881,7 +881,7 @@ void tst_QSvgRenderer::testGzHelper()
     QFETCH(QByteArray, out);
 
     QBuffer buffer(&in);
-    buffer.open(QIODevice::ReadOnly);
+    QVERIFY(buffer.open(QIODevice::ReadOnly));
     QVERIFY(buffer.isReadable());
     QByteArray result = qt_inflateGZipDataFrom(&buffer);
     QCOMPARE(result, out);
@@ -1020,6 +1020,54 @@ void tst_QSvgRenderer::opacity()
         data.append("\" /></svg>");
         opacity_drawSvgAndVerify(data);
     }
+
+    // group opacity QTBUG-122310
+    const char *svg = R"svg(
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 37 37">
+    <g transform="translate(0, 0)">
+        <rect style="fill:#808080" x="0" y="0" width="10" height="10" fill-opacity="0.5"/>
+        <rect style="fill:#808080" x="5" y="5" width="10" height="10" fill-opacity="0.5"/>
+    </g>
+    <g transform="translate(20, 0)" fill-opacity="0.5">
+        <rect style="fill:#808080" x="0" y="0" width="10" height="10"/>
+        <rect style="fill:#808080" x="5" y="5" width="10" height="10"/>
+    </g>
+    <g transform="translate(0, 20)">
+        <rect style="fill:#808080" x="0" y="0" width="10" height="10" opacity="0.5"/>
+        <rect style="fill:#808080" x="5" y="5" width="10" height="10" opacity="0.5"/>
+    </g>
+    <g transform="translate(20, 20)" opacity="0.5">
+        <rect style="fill:#808080" x="0" y="0" width="10" height="10"/>
+        <rect style="fill:#808080" x="5" y="5" width="10" height="10"/>
+    </g>
+    </svg>
+    )svg";
+
+    QByteArray data(svg);
+    QSvgRenderer renderer(data);
+    QVERIFY(renderer.isValid());
+
+    QImage image(140, 140, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    QPainter p;
+    p.begin(&image);
+    renderer.render(&p);
+    p.end();
+
+    const QRgb lightGray(0xffc0c0c0);
+    const QRgb gray(0xffa0a0a0);
+
+    QCOMPARE(image.pixel(QPoint(10, 10)), lightGray);
+    QCOMPARE(image.pixel(QPoint(30, 30)), gray);
+
+    QCOMPARE(image.pixel(QPoint(90, 10)), lightGray);
+    QCOMPARE(image.pixel(QPoint(110, 30)), gray);
+
+    QCOMPARE(image.pixel(QPoint(10, 90)), lightGray);
+    QCOMPARE(image.pixel(QPoint(30, 110)), gray);
+
+    QCOMPARE(image.pixel(QPoint(90, 90)), lightGray);
+    QCOMPARE(image.pixel(QPoint(110, 110)), lightGray);
 }
 
 void tst_QSvgRenderer::paths()
@@ -1685,7 +1733,7 @@ void tst_QSvgRenderer::oss_fuzz_61586()
 QByteArray image_data_url(QImage &image) {
     QByteArray data;
     QBuffer buffer(&data);
-    buffer.open(QBuffer::ReadWrite);
+    QTEST_ASSERT(buffer.open(QBuffer::ReadWrite));
     image.save(&buffer, "PNG");
     buffer.close();
     QByteArray url("data:image/png;base64,");

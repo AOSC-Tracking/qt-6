@@ -13,8 +13,9 @@
 #include "qmocksurfacecapture.h"
 #include <private/qcameradevice_p.h>
 #include <private/qplatformvideodevices_p.h>
+#include <private/qplatformmediaformatinfo_p.h>
 
-#include "qmockmediadevices.h"
+#include "qmockaudiodevices.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -87,7 +88,7 @@ public:
         emit videoInputsChanged();
     }
 
-    QList<QCameraDevice> videoDevices() const override
+    QList<QCameraDevice> videoInputs() const override
     {
         return m_cameraDevices;
     }
@@ -99,14 +100,21 @@ private:
 QMockIntegration::QMockIntegration() : QPlatformMediaIntegration(QLatin1String("mock")) { }
 QMockIntegration::~QMockIntegration() = default;
 
+QPlatformMediaFormatInfo *QMockIntegration::getWritableFormatInfo()
+{
+    // In tests, we want to populate the format info before running tests.
+    // We can therefore allow casting away const here, to make unit testing easier.
+    return const_cast<QPlatformMediaFormatInfo *>(formatInfo());
+}
+
 QPlatformVideoDevices *QMockIntegration::createVideoDevices()
 {
     return new QMockVideoDevices(this);
 }
 
-std::unique_ptr<QPlatformMediaDevices> QMockIntegration::createMediaDevices()
+std::unique_ptr<QPlatformAudioDevices> QMockIntegration::createAudioDevices()
 {
-    return std::make_unique<QMockMediaDevices>();
+    return std::make_unique<QMockAudioDevices>();
 }
 
 QMaybe<QPlatformAudioDecoder *> QMockIntegration::createAudioDecoder(QAudioDecoder *decoder)

@@ -114,10 +114,16 @@ QScatterSeries::QScatterSeries(QScatterSeriesPrivate &dd, QObject *parent)
 
 void QScatterSeries::componentComplete()
 {
+    Q_D(QScatterSeries);
+
     for (auto *child : children()) {
         if (auto point = qobject_cast<QXYPoint *>(child))
             append(point->x(), point->y());
     }
+
+    if (d->m_graphTransition)
+        d->m_graphTransition->initialize();
+
     QAbstractSeries::componentComplete();
 }
 

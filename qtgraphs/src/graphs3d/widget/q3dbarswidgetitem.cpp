@@ -9,7 +9,7 @@ QT_BEGIN_NAMESPACE
 
 /*!
  * \class Q3DBarsWidgetItem
- * \inmodule QtGraphs
+ * \inmodule QtGraphsWidgets
  * \ingroup graphs_3D_widgets
  * \brief The Q3DBarsWidgetItem class provides methods for rendering 3D bar graphs.
  *
@@ -37,9 +37,7 @@ QT_BEGIN_NAMESPACE
  *
  * \section1 How to construct a minimal Q3DBarsWidgetItem graph
  *
- * First, construct an instance of Q3DBarsWidgetItem. Since we are running the graph as
- * a top-level window in this example, we need to clear the \c
- * Qt::FramelessWindowHint flag, which is set by default:
+ * First, construct an instance of Q3DBarsWidgetItem:
  *
  * \snippet doc_src_q3dbars_construction.cpp 4
  *
@@ -359,6 +357,7 @@ QValue3DAxis *Q3DBarsWidgetItem::valueAxis() const
 
 /*!
  * \property Q3DBarsWidgetItem::selectedSeries
+ * \readonly
  *
  * \brief The selected series or a null value.
  *

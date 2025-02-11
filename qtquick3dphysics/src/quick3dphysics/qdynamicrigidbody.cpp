@@ -24,7 +24,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlproperty float DynamicRigidBody::mass
+    \qmlproperty real DynamicRigidBody::mass
 
     This property defines the mass of the body. Note that this is only used when massMode is not
     \c {DynamicRigidBody.CustomDensity} or \c {DynamicRigidBody.DefaultDensity}. Also note that
@@ -38,7 +38,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlproperty float DynamicRigidBody::density
+    \qmlproperty real DynamicRigidBody::density
 
     This property defines the density of the body. This is only used when massMode is set to \c
     {DynamicRigidBody.CustomDensity}.
@@ -185,7 +185,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlproperty list<float> DynamicRigidBody::inertiaMatrix
+    \qmlproperty list<real> DynamicRigidBody::inertiaMatrix
 
     Defines the inertia tensor matrix. This is a 3x3 matrix in column-major order. Note that this
     matrix is expected to be diagonalizable. Note that this is only used when massMode is set to

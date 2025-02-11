@@ -65,6 +65,7 @@ class QWaylandTextInputMethod;
 #if QT_CONFIG(cursor)
 class QWaylandCursorTheme;
 class QWaylandCursorShape;
+template <typename T>
 class CursorSurface;
 #endif
 
@@ -292,7 +293,7 @@ public:
     void updateCursor();
     void cursorTimerCallback();
     void cursorFrameCallback();
-    CursorSurface *getOrCreateCursorSurface();
+    CursorSurface<QWaylandInputDevice::Pointer> *getOrCreateCursorSurface();
 #endif
     QWaylandInputDevice *seat() const { return mParent; }
 
@@ -334,7 +335,7 @@ public:
         QScopedPointer<QWaylandCursorShape> shape;
         QWaylandCursorTheme *theme = nullptr;
         int themeBufferScale = 0;
-        QScopedPointer<CursorSurface> surface;
+        QScopedPointer<CursorSurface<QWaylandInputDevice::Pointer>> surface;
         QTimer frameTimer;
         bool gotFrameCallback = false;
         bool gotTimerCallback = false;

@@ -31,7 +31,7 @@ EOC
 #(ping -c 3 repo-clones.ci.qt.io && set_internal_repo) || echo "Internal package repository not found. Using public repositories."
 
 # Make sure needed ca-certificates are available
-sudo apt-get install --reinstall ca-certificates
+installPackages+=(ca-certificates)
 
 ## Tools
 # Git is not needed by builds themselves, but is nice to have
@@ -42,8 +42,16 @@ installPackages+=(git)
 installPackages+=(p7zip-full)
 
 # Packages needed for RTA and Squish
-installPackages+=(default-jdk)
+installPackages+=(openjdk-17-jdk)
 installPackages+=(gcc)
+installPackages+=(curl)
+installPackages+=(libicu-dev)
+installPackages+=(python3-dev)
+installPackages+=(python3-pip)
+installPackages+=(python3-venv)
+installPackages+=(virtualenv)
+# For mounting ci-files01 for Squish
+installPackages+=(nfs-common)
 
 echo "Running update for apt"
 waitLoop

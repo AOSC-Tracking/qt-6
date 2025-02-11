@@ -890,14 +890,20 @@ void QQmlJSTypePropagator::propagatePropertyLookup(const QString &propertyName, 
         }
 
         if (!fixSuggestion.has_value()
-            && m_state.accumulatorIn().variant() == QQmlJSRegisterContent::MetaType) {
-            QStringList enumKeys;
-            for (const QQmlJSMetaEnum &metaEnum :
-                 m_state.accumulatorIn().scopeType()->enumerations())
-                enumKeys << metaEnum.keys();
+                && m_state.accumulatorIn().variant() == QQmlJSRegisterContent::MetaType) {
 
-            if (auto suggestion =
-                        QQmlJSUtils::didYouMean(propertyName, enumKeys, getCurrentSourceLocation());
+            const QQmlJSScope::ConstPtr scopeType = m_state.accumulatorIn().scopeType();
+            const auto metaEnums = scopeType->enumerations();
+            const bool enforcesScoped = scopeType->enforcesScopedEnums();
+
+            QStringList enumKeys;
+            for (const QQmlJSMetaEnum &metaEnum : metaEnums) {
+                if (!enforcesScoped || !metaEnum.isScoped())
+                    enumKeys << metaEnum.keys();
+            }
+
+            if (auto suggestion = QQmlJSUtils::didYouMean(
+                        propertyName, enumKeys, getCurrentSourceLocation());
                 suggestion.has_value()) {
                 fixSuggestion = suggestion;
             }
@@ -1591,7 +1597,9 @@ void QQmlJSTypePropagator::propagateStringArgCall(int argv)
     const QQmlJSScope::ConstPtr input = m_typeResolver->containedType(
                 m_state.registers[argv].content);
 
-    if (m_typeResolver->equals(input, m_typeResolver->uint32Type())) {
+    if (m_typeResolver->equals(input, m_typeResolver->uint32Type())
+            || m_typeResolver->equals(input, m_typeResolver->int64Type())
+            || m_typeResolver->equals(input, m_typeResolver->uint64Type())) {
         addReadRegister(argv, m_typeResolver->globalType(m_typeResolver->realType()));
         return;
     }
@@ -2180,7 +2188,7 @@ void QQmlJSTypePropagator::generate_CreateRestParameter(int argIndex)
 
 void QQmlJSTypePropagator::generate_ConvertThisToObject()
 {
-    setRegister(This, m_typeResolver->globalType(m_typeResolver->qObjectType()));
+    setRegister(This, m_typeResolver->globalType(m_function->qmlScope));
 }
 
 void QQmlJSTypePropagator::generate_LoadSuperConstructor()

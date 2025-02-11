@@ -99,9 +99,9 @@ public:
     QHash<int, IdentifierHash> namedObjectsPerComponentCache;
     inline IdentifierHash namedObjectsPerComponent(int componentObjectIndex);
 
-    int totalBindingsCount() const { return m_compilationUnit->totalBindingsCount(); }
-    int totalParserStatusCount() const { return m_compilationUnit->totalParserStatusCount(); }
-    int totalObjectCount() const { return m_compilationUnit->totalObjectCount(); }
+    int totalBindingsCount(const QString &inlineComponentRoot) const { return m_compilationUnit->totalBindingsCount(inlineComponentRoot); }
+    int totalParserStatusCount(const QString &inlineComponentRoot) const { return m_compilationUnit->totalParserStatusCount(inlineComponentRoot); }
+    int totalObjectCount(const QString &inlineComponentRoot) const { return m_compilationUnit->totalObjectCount(inlineComponentRoot); }
 
     ResolvedTypeReference *resolvedType(int id) const
     {
@@ -188,8 +188,11 @@ public:
 
     QString translateFrom(TranslationDataIndex index) const;
 
-    Heap::Module *module() const { return m_module; }
-    void setModule(Heap::Module *module) { m_module = module; }
+    Heap::Module *module() const;
+    void setModule(Heap::Module *module);
+
+    ReturnedValue value() const { return m_valueOrModule.asReturnedValue(); }
+    void setValue(const QV4::Value &value) { m_valueOrModule = value; }
 
     const CompiledData::Unit *unitData() const { return m_compilationUnit->data; }
 
@@ -233,7 +236,7 @@ private:
     friend struct ExecutionEngine;
 
     QQmlRefPointer<CompiledData::CompilationUnit> m_compilationUnit;
-    Heap::Module *m_module = nullptr;
+    Value m_valueOrModule = QV4::Value::emptyValue();
 
     struct ResolveSetEntry
     {

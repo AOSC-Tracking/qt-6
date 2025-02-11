@@ -1,11 +1,11 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#include "QtGui/qbrush.h"
+#include <QtCore/qregularexpression.h>
+#include <QtGui/qbrush.h>
+
 #include "private/qquickrectangle_p.h"
 #include "utils_p.h"
-
-#include <QtCore/QRegularExpression>
 
 QT_BEGIN_NAMESPACE
 

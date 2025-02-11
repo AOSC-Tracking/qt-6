@@ -43,15 +43,15 @@ QT_BEGIN_NAMESPACE
  *   \row
  *     \li @xLabel    \li Item value formatted using the format of the x-axis.
  *                        For more information, see
- *                        \l{QValue3DAxis::setLabelFormat()}.
+ *                        \l{QValue3DAxis::labelFormat}.
  *   \row
  *     \li @yLabel    \li Item value formatted using the format of the y-axis.
  *                        For more information, see
- *                        \l{QValue3DAxis::setLabelFormat()}.
+ *                        \l{QValue3DAxis::labelFormat}.
  *   \row
  *     \li @zLabel    \li Item value formatted using the format of the z-axis.
  *                        For more information, see
- *                        \l{QValue3DAxis::setLabelFormat()}.
+ *                        \l{QValue3DAxis::labelFormat}.
  *   \row
  *     \li @seriesName \li Name of the series
  * \endtable
@@ -73,6 +73,30 @@ QT_BEGIN_NAMESPACE
  * This type manages the series specific visual elements, as well as the series
  * data (via a data proxy).
  *
+ * Surface3DSeries supports the following format tags for itemLabelFormat:
+ * \table
+ *   \row
+ *     \li @xTitle    \li Title from x-axis
+ *   \row
+ *     \li @yTitle    \li Title from y-axis
+ *   \row
+ *     \li @zTitle    \li Title from z-axis
+ *   \row
+ *     \li @xLabel    \li Item value formatted using the format of the x-axis.
+ *                        For more information, see
+ *                        \l{QValue3DAxis::labelFormat}{labelFormat}.
+ *   \row
+ *     \li @yLabel    \li Item value formatted using the format of the y-axis.
+ *                        For more information, see
+ *                        \l{QValue3DAxis::labelFormat}{labelFormat}.
+ *   \row
+ *     \li @zLabel    \li Item value formatted using the format of the z-axis.
+ *                        For more information, see
+ *                        \l{QValue3DAxis::labelFormat}{labelFormat}.
+ *   \row
+ *     \li @seriesName \li Name of the series
+ * \endtable
+ *
  * For a more complete description, see QSurface3DSeries.
  *
  * \sa {Qt Graphs Data Handling with 3D}
@@ -93,7 +117,7 @@ QT_BEGIN_NAMESPACE
  * in the data array of the series as selected.
  * Only one point can be selected at a time.
  *
- * To clear selection from this series, invalidSelectionPosition is set as the
+ * To clear the selection from this series, assign invalidSelectionPosition as the
  * position. If this series is added to a graph, the graph can adjust the
  * selection according to user interaction or if it becomes invalid.
  *
@@ -106,8 +130,10 @@ QT_BEGIN_NAMESPACE
 
 /*!
  * \qmlproperty point Surface3DSeries::invalidSelectionPosition
+ * \readonly
+ *
  * A constant property providing an invalid selection position.
- * This position is set to the selectedPoint property to clear the selection
+ * This position is assigned to the selectedPoint property to clear the selection
  * from this series.
  *
  * \sa GraphsItem3D::clearSelection()
@@ -158,7 +184,7 @@ QT_BEGIN_NAMESPACE
  */
 
 /*!
-* \qmlproperty SurfaceDataArray Surface3DSeries::dataArray
+ * \qmlproperty SurfaceDataArray Surface3DSeries::dataArray
  *
  * Holds the reference of the data array.
  *
@@ -616,7 +642,7 @@ void QSurface3DSeriesPrivate::createItemLabel()
     static const QString seriesNameTag(QStringLiteral("@seriesName"));
 
     if (m_selectedPoint == QSurface3DSeries::invalidSelectionPosition()) {
-        m_itemLabel = QString();
+        m_itemLabel = hiddenLabelTag;
         return;
     }
 

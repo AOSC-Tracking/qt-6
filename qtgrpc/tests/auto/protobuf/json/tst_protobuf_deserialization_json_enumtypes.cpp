@@ -41,7 +41,7 @@ void QtProtobufEnumTypesDeserializationTest::repeatedEnumMessageTest()
                     "\"LOCAL_ENUM_VALUE1\",\"LOCAL_ENUM_VALUE2\","
                     "\"LOCAL_ENUM_VALUE3\"]}");
     QVERIFY((msg.localEnumList()
-             == RepeatedEnumMessage::LocalEnumRepeated{
+             == QList<RepeatedEnumMessage::LocalEnum>{
                  RepeatedEnumMessage::LocalEnum::LOCAL_ENUM_VALUE0,
                  RepeatedEnumMessage::LocalEnum::LOCAL_ENUM_VALUE1,
                  RepeatedEnumMessage::LocalEnum::LOCAL_ENUM_VALUE2,

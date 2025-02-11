@@ -32,6 +32,10 @@ qt_add_qml_module(tst_protobuf_syntax_qml
         qml/tst_syntax.qml
 )
 
+set_target_properties(tst_protobuf_syntax_qml_gen PROPERTIES
+    QT_USE_PROTOBUF_LIST_ALIASES FALSE
+)
+
 qt_autogen_tools_initial_setup(tst_protobuf_syntax_qml)
 qt_autogen_tools_initial_setup(tst_protobuf_syntax_qml_gen)
 qt_autogen_tools_initial_setup(tst_protobuf_syntax_qml_genplugin)

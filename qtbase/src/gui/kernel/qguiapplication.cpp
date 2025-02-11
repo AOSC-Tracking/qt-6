@@ -2455,7 +2455,7 @@ void QGuiApplicationPrivate::processMouseEvent(QWindowSystemInterfacePrivate::Mo
 
     if (doubleClick && (ev.type() == QEvent::MouseButtonPress)) {
         // QtBUG-25831, used to suppress delivery in qwidgetwindow.cpp
-        QMutableSinglePointEvent::from(ev).setDoubleClick();
+        QMutableSinglePointEvent::setDoubleClick(&ev, true);
     }
 
     QGuiApplication::sendSpontaneousEvent(window, &ev);
@@ -3072,6 +3072,7 @@ void QGuiApplicationPrivate::processContextMenuEvent(QWindowSystemInterfacePriva
 
     QContextMenuEvent ev(QContextMenuEvent::Keyboard, e->pos, e->globalPos, e->modifiers);
     QGuiApplication::sendSpontaneousEvent(e->window.data(), &ev);
+    e->eventAccepted = ev.isAccepted();
 }
 #endif
 

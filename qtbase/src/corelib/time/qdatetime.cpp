@@ -2152,8 +2152,10 @@ QString QTime::toString(Qt::DateFormat format) const
     \fn QString QTime::toString(const QString &format) const
     \fn QString QTime::toString(QStringView format) const
 
-    Returns the time as a string. The \a format parameter determines
-    the format of the result string.
+    Returns a string representing the time.
+
+    The \a format parameter determines the format of the result string. If the
+    time is invalid, an empty string will be returned.
 
     These expressions may be used:
 
@@ -2198,7 +2200,7 @@ QString QTime::toString(Qt::DateFormat format) const
              change of case.
     \row \li t
          \li The timezone abbreviation (for example "CEST"). Note that time zone
-             abbreviations are not unique. In particular, \l toString() cannot
+             abbreviations are not unique. In particular, \l fromString() cannot
              parse this.
     \row \li tt
          \li The timezone's offset from UTC with no colon between the hours and
@@ -2215,6 +2217,14 @@ QString QTime::toString(Qt::DateFormat format) const
              QTimeZone::LongName type. This may depend on the operating system
              in use.
     \endtable
+
+    \note To get localized forms of AM or PM (the \c{AP}, \c{ap}, \c{A}, \c{a},
+    \c{aP} or \c{Ap} formats) or of time zone representations (the \c{t}
+    formats), use QLocale::system().toString().
+
+    When the timezone cannot be determined or no suitable representation of it
+    is available, the \c{t} forms to represent it may be skipped. See \l
+    QTimeZone::displayName() for details of when it returns an empty string.
 
     Any non-empty sequence of characters enclosed in single quotes will be
     included verbatim in the output string (stripped of the quotes), even if it
@@ -2235,11 +2245,6 @@ QString QTime::toString(Qt::DateFormat format) const
     \row \li h:m:s ap     \li 2:13:9 pm
     \row \li H:m:s a      \li 14:13:9 pm
     \endtable
-
-    If the time is invalid, an empty string will be returned.
-
-    \note To get localized forms of AM or PM (the AP, ap, A, a, aP or Ap
-    formats), use QLocale::system().toString().
 
     \note If a format character is repeated more times than the longest
     expression in the table above using it, this part of the format will be read
@@ -3136,7 +3141,7 @@ static inline Qt::TimeSpec getSpec(const QDateTimeData &d)
 /* True if we *can cheaply determine* that a and b use the same offset.
    If they use different offsets or it would be expensive to find out, false.
    Calls to toMSecsSinceEpoch() are expensive, for these purposes.
-   See QDateTime's comparison operators.
+   See QDateTime's comparison operators and areFarEnoughApart().
 */
 static inline bool usesSameOffset(const QDateTimeData &a, const QDateTimeData &b)
 {
@@ -3161,6 +3166,26 @@ static inline bool usesSameOffset(const QDateTimeData &a, const QDateTimeData &b
         return a->m_offsetFromUtc == b->m_offsetFromUtc;
     }
     Q_UNREACHABLE_RETURN(false);
+}
+
+/* Even datetimes with different offset can be ordered by their getMSecs()
+   provided the difference is bigger than the largest difference in offset we're
+   prepared to believe in. Technically, it may be possible to construct a zone
+   with an offset outside the range and get wrong results - but the answer to
+   someone doing that is that their contrived timezone and its consequences are
+   their own responsibility.
+
+   If two datetimes' millis lie within the offset range of one another, we can't
+   take any short-cuts, even if they're in the same zone, because there may be a
+   zone transition between them. (The full 32-hour difference would only arise
+   before 1845, for one date-time in The Philippines, the other in Alaska.)
+*/
+bool areFarEnoughApart(qint64 leftMillis, qint64 rightMillis)
+{
+    constexpr qint64 UtcOffsetMillisRange
+        = (QTimeZone::MaxUtcOffsetSecs - QTimeZone::MinUtcOffsetSecs) * MSECS_PER_SEC;
+    qint64 gap = 0;
+    return qSubOverflow(leftMillis, rightMillis, &gap) || qAbs(gap) > UtcOffsetMillisRange;
 }
 
 // Refresh the LocalTime or TimeZone validity and offset
@@ -4054,9 +4079,7 @@ QDateTime &QDateTime::operator=(const QDateTime &other) noexcept
 /*!
     \fn void QDateTime::swap(QDateTime &other)
     \since 5.0
-
-    Swaps this datetime with \a other. This operation is very fast
-    and never fails.
+    \memberswap{datetime}
 */
 
 /*!
@@ -5191,8 +5214,10 @@ bool QDateTime::equals(const QDateTime &other) const
     if (!other.isValid())
         return false;
 
-    if (usesSameOffset(d, other.d))
-        return getMSecs(d) == getMSecs(other.d);
+    const qint64 thisMs = getMSecs(d);
+    const qint64 yourMs = getMSecs(other.d);
+    if (usesSameOffset(d, other.d) || areFarEnoughApart(thisMs, yourMs))
+        return thisMs == yourMs;
 
     // Convert to UTC and compare
     return toMSecsSinceEpoch() == other.toMSecsSinceEpoch();
@@ -5238,8 +5263,9 @@ Qt::weak_ordering compareThreeWay(const QDateTime &lhs, const QDateTime &rhs)
     if (!rhs.isValid())
         return Qt::weak_ordering::greater; // we know that lhs is valid here
 
-    if (usesSameOffset(lhs.d, rhs.d))
-        return Qt::compareThreeWay(getMSecs(lhs.d), getMSecs(rhs.d));
+    const qint64 lhms = getMSecs(lhs.d), rhms = getMSecs(rhs.d);
+    if (usesSameOffset(lhs.d, rhs.d) || areFarEnoughApart(lhms, rhms))
+        return Qt::compareThreeWay(lhms, rhms);
 
     // Convert to UTC and compare
     return Qt::compareThreeWay(lhs.toMSecsSinceEpoch(), rhs.toMSecsSinceEpoch());
@@ -5878,16 +5904,11 @@ QDateTime QDateTime::fromString(QStringView string, Qt::DateFormat format)
     two digits.
 
     Incorrectly specified fields of the \a string will cause an invalid
-    QDateTime to be returned. For example, consider the following code,
-    where the two digit year 12 is read as 1912 (see the table below for all
-    field defaults); the resulting datetime is invalid because 23 April 1912
-    was a Tuesday, not a Monday:
-
-    \snippet code/src_corelib_time_qdatetime.cpp 20
-
-    The correct code is:
-
-    \snippet code/src_corelib_time_qdatetime.cpp 21
+    QDateTime to be returned. Only datetimes between the local time start of
+    year 100 and end of year 9999 are supported. Note that datetimes near the
+    ends of this range in other time-zones, notably including UTC, may fall
+    outside the range (and thus be treated as invalid) depending on local time
+    zone.
 
     \note Day and month names as well as AM/PM indicators must be given in
     English (C locale).  If localized month and day names or localized forms of
@@ -6267,10 +6288,8 @@ QDebug operator<<(QDebug dbg, const QDateTime &date)
 #endif // debug_stream && datestring
 
 /*! \fn size_t qHash(const QDateTime &key, size_t seed = 0)
-    \relates QHash
+    \qhashold{QHash}
     \since 5.0
-
-    Returns the hash value for the \a key, using \a seed to seed the calculation.
 */
 size_t qHash(const QDateTime &key, size_t seed)
 {
@@ -6282,10 +6301,8 @@ size_t qHash(const QDateTime &key, size_t seed)
 }
 
 /*! \fn size_t qHash(QDate key, size_t seed = 0)
-    \relates QHash
+    \qhashold{QHash}
     \since 5.0
-
-    Returns the hash value for the \a key, using \a seed to seed the calculation.
 */
 size_t qHash(QDate key, size_t seed) noexcept
 {
@@ -6293,10 +6310,8 @@ size_t qHash(QDate key, size_t seed) noexcept
 }
 
 /*! \fn size_t qHash(QTime key, size_t seed = 0)
-    \relates QHash
+    \qhashold{QHash}
     \since 5.0
-
-    Returns the hash value for the \a key, using \a seed to seed the calculation.
 */
 size_t qHash(QTime key, size_t seed) noexcept
 {

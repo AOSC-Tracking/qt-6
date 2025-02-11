@@ -558,7 +558,11 @@ struct Data
         seed = QHashSeed::globalSeed();
     }
 
-    void reallocationHelper(const Data &other, size_t nSpans, bool resized)
+    // The Resized parameter is a template param to make sure the compiler will get rid of the
+    // branch, for performance.
+    template <bool Resized>
+    Q_ALWAYS_INLINE
+    void reallocationHelper(const Data &other, size_t nSpans)
     {
         for (size_t s = 0; s < nSpans; ++s) {
             const Span &span = other.spans[s];
@@ -566,7 +570,7 @@ struct Data
                 if (!span.hasNode(index))
                     continue;
                 const Node &n = span.at(index);
-                auto it = resized ? findBucket(n.key) : Bucket { spans + s, index };
+                auto it = Resized ? findBucket(n.key) : Bucket { spans + s, index };
                 Q_ASSERT(it.isUnused());
                 Node *newNode = it.insert();
                 new (newNode) Node(n);
@@ -578,14 +582,14 @@ struct Data
     {
         auto r = allocateSpans(numBuckets);
         spans = r.spans;
-        reallocationHelper(other, r.nSpans, false);
+        reallocationHelper<false>(other, r.nSpans);
     }
     Data(const Data &other, size_t reserved) : size(other.size), seed(other.seed)
     {
         numBuckets = GrowthPolicy::bucketsForCapacity(qMax(size, reserved));
         spans = allocateSpans(numBuckets).spans;
         size_t otherNSpans = other.numBuckets >> SpanConstants::SpanShift;
-        reallocationHelper(other, otherNSpans, numBuckets != other.numBuckets);
+        reallocationHelper<true>(other, otherNSpans);
     }
 
     static Data *detached(Data *d)
@@ -929,6 +933,8 @@ public:
 #endif // Q_QDOC
 
     inline qsizetype size() const noexcept { return d ? qsizetype(d->size) : 0; }
+
+    [[nodiscard]]
     inline bool isEmpty() const noexcept { return !d || d->size == 0; }
 
     inline qsizetype capacity() const noexcept { return d ? qsizetype(d->numBuckets >> 1) : 0; }
@@ -1363,6 +1369,7 @@ public:
     size_t bucket_count() const noexcept { return d ? d->numBuckets : 0; }
     static size_t max_bucket_count() noexcept { return Data::maxNumBuckets(); }
 
+    [[nodiscard]]
     inline bool empty() const noexcept { return isEmpty(); }
 
 private:
@@ -1378,33 +1385,33 @@ private:
     }
 
     template <typename K>
-    using if_heterogeneously_seachable = QHashPrivate::if_heterogeneously_seachable_with<Key, K>;
+    using if_heterogeneously_searchable = QHashPrivate::if_heterogeneously_searchable_with<Key, K>;
 
     template <typename K>
     using if_key_constructible_from = std::enable_if_t<std::is_constructible_v<Key, K>, bool>;
 
 public:
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     bool remove(const K &key)
     {
         return removeImpl(key);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     T take(const K &key)
     {
         return takeImpl(key);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     bool contains(const K &key) const
     {
         return d ? d->findNode(key) != nullptr : false;
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     qsizetype count(const K &key) const
     {
         return contains(key) ? 1 : 0;
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     T value(const K &key) const noexcept
     {
         if (auto *v = valueImpl(key))
@@ -1412,7 +1419,7 @@ public:
         else
             return T();
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     T value(const K &key, const T &defaultValue) const noexcept
     {
         if (auto *v = valueImpl(key))
@@ -1420,39 +1427,39 @@ public:
         else
             return defaultValue;
     }
-    template <typename K, if_heterogeneously_seachable<K> = true, if_key_constructible_from<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true, if_key_constructible_from<K> = true>
     T &operator[](const K &key)
     {
         return operatorIndexImpl(key);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     const T operator[](const K &key) const noexcept
     {
         return value(key);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     std::pair<iterator, iterator>
     equal_range(const K &key)
     {
         return equal_range_impl(*this, key);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     std::pair<const_iterator, const_iterator>
     equal_range(const K &key) const noexcept
     {
         return equal_range_impl(*this, key);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     iterator find(const K &key)
     {
         return findImpl(key);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     const_iterator find(const K &key) const noexcept
     {
         return constFindImpl(key);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     const_iterator constFind(const K &key) const noexcept
     {
         return find(key);
@@ -1609,6 +1616,7 @@ public:
 
     inline qsizetype size() const noexcept { return m_size; }
 
+    [[nodiscard]]
     inline bool isEmpty() const noexcept { return !m_size; }
 
     inline qsizetype capacity() const noexcept { return d ? qsizetype(d->numBuckets >> 1) : 0; }
@@ -2118,6 +2126,7 @@ public:
     size_t bucket_count() const noexcept { return d ? d->numBuckets : 0; }
     static size_t max_bucket_count() noexcept { return Data::maxNumBuckets(); }
 
+    [[nodiscard]]
     inline bool empty() const noexcept { return isEmpty(); }
 
     inline iterator replace(const Key &key, const T &value)
@@ -2390,30 +2399,30 @@ private:
     }
 
     template <typename K>
-    using if_heterogeneously_seachable = QHashPrivate::if_heterogeneously_seachable_with<Key, K>;
+    using if_heterogeneously_searchable = QHashPrivate::if_heterogeneously_searchable_with<Key, K>;
 
     template <typename K>
     using if_key_constructible_from = std::enable_if_t<std::is_constructible_v<Key, K>, bool>;
 
 public:
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     qsizetype remove(const K &key)
     {
         return removeImpl(key);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     T take(const K &key)
     {
         return takeImpl(key);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     bool contains(const K &key) const noexcept
     {
         if (!d)
             return false;
         return d->findNode(key) != nullptr;
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     T value(const K &key) const noexcept
     {
         if (auto *v = valueImpl(key))
@@ -2421,7 +2430,7 @@ public:
         else
             return T();
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     T value(const K &key, const T &defaultValue) const noexcept
     {
         if (auto *v = valueImpl(key))
@@ -2429,78 +2438,78 @@ public:
         else
             return defaultValue;
     }
-    template <typename K, if_heterogeneously_seachable<K> = true, if_key_constructible_from<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true, if_key_constructible_from<K> = true>
     T &operator[](const K &key)
     {
         return operatorIndexImpl(key);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     const T operator[](const K &key) const noexcept
     {
         return value(key);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     QList<T> values(const K &key)
     {
         return valuesImpl(key);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     iterator find(const K &key)
     {
         return findImpl(key);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     const_iterator constFind(const K &key) const noexcept
     {
         return constFindImpl(key);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     const_iterator find(const K &key) const noexcept
     {
         return constFindImpl(key);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     bool contains(const K &key, const T &value) const noexcept
     {
         return containsImpl(key, value);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     qsizetype remove(const K &key, const T &value)
     {
         return removeImpl(key, value);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     qsizetype count(const K &key) const noexcept
     {
         return countImpl(key);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     qsizetype count(const K &key, const T &value) const noexcept
     {
         return countImpl(key, value);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     iterator find(const K &key, const T &value)
     {
         return findImpl(key, value);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     const_iterator constFind(const K &key, const T &value) const noexcept
     {
         return constFindImpl(key, value);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     const_iterator find(const K &key, const T &value) const noexcept
     {
         return constFind(key, value);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     std::pair<iterator, iterator>
     equal_range(const K &key)
     {
         return equal_range_impl(key);
     }
-    template <typename K, if_heterogeneously_seachable<K> = true>
+    template <typename K, if_heterogeneously_searchable<K> = true>
     std::pair<const_iterator, const_iterator>
     equal_range(const K &key) const noexcept
     {

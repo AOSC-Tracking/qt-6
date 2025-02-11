@@ -14,11 +14,15 @@ using namespace Qt::StringLiterals;
 /*!
     \class QGrpcCallOptions
     \inmodule QtGrpc
-    \brief The QGrpcCallOptions is an storage class used to set additional call options.
+    \brief The QGrpcCallOptions class offers various options for fine-tuning
+    individual RPCs.
     \since 6.6
 
-    QGrpcCallOptions provides a set of functions to access the call options
-    that are used by gRPC channels to communicate with the services.
+    QGrpcCallOptions lets you customize individual remote procedure calls (RPCs).
+    The generated client interface provides access points to pass the QGrpcCallOptions.
+    These options supersede the ones set via QGrpcChannelOptions.
+
+    To configure the default options shared by RPCs, use QGrpcChannelOptions.
 */
 
 class QGrpcCallOptionsPrivate : public QSharedData
@@ -31,50 +35,49 @@ public:
 QT_DEFINE_QESDP_SPECIALIZATION_DTOR(QGrpcCallOptionsPrivate)
 
 /*!
-    Constructs an empty QGrpcCallOptions object.
+    Default-constructs an empty QGrpcCallOptions.
 */
 QGrpcCallOptions::QGrpcCallOptions() : d_ptr(new QGrpcCallOptionsPrivate())
 {
 }
 
 /*!
-    Destroys the QGrpcCallOptions object.
+    Destroys the QGrpcCallOptions.
 */
 QGrpcCallOptions::~QGrpcCallOptions() = default;
 
 /*!
-    Construct a copy of QGrpcCallOptions with \a other object.
+    Copy-constructs a QGrpcCallOptions from \a other.
 */
 QGrpcCallOptions::QGrpcCallOptions(const QGrpcCallOptions &other) = default;
 
 /*!
-    Assigns \a other to this QGrpcCallOptions and returns a reference to this
-    QGrpcCallOptions.
+    Assigns \a other to this QGrpcCallOptions and returns a reference to the
+    updated object.
 */
 QGrpcCallOptions &QGrpcCallOptions::operator=(const QGrpcCallOptions &other) = default;
 
 /*!
-    \fn QGrpcCallOptions::QGrpcCallOptions(QGrpcCallOptions &&other) noexcept
+    \fn QGrpcCallOptions::QGrpcCallOptions(QGrpcCallOptions &&other)
+
     Move-constructs a new QGrpcCallOptions from \a other.
 
-    \note The moved-from object \a other is placed in a partially-formed state,
-    in which the only valid operations are destruction and assignment of a new
-    value.
+    \include qtgrpc-shared.qdocinc move-note-desc
 */
 
 /*!
-    \fn QGrpcCallOptions &QGrpcCallOptions::operator=(QGrpcCallOptions &&other) noexcept
-    Move-assigns \a other to this QGrpcCallOptions instance and returns a
-    reference to it.
+    \fn QGrpcCallOptions &QGrpcCallOptions::operator=(QGrpcCallOptions &&other)
 
-    \note The moved-from object \a other is placed in a partially-formed state,
-    in which the only valid operations are destruction and assignment of a new
-    value.
+    Move-assigns \a other to this QGrpcCallOptions and returns a reference to
+    the updated object.
+
+    \include qtgrpc-shared.qdocinc move-note-desc
 */
 
 /*!
     \since 6.8
-    Constructs a new QVariant object from this QGrpcCallOptions.
+
+    \include qtgrpc-shared.qdocinc qvariant-desc
 */
 QGrpcCallOptions::operator QVariant() const
 {
@@ -83,12 +86,27 @@ QGrpcCallOptions::operator QVariant() const
 
 /*!
     \since 6.8
-    \fn void QGrpcCallOptions::swap(QGrpcCallOptions &other) noexcept
-    Swaps this instance with \a other. This operation is very fast and never fails.
+    \fn void QGrpcCallOptions::swap(QGrpcCallOptions &other)
+
+    \include qtgrpc-shared.qdocinc swap-desc
 */
 
 /*!
-    Sets deadline value with \a timeout and returns updated QGrpcCallOptions object.
+    Sets the \a timeout for a specific RPC and returns a reference to the
+    updated object.
+
+//! [set-deadline-desc]
+    A deadline sets the limit for how long a client is willing to wait for a
+    response from a server. The actual deadline is computed by adding the \a
+    timeout to the start time of the RPC.
+
+    The deadline applies to the entire lifetime of an RPC, which includes
+    receiving the final QGrpcStatus for a previously started call and can thus
+    be unwanted for (long-lived) streams.
+//! [set-deadline-desc]
+
+    \note Setting this field overrides the value set by
+    QGrpcChannelOptions::setDeadline() for a specific RPC.
 */
 QGrpcCallOptions &QGrpcCallOptions::setDeadlineTimeout(std::chrono::milliseconds timeout)
 {
@@ -101,10 +119,19 @@ QGrpcCallOptions &QGrpcCallOptions::setDeadlineTimeout(std::chrono::milliseconds
 }
 
 /*!
-    Sets \a metadata for a call and returns updated QGrpcCallOptions object.
+    \fn QGrpcCallOptions &QGrpcCallOptions::setMetadata(const QHash<QByteArray, QByteArray> &metadata)
+    \fn QGrpcCallOptions &QGrpcCallOptions::setMetadata(QHash<QByteArray, QByteArray> &&metadata)
 
-    For HTTP2-based channels, \a metadata is converted into HTTP/2 headers, that
-    added to the corresponding HTTP/2 request.
+    Sets the client \a metadata for a specific RPC and returns a reference to the
+    updated object.
+
+//! [set-metadata-desc]
+    QGrpcHttp2Channel converts the metadata into appropriate HTTP/2 headers
+    which will be added to the HTTP/2 request.
+//! [set-metadata-desc]
+
+    \note Setting this field overrides the value set by
+    QGrpcChannelOptions::setMetadata() for a specific RPC.
 */
 QGrpcCallOptions &QGrpcCallOptions::setMetadata(const QHash<QByteArray, QByteArray> &metadata)
 {
@@ -116,11 +143,6 @@ QGrpcCallOptions &QGrpcCallOptions::setMetadata(const QHash<QByteArray, QByteArr
     return *this;
 }
 
-/*!
-    Sets \a metadata for a call and returns updated QGrpcCallOptions object.
-
-    \sa setMetadata()
-*/
 QGrpcCallOptions &QGrpcCallOptions::setMetadata(QHash<QByteArray, QByteArray> &&metadata)
 {
     if (d_ptr->metadata == metadata)
@@ -132,13 +154,10 @@ QGrpcCallOptions &QGrpcCallOptions::setMetadata(QHash<QByteArray, QByteArray> &&
 }
 
 /*!
-    Returns deadline value for a call.
+    Returns the timeout duration that is used to calculate the deadline for a
+    specific RPC.
 
-    Deadline value controls the maximum execution time of an call or a stream.
-    This value overrides value set by QGrpcChannelOptions::deadline()
-    for a specific call or stream.
-
-    If value was not set returns empty std::optional.
+    If this field is unset, returns an empty \c {std::optional}.
 */
 std::optional<std::chrono::milliseconds> QGrpcCallOptions::deadlineTimeout() const noexcept
 {
@@ -147,12 +166,11 @@ std::optional<std::chrono::milliseconds> QGrpcCallOptions::deadlineTimeout() con
 }
 
 /*!
-    \fn const QHash<QByteArray, QByteArray> &QGrpcCallOptions::metadata() const & noexcept
-    \fn QHash<QByteArray, QByteArray> QGrpcCallOptions::metadata() && noexcept
+    \fn const QHash<QByteArray, QByteArray> &QGrpcCallOptions::metadata() const &
+    \fn QHash<QByteArray, QByteArray> QGrpcCallOptions::metadata() &&
 
-    Returns metadata used for a call.
-
-    If the value was not set returns an empty QHash<QByteArray, QByteArray>.
+    Returns the client metadata for a specific RPC.
+    If this field is unset, returns empty metadata.
 */
 const QHash<QByteArray, QByteArray> &QGrpcCallOptions::metadata() const & noexcept
 {
@@ -172,6 +190,7 @@ QHash<QByteArray, QByteArray> QGrpcCallOptions::metadata() &&
 /*!
     \since 6.8
     \fn QDebug QGrpcCallOptions::operator<<(QDebug debug, const QGrpcCallOptions &callOpts)
+
     Writes \a callOpts to the specified stream \a debug.
 */
 QDebug operator<<(QDebug debug, const QGrpcCallOptions &callOpts)

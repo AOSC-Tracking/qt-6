@@ -19,6 +19,7 @@
 #include <QtQuick3DRuntimeRender/private/qssgrendernode_p.h>
 #include <QtCore/qvarlengtharray.h>
 #include <QtCore/qlist.h>
+#include <QMutex>
 #include <ssg/qssglightmapper.h>
 
 QT_BEGIN_NAMESPACE
@@ -132,6 +133,8 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderLayer : public QSSGRenderNode
     QSSGRenderLayer::Background background;
     QVector3D clearColor;
 
+    quint8 viewCount = 1;
+
     // Ambient occlusion
     float aoStrength = 0.0f;
     float aoDistance = 5.0f;
@@ -170,6 +173,7 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderLayer : public QSSGRenderNode
     QVarLengthArray<QSSGRenderCamera *, 2> explicitCameras;
     // The camera used for rendering, multiple ones with multiview.
     QVarLengthArray<QSSGRenderCamera *, 2> renderedCameras;
+    QMutex renderedCamerasMutex;
 
     // Tonemapping
     TonemapMode tonemapMode;

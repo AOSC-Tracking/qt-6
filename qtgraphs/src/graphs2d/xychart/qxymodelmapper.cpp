@@ -4,6 +4,7 @@
 #include <QtGraphs/QXYModelMapper>
 #include <QtGraphs/QXYSeries>
 #include "qxymodelmapper_p.h"
+#include "qxyseries_p.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -449,7 +450,6 @@ QModelIndex QXYModelMapperPrivate::xModelIndex(qsizetype xIndex)
 {
     if (m_count != -1 && xIndex >= m_count)
         return QModelIndex(); // invalid
-
     if (m_orientation == Qt::Vertical)
         return m_model->index(int(xIndex) + m_first, m_xSection);
     else
@@ -460,7 +460,6 @@ QModelIndex QXYModelMapperPrivate::yModelIndex(qsizetype yIndex)
 {
     if (m_count != -1 && yIndex >= m_count)
         return QModelIndex(); // invalid
-
     if (m_orientation == Qt::Vertical)
         return m_model->index(int(yIndex) + m_first, m_ySection);
     else
@@ -771,19 +770,21 @@ void QXYModelMapperPrivate::initializeXYFromModel()
     int pointPos = 0;
     QModelIndex xIndex = xModelIndex(pointPos);
     QModelIndex yIndex = yModelIndex(pointPos);
-
     if (xIndex.isValid() && yIndex.isValid()) {
+        QList<QPointF> temp;
+
         while (xIndex.isValid() && yIndex.isValid()) {
             QPointF point;
             point.setX(valueFromModel(xIndex));
             point.setY(valueFromModel(yIndex));
-            m_series->append(point);
+            temp.append(point);
             pointPos++;
             xIndex = xModelIndex(pointPos);
             yIndex = yModelIndex(pointPos);
             // Don't warn about invalid index after the first, those are valid and used to
             // determine when we should end looping.
         }
+        QXYSeriesPrivate::get(m_series)->append(temp);
     } else {
         // Invalid index right off the bat means series will be left empty, so output a warning,
         // unless model is also empty

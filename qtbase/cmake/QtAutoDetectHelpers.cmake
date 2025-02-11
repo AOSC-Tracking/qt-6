@@ -152,7 +152,12 @@ function(qt_auto_detect_android)
 endfunction()
 
 function(qt_auto_detect_vcpkg)
-    if(QT_USE_VCPKG AND DEFINED ENV{VCPKG_ROOT})
+    if(QT_USE_VCPKG)
+        if(NOT DEFINED ENV{VCPKG_ROOT})
+            message(FATAL_ERROR
+                "Usage of vcpkg was requested but the environment variable VCPKG_ROOT is not set."
+            )
+        endif()
         set(vcpkg_toolchain_file "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
         get_filename_component(vcpkg_toolchain_file "${vcpkg_toolchain_file}" ABSOLUTE)
 
@@ -179,6 +184,11 @@ endfunction()
 
 function(qt_auto_detect_apple)
     if(NOT APPLE)
+        if(CMAKE_OSX_ARCHITECTURES AND NOT QT_NO_SHOW_NON_APPLE_CMAKE_OSX_ARCHITECTURES_WARNING)
+            message(WARNING
+                "CMAKE_OSX_ARCHITECTURES is set while targeting a non-Apple platform. This can "
+                "lead to build failures. Consider reconfiguring with the variable unset.")
+        endif()
         return()
     endif()
 
@@ -255,9 +265,9 @@ function(qt_auto_detect_apple)
     if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
         if(NOT CMAKE_SYSTEM_NAME)
             # macOS
-            set(version "12.0")
+            set(version "${QT_SUPPORTED_MIN_MACOS_VERSION}")
         elseif(CMAKE_SYSTEM_NAME STREQUAL iOS)
-            set(version "16.0")
+            set(version "${QT_SUPPORTED_MIN_IOS_VERSION}")
         endif()
         if(version)
             set(CMAKE_OSX_DEPLOYMENT_TARGET "${version}" CACHE STRING "${description}")

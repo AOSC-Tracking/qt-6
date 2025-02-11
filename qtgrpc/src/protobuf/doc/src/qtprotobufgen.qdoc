@@ -24,7 +24,7 @@ When using CMake as a build tool you should prefer using the
 For build systems other than CMake, adapt the commands described in
 \l{Running manually}.
 
-\note there is no explicit support for building gRPC and Protobuf
+\note there is no explicit support for building \gRPC and Protobuf
 applications using the Qt GRPC module with \e qmake.
 
 \section2 CMake

@@ -53,13 +53,13 @@
 */
 
 /*!
-    \qmlproperty QString QtQuick.Controls::HorizontalHeaderView::textRole
+    \qmlproperty string QtQuick.Controls::HorizontalHeaderView::textRole
 
     \include qquickheaderview.qdocinc {textRole}
 */
 
 /*!
-    \qmlproperty QString QtQuick.Controls::VerticalHeaderView::textRole
+    \qmlproperty string QtQuick.Controls::VerticalHeaderView::textRole
 
     \include qquickheaderview.qdocinc {textRole}
 */
@@ -473,10 +473,12 @@ void QQuickHorizontalHeaderView::setMovableColumns(bool movableColumns)
 
     d->m_movableColumns = movableColumns;
 
+#if QT_CONFIG(quick_draganddrop)
     if (d->m_movableColumns)
         d->initSectionDragHandler(Qt::Horizontal);
     else
         d->destroySectionDragHandler();
+#endif
 
     emit movableColumnsChanged();
 }
@@ -508,10 +510,12 @@ void QQuickVerticalHeaderView::setMovableRows(bool movableRows)
 
     d->m_movableRows = movableRows;
 
+#if QT_CONFIG(quick_draganddrop)
     if (d->m_movableRows)
         d->initSectionDragHandler(Qt::Vertical);
     else
         d->destroySectionDragHandler();
+#endif
 
     emit movableRowsChanged();
 }

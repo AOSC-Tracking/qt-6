@@ -28,7 +28,7 @@ QActionInputPrivate::QActionInputPrivate()
 /*!
     \qmltype ActionInput
     \inqmlmodule Qt3D.Input
-    \inherits QAbstractActionInput
+    \inherits AbstractActionInput
     \nativetype Qt3DInput::QActionInput
     \brief QML frontend for the Qt3DInput::QActionInput C++ class.
 

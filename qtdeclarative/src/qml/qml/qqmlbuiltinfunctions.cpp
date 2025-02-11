@@ -2108,7 +2108,10 @@ void QV4::GlobalExtensions::init(Object *globalObject, QJSEngine::Extensions ext
     Example:
     \snippet qml/qsTranslate.qml 0
 
+    Use if you have a translation \a context that differs from the file \a context.
+
     \sa {Internationalization with Qt}
+    \sa qsTr()
 */
 ReturnedValue GlobalExtensions::method_qsTranslate(const FunctionObject *b, const Value *, const Value *argv, int argc)
 {
@@ -2228,14 +2231,33 @@ QString GlobalExtensions::currentTranslationContext(ExecutionEngine *engine)
     otherwise returns \a sourceText itself if no appropriate translated string
     is available.
 
-    Example:
-    \snippet qml/qsTr.qml 0
+    Examples with \a sourceText and \a {n}:
+
+    \if defined(onlinedocs)
+      \tab {qstr}{qstr-1}{sourceText}{checked}
+      \tab {qstr}{qstr-2}{sourceText and n}{}
+      \tabcontent {qstr-1}
+    \else
+      \section1 Only sourceText
+    \endif
+        \snippet qml/qsTr.qml 0
+    \if defined(onlinedocs)
+      \endtabcontent
+      \tabcontent {qstr-2}
+    \else
+      \section1 SourceText and n
+    \endif
+      \snippet qml/qsTr.qml 1
+    \if defined(onlinedocs)
+      \endtabcontent
+    \endif
 
     If the same \a sourceText is used in different roles within the
     same translation context, an additional identifying string may be passed in
     for \a disambiguation. For more information and examples, refer to
     \l{Disambiguate Identical Text}.
 
+    \sa qsTranslate()
     \sa {Internationalization with Qt},{Writing Source Code for Translation}
 */
 ReturnedValue GlobalExtensions::method_qsTr(const FunctionObject *b, const Value *, const Value *argv, int argc)
@@ -2313,12 +2335,13 @@ ReturnedValue GlobalExtensions::method_qsTrNoOp(const FunctionObject *, const Va
 
     \tt{//% <string>}
 
+    \snippet qml/qsTrId.1.qml 0
+
     or
 
-    \tt{\\begincomment% <string> \\endcomment}
+    \tt{\begincomment% <string> \endcomment}
 
-    Example:
-    \snippet qml/qsTrId.1.qml 0
+    \snippet qml/qsTrId.1.qml 1
 
     Creating binary translation (QM) files suitable for use with this function requires passing
     the \c -idbased option to the \c lrelease tool.

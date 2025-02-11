@@ -3,6 +3,7 @@
 
 package org.qtproject.qt.android;
 
+import android.app.Activity;
 import android.content.Context;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
@@ -42,11 +43,15 @@ class QtWindow extends QtLayout implements QtSurfaceInterface {
         // to QAndroidPlatformWindow::setVisible().
         setVisible(false);
 
-        if (!isForeignWindow) {
+        if (!isForeignWindow && context instanceof Activity) {
+            // TODO QTBUG-122552 - Service keyboard input not implemented
             m_editText = new QtEditText(context, listener);
-            addView(m_editText, new QtLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                                                      ViewGroup.LayoutParams.MATCH_PARENT));
             m_editText.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            QtNative.runAction(() -> {
+                addView(m_editText,
+                        new QtLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                                                  ViewGroup.LayoutParams.WRAP_CONTENT));
+            });
         } else {
             m_editText = null;
         }
@@ -230,5 +235,12 @@ class QtWindow extends QtLayout implements QtSurfaceInterface {
         m_parentWindow = parentWindow;
         if (m_parentWindow != null)
             m_parentWindow.addChildWindow(this);
+    }
+
+    @UsedFromNativeCode
+    void updateFocusedEditText()
+    {
+        if (m_editText != null && m_inputConnectionListener != null)
+            m_inputConnectionListener.onEditTextChanged(m_editText);
     }
 }

@@ -21,15 +21,17 @@ static Q_LOGGING_CATEGORY(qLcFFmpegUtils, "qt.multimedia.ffmpeg.utils");
 
 namespace QFFmpeg {
 
-bool isAVFormatSupported(const AVCodec *codec, PixelOrSampleFormat format)
+bool isAVFormatSupported(const Codec &codec, PixelOrSampleFormat format)
 {
-    if (codec->type == AVMEDIA_TYPE_VIDEO) {
+    if (codec.type() == AVMEDIA_TYPE_VIDEO) {
         auto checkFormat = [format](AVPixelFormat f) { return f == format; };
-        return findAVPixelFormat(codec, checkFormat) != AV_PIX_FMT_NONE;
+        return findAVPixelFormat(codec, checkFormat).has_value();
     }
 
-    if (codec->type == AVMEDIA_TYPE_AUDIO)
-        return hasAVValue(codec->sample_fmts, AVSampleFormat(format));
+    if (codec.type() == AVMEDIA_TYPE_AUDIO) {
+        const auto sampleFormats = codec.sampleFormats();
+        return hasValue(sampleFormats, AVSampleFormat(format));
+    }
 
     return false;
 }
@@ -40,16 +42,11 @@ bool isHwPixelFormat(AVPixelFormat format)
     return desc && (desc->flags & AV_PIX_FMT_FLAG_HWACCEL) != 0;
 }
 
-bool isAVCodecExperimental(const AVCodec *codec)
+void applyExperimentalCodecOptions(const Codec &codec, AVDictionary **opts)
 {
-    return (codec->capabilities & AV_CODEC_CAP_EXPERIMENTAL) != 0;
-}
-
-void applyExperimentalCodecOptions(const AVCodec *codec, AVDictionary** opts)
-{
-    if (isAVCodecExperimental(codec)) {
+    if (codec.isExperimental()) {
         qCWarning(qLcFFmpegUtils) << "Applying the option 'strict -2' for the experimental codec"
-                                  << codec->name << ". it's unlikely to work properly";
+                                  << codec.name() << ". it's unlikely to work properly";
         av_dict_set(opts, "strict", "-2", 0);
     }
 }
@@ -135,17 +132,7 @@ SwrContextUPtr createResampleContext(const AVAudioFormat &inputFormat,
                                      const AVAudioFormat &outputFormat)
 {
     SwrContext *resampler = nullptr;
-#if QT_FFMPEG_OLD_CHANNEL_LAYOUT
-    resampler = swr_alloc_set_opts(nullptr,
-                                   outputFormat.channelLayoutMask,
-                                   outputFormat.sampleFormat,
-                                   outputFormat.sampleRate,
-                                   inputFormat.channelLayoutMask,
-                                   inputFormat.sampleFormat,
-                                   inputFormat.sampleRate,
-                                   0,
-                                   nullptr);
-#else
+#if QT_FFMPEG_HAS_AV_CHANNEL_LAYOUT
 
 #if QT_FFMPEG_SWR_CONST_CH_LAYOUT
     using AVChannelLayoutPrm = const AVChannelLayout*;
@@ -162,6 +149,19 @@ SwrContextUPtr createResampleContext(const AVAudioFormat &inputFormat,
                         inputFormat.sampleRate,
                         0,
                         nullptr);
+
+#else
+
+    resampler = swr_alloc_set_opts(nullptr,
+                                   outputFormat.channelLayoutMask,
+                                   outputFormat.sampleFormat,
+                                   outputFormat.sampleRate,
+                                   inputFormat.channelLayoutMask,
+                                   inputFormat.sampleFormat,
+                                   inputFormat.sampleRate,
+                                   0,
+                                   nullptr);
+
 #endif
 
     swr_init(resampler);
@@ -300,6 +300,25 @@ AVHWDeviceContext* avFrameDeviceContext(const AVFrame* frame) {
     return frameCtx->device_ctx;
 }
 
+SwsContextUPtr createSwsContext(const QSize &srcSize, AVPixelFormat srcPixFmt, const QSize &dstSize,
+                                AVPixelFormat dstPixFmt, int conversionType)
+{
+
+    SwsContext *result =
+            sws_getContext(srcSize.width(), srcSize.height(), srcPixFmt, dstSize.width(),
+                           dstSize.height(), dstPixFmt, conversionType, nullptr, nullptr, nullptr);
+
+    if (!result)
+        qCWarning(qLcFFmpegUtils) << "Cannot create sws context for:\n"
+                                  << "srcSize:" << srcSize
+                                  << "srcPixFmt:" << srcPixFmt
+                                  << "dstSize:" << dstSize
+                                  << "dstPixFmt:" << dstPixFmt
+                                  << "conversionType:" << conversionType;
+
+    return SwsContextUPtr(result);
+}
+
 #ifdef Q_OS_DARWIN
 bool isCVFormatSupported(uint32_t cvFormat)
 {
@@ -322,7 +341,7 @@ QDebug operator<<(QDebug dbg, const AVRational &value)
     return dbg;
 }
 
-#if !QT_FFMPEG_OLD_CHANNEL_LAYOUT
+#if QT_FFMPEG_HAS_AV_CHANNEL_LAYOUT
 QDebug operator<<(QDebug dbg, const AVChannelLayout &layout)
 {
     dbg << '[';
@@ -335,6 +354,40 @@ QDebug operator<<(QDebug dbg, const AVChannelLayout &layout)
         dbg << ", id: " << layout.u.map->id;
 
     dbg << ']';
+
+    return dbg;
+}
+#endif
+
+#if QT_FFMPEG_HAS_AVCODEC_GET_SUPPORTED_CONFIG
+QDebug operator<<(QDebug dbg, const AVCodecConfig value)
+{
+    switch (value) {
+    case AV_CODEC_CONFIG_CHANNEL_LAYOUT:
+        dbg << "AV_CODEC_CONFIG_CHANNEL_LAYOUT";
+        break;
+    case AV_CODEC_CONFIG_COLOR_RANGE:
+        dbg << "AV_CODEC_CONFIG_COLOR_RANGE";
+        break;
+    case AV_CODEC_CONFIG_COLOR_SPACE:
+        dbg << "AV_CODEC_CONFIG_COLOR_SPACE";
+        break;
+    case AV_CODEC_CONFIG_FRAME_RATE:
+        dbg << "AV_CODEC_CONFIG_FRAME_RATE";
+        break;
+    case AV_CODEC_CONFIG_PIX_FORMAT:
+        dbg << "AV_CODEC_CONFIG_PIX_FORMAT";
+        break;
+    case AV_CODEC_CONFIG_SAMPLE_FORMAT:
+        dbg << "AV_CODEC_CONFIG_SAMPLE_FORMAT";
+        break;
+    case AV_CODEC_CONFIG_SAMPLE_RATE:
+        dbg << "AV_CODEC_CONFIG_SAMPLE_RATE";
+        break;
+    default:
+        dbg << "<UNKNOWN_CODEC_CONFIG>";
+        break;
+    }
 
     return dbg;
 }

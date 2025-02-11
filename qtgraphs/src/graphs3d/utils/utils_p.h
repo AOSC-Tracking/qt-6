@@ -24,7 +24,9 @@
 QT_FORWARD_DECLARE_CLASS(QLinearGradient)
 
 QT_BEGIN_NAMESPACE
+
 class QQuickGradient;
+
 class Utils
 {
 public:

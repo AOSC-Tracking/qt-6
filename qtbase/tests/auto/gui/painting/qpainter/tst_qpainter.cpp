@@ -171,6 +171,7 @@ private slots:
 #endif
 
     void radialGradient_QTBUG120332_ubsan();
+    void radialGradient_QTBUG130992_crash();
     void fpe_pixmapTransform();
     void fpe_zeroLengthLines();
     void fpe_divByZero();
@@ -280,6 +281,7 @@ private slots:
 
     void fillPolygon();
 
+    void textOnArgb32();
     void drawImageAtPointF();
     void scaledDashes();
 #if QT_CONFIG(raster_fp)
@@ -3927,6 +3929,19 @@ void tst_QPainter::radialGradient_QTBUG120332_ubsan()
     painter.fillRect(image.rect(), QBrush(gradient));
 }
 
+void tst_QPainter::radialGradient_QTBUG130992_crash()
+{
+    // Check if Radial Gradient will crash on extreme values
+    // The crash was found by oss-fuzz, see
+    // https://issues.oss-fuzz.com/issues/42533347
+    QImage image(8, 8, QImage::Format_ARGB32_Premultiplied);
+    QPainter painter(&image);
+
+    constexpr qreal hugeValue = 1.1E37;
+    QRadialGradient gradient(hugeValue, 0.5, 0.5, hugeValue, 0.5);
+    painter.fillRect(image.rect(), QBrush(gradient));
+}
+
 void tst_QPainter::gradientInterpolation()
 {
     QImage image(256, 8, QImage::Format_ARGB32_Premultiplied);
@@ -5456,6 +5471,31 @@ void tst_QPainter::fillPolygon()
                     }
                 }
             }
+        }
+    }
+}
+
+void tst_QPainter::textOnArgb32()
+{
+    QImage backing(100, 20, QImage::Format_RGB32);
+    backing.fill(Qt::white);
+    QImage img(100, 20, QImage::Format_ARGB32);
+    img.fill(Qt::transparent); // Filled with transparent black
+
+    QPainter imagePainter(&img);
+    imagePainter.setPen(Qt::red);
+    imagePainter.setFont(QFontDatabase::systemFont(QFontDatabase::GeneralFont));
+    imagePainter.setRenderHints(QPainter::TextAntialiasing);
+    imagePainter.drawText(img.rect(), Qt::AlignCenter,"Text example");
+    imagePainter.end();
+    imagePainter.begin(&backing);
+    imagePainter.drawImage(backing.rect(), img);
+    imagePainter.end();
+    for (int y = 0; y < backing.height(); ++y) {
+        for (int x = 0; x < backing.width(); ++x) {
+            const uint32_t px = backing.pixel(x, y);
+            // Red over white, should always be full red.
+            QCOMPARE(qRed(px), 255);
         }
     }
 }

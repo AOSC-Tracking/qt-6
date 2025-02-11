@@ -103,7 +103,7 @@ Item {
         name: "series1"
         singleHighlightColor: "red"
         singleHighlightGradient: gradient3
-        userDefinedMesh: ":/customitem.obj"
+        userDefinedMesh: ":/customitem.mesh"
         visible: false
         rowColors: [rowColor1, rowColor2, rowColor3]
     }
@@ -195,7 +195,7 @@ Item {
             compare(initialized.name, "series1")
             compare(initialized.singleHighlightColor, "#ff0000")
             compare(initialized.singleHighlightGradient, gradient3)
-            compare(initialized.userDefinedMesh, ":/customitem.obj")
+            compare(initialized.userDefinedMesh, ":/customitem.mesh")
             compare(initialized.visible, false)
         }
     }
@@ -207,6 +207,8 @@ Item {
             change.meshAngle = 15.0
             change.selectedBar = Qt.point(0, 0)
             change.rowColors = [rowColor1, rowColor2, rowColor3]
+            change.rowLabels = ["vaasa", "Turku", "Kuusamo"]
+            change.columnLabels = ["2010", "2011", "2013"]
         }
 
         function test_2_test_change() {
@@ -214,6 +216,13 @@ Item {
             compare(change.dataProxy.rowCount, 3)
             fuzzyCompare(change.meshAngle, 15.0, 0.01)
             compare(change.selectedBar, Qt.point(0, 0))
+
+            compare(meshAngleSpy.count, 1)
+            compare(selectedBarSpy.count, 1)
+            compare(rowColorsSpy.count, 3)
+            compare(dataProxySpy.count, 1)
+            compare(rowLabelsSpy.count, 2)
+            compare(columnLabelsSpy.count, 2)
         }
 
         function test_3_change_common() {
@@ -229,7 +238,7 @@ Item {
             change.name = "series1"
             change.singleHighlightColor = "red"
             change.singleHighlightGradient = gradient3
-            change.userDefinedMesh = ":/customitem.obj"
+            change.userDefinedMesh = ":/customitem.mesh"
             change.visible = false
 
             compare(change.baseColor, "#0000ff")
@@ -244,8 +253,23 @@ Item {
             compare(change.name, "series1")
             compare(change.singleHighlightColor, "#ff0000")
             compare(change.singleHighlightGradient, gradient3)
-            compare(change.userDefinedMesh, ":/customitem.obj")
+            compare(change.userDefinedMesh, ":/customitem.mesh")
             compare(change.visible, false)
+
+            compare(baseColorSpy.count, 1)
+            compare(baseGradientSpy.count, 1)
+            compare(colorStyleSpy.count, 1)
+            compare(itemLabelFormatSpy.count, 1)
+            compare(itemLabelVisibleSpy.count, 1)
+            compare(meshSpy.count, 1)
+            compare(meshSmoothingSpy.count, 1)
+            compare(singleHLSpy.count, 1)
+            compare(singleGradientSpy.count, 1)
+            compare(multiHLSpy.count, 1)
+            compare(multiGradientSpy.count, 1)
+            compare(nameSpy.count, 1)
+            compare(visibleSpy.count, 1)
+            compare(userMeshSpy.count, 1)
         }
 
         function test_4_change_gradient_stop() {
@@ -257,5 +281,125 @@ Item {
             rowColor2.color = "purple"
             compare(change.rowColors[1].color, "#800080")
         }
+    }
+
+    SignalSpy {
+        id: dataProxySpy
+        target: change
+        signalName: "dataProxyChanged"
+    }
+
+    SignalSpy {
+        id: selectedBarSpy
+        target: change
+        signalName: "selectedBarChanged"
+    }
+
+    SignalSpy {
+        id:meshAngleSpy
+        target: change
+        signalName: "meshAngleChanged"
+    }
+
+    SignalSpy {
+        id: rowColorsSpy
+        target: change
+        signalName: "rowColorsChanged"
+    }
+
+    SignalSpy {
+        id: rowLabelsSpy
+        target: change
+        signalName: "rowLabelsChanged"
+    }
+
+    SignalSpy {
+        id: columnLabelsSpy
+        target: change
+        signalName: "columnLabelsChanged"
+    }
+
+    SignalSpy {
+        id: nameSpy
+        target: change
+        signalName: "nameChanged"
+    }
+
+    SignalSpy {
+        id: visibleSpy
+        target: change
+        signalName: "visibleChanged"
+    }
+
+    SignalSpy {
+        id: baseColorSpy
+        target: change
+        signalName: "baseColorChanged"
+    }
+
+    SignalSpy {
+        id: baseGradientSpy
+        target: change
+        signalName: "baseGradientChanged"
+    }
+
+    SignalSpy {
+        id: colorStyleSpy
+        target: change
+        signalName: "colorStyleChanged"
+    }
+
+    SignalSpy {
+        id: itemLabelFormatSpy
+        target: change
+        signalName: "itemLabelFormatChanged"
+    }
+
+    SignalSpy {
+        id: itemLabelVisibleSpy
+        target: change
+        signalName: "itemLabelVisibleChanged"
+    }
+
+    SignalSpy {
+        id: meshSpy
+        target: change
+        signalName: "meshChanged"
+    }
+
+    SignalSpy {
+        id: meshSmoothingSpy
+        target: change
+        signalName: "meshSmoothChanged"
+    }
+
+    SignalSpy {
+        id: singleHLSpy
+        target: change
+        signalName: "singleHighlightColorChanged"
+    }
+
+    SignalSpy {
+        id: singleGradientSpy
+        target: change
+        signalName: "singleHighlightGradientChanged"
+    }
+
+    SignalSpy {
+        id: multiHLSpy
+        target: change
+        signalName: "multiHighlightColorChanged"
+    }
+
+    SignalSpy {
+        id: multiGradientSpy
+        target: change
+        signalName: "multiHighlightGradientChanged"
+    }
+
+    SignalSpy {
+        id: userMeshSpy
+        target: change
+        signalName: "userDefinedMeshChanged"
     }
 }

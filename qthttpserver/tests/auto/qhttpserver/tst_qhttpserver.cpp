@@ -10,6 +10,8 @@
 
 #include <QtConcurrent/qtconcurrentrun.h>
 
+#include <QtCore/qoperatingsystemversion.h>
+#include <QtCore/qsystemdetection.h>
 #include <QtCore/qurl.h>
 #include <QtCore/qstring.h>
 #include <QtCore/qlist.h>
@@ -28,6 +30,7 @@
 
 #if QT_CONFIG(ssl)
 #include <QtNetwork/qsslconfiguration.h>
+#include <QtNetwork/qsslsocket.h>
 #include <QtNetwork/qsslkey.h>
 #include <QtNetwork/qsslserver.h>
 #endif
@@ -39,6 +42,8 @@
 #endif
 
 #include <array>
+
+QT_BEGIN_NAMESPACE
 
 #if QT_CONFIG(ssl)
 
@@ -128,9 +133,28 @@ ignL7f4e1m2jh0oWTLhuP1hnVFN4KAKpVIJXhbEkH59cLCN6ARXiEHCM9rmK5Rgk
 NQZlAZc2w1Ha9lqisaWWpt42QVhQM64=
 -----END CERTIFICATE-----)";
 
-#endif // QT_CONFIG(ssl)
+// Check if it's a macOS-build-with-SDK14 running on macOS 15:
+bool sslServerIsBlockingKeychain()
+{
+#ifdef Q_OS_MACOS
+    if (QSslSocket::activeBackend() != QLatin1String("securetransport"))
+        return false;
+#if QT_MACOS_IOS_PLATFORM_SDK_EQUAL_OR_ABOVE(150000, 180000)
+    // Starting from macOS 15 our temporary keychain is ignored.
+    // We have to use kSecImportToMemoryOnly/kCFBooleanTrue key/value
+    // instead. This way we don't have to use QT_SSL_USE_TEMPORARY_KEYCHAIN anymore.
+    return false;
+#else
+    if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::MacOSSequoia) {
+        // We were built with SDK below 15, but a file-based keychains are not working anymore on macOS 15...
+        return true;
+    }
+#endif
+#endif // Q_OS_MACOS
+    return false;
+}
 
-QT_BEGIN_NAMESPACE
+#endif // QT_CONFIG(ssl)
 
 using namespace Qt::StringLiterals;
 
@@ -210,6 +234,7 @@ class tst_QHttpServer final : public QObject
 private slots:
     void initTestCase_data();
     void initTestCase();
+    void init();
     void routeGet_data();
     void routeGet();
     void routeKeepAlive();
@@ -531,6 +556,15 @@ void tst_QHttpServer::initTestCase()
                 });
     }
 #endif
+}
+
+void tst_QHttpServer::init()
+{
+#if QT_CONFIG(ssl)
+    QFETCH_GLOBAL(const bool, useSsl);
+    if (useSsl && sslServerIsBlockingKeychain())
+        QSKIP("SslServer is blocking the test execution while trying to access the login keychain");
+#endif // QT_CONFIG(ssl)
 }
 
 void tst_QHttpServer::routeGet_data()

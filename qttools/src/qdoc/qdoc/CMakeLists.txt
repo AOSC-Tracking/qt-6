@@ -17,6 +17,7 @@ endif()
 
 qt_get_tool_target_name(target_name qdoc)
 qt_internal_add_tool(${target_name}
+    REQUIRED_FOR_DOCS
     TARGET_DESCRIPTION "Qt Documentation Compiler"
     TOOLS_TARGET Tools
     USER_FACING
@@ -67,6 +68,7 @@ qt_internal_add_tool(${target_name}
         src/qdoc/qmlcodemarker.cpp
         src/qdoc/qmlcodeparser.cpp
         src/qdoc/qmlmarkupvisitor.cpp
+        src/qdoc/qmlpropertyarguments.cpp
         src/qdoc/qmlpropertynode.cpp
         src/qdoc/qmltypenode.cpp
         src/qdoc/qmlvisitor.cpp
@@ -91,8 +93,6 @@ qt_internal_add_tool(${target_name}
         Qt::QmlPrivate
         WrapLibClang::WrapLibClang
     DEFINES
-        #(CLANG_RESOURCE_DIR=\"/clang//include\") # special case remove
-        CLANG_RESOURCE_DIR=${QT_LIBCLANG_RESOURCE_DIR}
         # To provide the ability to workaround version-specific Clang issues.
         # A re-export of (LLVM|CLANG)_VERSION_MAJOR done in WrapLibClang.cmake
         LIBCLANG_VERSION_MAJOR=${QT_LIB_CLANG_VERSION_MAJOR}

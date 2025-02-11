@@ -20,6 +20,7 @@
 #include <QtGui/private/qguiapplication_p.h>
 #include <QtGui/private/qwindow_p.h>
 #include <QtGui/private/qapplekeymapper_p.h>
+#include <QtGui/private/qpointingdevice_p.h>
 #include <qpa/qwindowsysteminterface_p.h>
 
 Q_LOGGING_CATEGORY(lcQpaTablet, "qt.qpa.input.tablet")
@@ -58,26 +59,6 @@ inline ulong getTimeStamp(UIEvent *event)
     UIPanGestureRecognizer *m_scrollGestureRecognizer;
     CGPoint m_lastScrollCursorPos;
     CGPoint m_lastScrollDelta;
-}
-
-+ (void)load
-{
-#if !defined(Q_OS_TVOS) && !defined(Q_OS_VISIONOS)
-    if (QOperatingSystemVersion::current() < QOperatingSystemVersion(QOperatingSystemVersion::IOS, 11)) {
-        // iOS 11 handles this though [UIView safeAreaInsetsDidChange], but there's no signal for
-        // the corresponding top and bottom layout guides that we use on earlier versions. Note
-        // that we use the _will_ change version of the notification, because we want to react
-        // to the change as early was possible. But since the top and bottom layout guides have
-        // not been updated at this point we use asynchronous delivery of the event, so that the
-        // event is processed by QtGui just after iOS has updated the layout margins.
-        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillChangeStatusBarFrameNotification
-            object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *) {
-                for (QWindow *window : QGuiApplication::allWindows())
-                    QWindowSystemInterface::handleSafeAreaMarginsChanged<QWindowSystemInterface::AsynchronousDelivery>(window);
-            }
-        ];
-    }
-#endif
 }
 
 + (Class)layerClass
@@ -366,12 +347,10 @@ inline ulong getTimeStamp(UIEvent *event)
     [super traitCollectionDidChange: previousTraitCollection];
 
     QPointingDevice *touchDevice = QIOSIntegration::instance()->touchDevice();
-    QPointingDevice::Capabilities touchCapabilities = touchDevice->capabilities();
+    auto *devicePriv = QPointingDevicePrivate::get(touchDevice);
 
-    touchCapabilities.setFlag(QPointingDevice::Capability::Pressure,
-                              (self.traitCollection.forceTouchCapability == UIForceTouchCapabilityAvailable));
-
-    touchDevice->setCapabilities(touchCapabilities);
+    devicePriv->capabilities.setFlag(QPointingDevice::Capability::Pressure,
+                                     (self.traitCollection.forceTouchCapability == UIForceTouchCapabilityAvailable));
 }
 
 -(BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event

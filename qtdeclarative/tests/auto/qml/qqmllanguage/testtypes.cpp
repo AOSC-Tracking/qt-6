@@ -5,6 +5,10 @@
 
 #include <private/qv4qmlcontext_p.h>
 
+#include <QtQml/qqmlextensionplugin.h>
+
+Q_IMPORT_QML_PLUGIN(testhelperPlugin)
+
 static QObject *myTypeObjectSingleton(QQmlEngine *engine, QJSEngine *scriptEngine)
 {
     Q_UNUSED(engine);
@@ -221,7 +225,9 @@ void CustomBinding::componentComplete()
     }
 }
 
-void EnumSupportingCustomParser::verifyBindings(const QQmlRefPointer<QV4::ExecutableCompilationUnit> &compilationUnit, const QList<const QV4::CompiledData::Binding *> &bindings)
+void EnumSupportingCustomParser::verifyBindings(
+        const QQmlRefPointer<QV4::CompiledData::CompilationUnit> &compilationUnit,
+        const QList<const QV4::CompiledData::Binding *> &bindings)
 {
     if (bindings.size() != 1) {
         error(bindings.first(), QStringLiteral("Custom parser invoked incorrectly for unit test"));
