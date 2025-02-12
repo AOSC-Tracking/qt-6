@@ -63,6 +63,13 @@
 #define MAX_PUBLIC_SYSCALL __NR_syscalls
 #define MAX_SYSCALL MAX_PUBLIC_SYSCALL
 
+#elif defined(__riscv)
+
+#include <asm/unistd.h>
+#define MIN_SYSCALL 0u
+#define MAX_PUBLIC_SYSCALL __NR_syscalls
+#define MAX_SYSCALL MAX_PUBLIC_SYSCALL
+
 #else
 #error "Unsupported architecture"
 #endif

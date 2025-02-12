@@ -18,7 +18,7 @@ namespace sandbox {
 namespace {
 
 #if defined(ARCH_CPU_X86_FAMILY) || defined(ARCH_CPU_ARM_FAMILY) || \
-    defined(ARCH_CPU_MIPS_FAMILY) || defined(ARCH_CPU_LOONGARCH_FAMILY)
+    defined(ARCH_CPU_MIPS_FAMILY) || defined(ARCH_CPU_LOONGARCH_FAMILY) || defined(ARCH_CPU_RISCV_FAMILY)
 // Number that's not currently used by any Linux kernel ABIs.
 const int kInvalidSyscallNumber = 0x351d3;
 #else
@@ -329,6 +329,28 @@ asm(// We need to be able to tell the kernel exactly where we made a
     "2:ret\n"
     ".cfi_endproc\n"
     ".size SyscallAsm, .-SyscallAsm\n"
+#elif defined(__riscv)
+    ".text\n"
+    ".align 2\n"
+    ".type SyscallAsm, %function\n"
+    "SyscallAsm:\n"
+    ".cfi_startproc\n"
+    "bgez a0,1f\n"
+    "la a0,2f\n"
+    "j 2f\n"
+    "1:mv a7, a0\n"
+    "ld a0, (t0)\n"
+    "ld a1, 8(t0)\n"
+    "ld a2, 16(t0)\n"
+    "ld a3, 24(t0)\n"
+    "ld a4, 32(t0)\n"
+    "ld a5, 40(t0)\n"
+    "ld a6, 48(t0)\n"
+    // Enter the kernel
+    "scall\n"
+    "2:ret\n"
+    ".cfi_endproc\n"
+    ".size SyscallAsm, .-SyscallAsm\n"
 #endif
     );  // asm
 
@@ -455,6 +477,18 @@ intptr_t Syscall::Call(int nr,
                  : "=r"(inout)
                  : "0"(inout), "r"(data)
                  : "memory", "$r5", "$r6", "$r7", "$r8", "$r9", "$r11", "$r1");
+    ret = inout;
+  }
+
+#elif defined(__riscv)
+  intptr_t ret;
+  {
+    register intptr_t inout __asm__("a0") = nr;
+    register const intptr_t* data __asm__("t0") = args;
+    asm volatile("jal SyscallAsm\n"
+                 : "=r"(inout)
+                 : "0"(inout), "r"(data)
+                 : "memory", "a1", "a2", "a3", "a4", "a5", "a6", "a7");
     ret = inout;
   }
 

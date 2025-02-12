@@ -43,6 +43,10 @@
 #define EM_LOONGARCH64 258
 #endif
 
+#ifndef EM_RISCV
+#define EM_RISCV 243
+#endif
+
 #ifndef __AUDIT_ARCH_64BIT
 #define __AUDIT_ARCH_64BIT 0x80000000
 #endif
@@ -77,6 +81,10 @@
 
 #ifndef AUDIT_ARCH_LOONGARCH64
 #define AUDIT_ARCH_LOONGARCH64 (EM_LOONGARCH64 | __AUDIT_ARCH_64BIT | __AUDIT_ARCH_LE)
+#endif
+
+#ifndef AUDIT_ARCH_RISCV64
+#define AUDIT_ARCH_RISCV64 (EM_RISCV|__AUDIT_ARCH_64BIT|__AUDIT_ARCH_LE)
 #endif
 
 // For prctl.h

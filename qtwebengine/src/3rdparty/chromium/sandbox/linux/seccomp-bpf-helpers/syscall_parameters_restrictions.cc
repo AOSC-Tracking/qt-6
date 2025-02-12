@@ -37,6 +37,7 @@
 
 #if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)) && \
     !defined(__arm__) && !defined(__aarch64__) &&             \
+    !defined(__riscv) &&                                      \
     !defined(PTRACE_GET_THREAD_AREA) && !defined(__loongarch__)
 // Also include asm/ptrace-abi.h since ptrace.h in older libc (for instance
 // the one in Ubuntu 16.04 LTS) is missing PTRACE_GET_THREAD_AREA.
@@ -463,7 +464,7 @@ ResultExpr RestrictPtrace() {
 #endif
   return Switch(request)
       .Cases({
-#if !defined(__aarch64__)
+#if !defined(__aarch64__) && !defined (__riscv)
                  PTRACE_GETREGS, PTRACE_GETFPREGS,
                  PTRACE_GETREGSET,
 #if !defined(__loongarch__)
