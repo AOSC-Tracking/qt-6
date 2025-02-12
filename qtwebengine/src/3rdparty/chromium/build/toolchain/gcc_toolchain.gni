@@ -374,6 +374,12 @@ template("single_gcc_toolchain") {
       extra_ldflags = ""
     }
 
+    if (current_cpu == "loong64") {
+      extra_cflags += " -mcmodel=medium"
+      extra_cxxflags += " -mcmodel=medium"
+      extra_ldflags += " -mno-relax"
+    }
+
     if (system_headers_in_deps) {
       md = "-MD"
     } else {

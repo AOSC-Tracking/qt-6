@@ -19,6 +19,7 @@ struct cap_hdr;
 struct cap_data;
 struct kernel_stat;
 struct kernel_stat64;
+struct kernel_statx;
 
 namespace sandbox {
 
@@ -91,6 +92,7 @@ SANDBOX_EXPORT int sys_sigaction(int signum,
 // architectures, with the same capabilities as stat() and lstat().
 SANDBOX_EXPORT int sys_stat(const char* path, struct kernel_stat* stat_buf);
 SANDBOX_EXPORT int sys_lstat(const char* path, struct kernel_stat* stat_buf);
+SANDBOX_EXPORT int sys_statx(int fd, const char* path, int flags, unsigned int mask, struct kernel_statx* statx_buf);
 
 // Takes care of unpoisoning |stat_buf| for MSAN. Check-fails if fstatat64() is
 // not a supported syscall on the current platform.

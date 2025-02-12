@@ -5,6 +5,7 @@
 #include "sandbox/linux/services/syscall_wrappers.h"
 
 #include <fcntl.h>
+#include <linux/stat.h>
 #include <pthread.h>
 #include <sched.h>
 #include <setjmp.h>
@@ -58,7 +59,7 @@ long sys_clone(unsigned long flags,
   if (ctid) MSAN_UNPOISON(ctid, sizeof(*ctid));
   // See kernel/fork.c in Linux. There is different ordering of sys_clone
   // parameters depending on CONFIG_CLONE_BACKWARDS* configuration options.
-#if defined(ARCH_CPU_X86_64)
+#if defined(ARCH_CPU_X86_64) || defined(ARCH_CPU_LOONGARCH_FAMILY)
   return syscall(__NR_clone, flags, child_stack, ptid, ctid, tls);
 #elif defined(ARCH_CPU_X86) || defined(ARCH_CPU_ARM_FAMILY) || \
     defined(ARCH_CPU_MIPS_FAMILY)
@@ -163,9 +164,53 @@ int sys_sigaction(int signum,
   return sigaction(signum, act, oldact);
 }
 
+// follow glibc __cp_stat64_statx
+void statx_to_stat(struct kernel_stat* to, struct kernel_statx* from) {
+  memset(to, 0, sizeof(struct kernel_stat));
+  to->st_dev = ((from->stx_dev_minor & 0xff) | (from->stx_dev_major << 8) |
+                ((from->stx_dev_minor & ~0xff) << 12));
+  to->st_rdev = ((from->stx_rdev_minor & 0xff) | (from->stx_rdev_major << 8) |
+                 ((from->stx_rdev_minor & ~0xff) << 12));
+  to->st_ino = from->stx_ino;
+  to->st_mode = from->stx_mode;
+  to->st_nlink = from->stx_nlink;
+  to->st_uid = from->stx_uid;
+  to->st_gid = from->stx_gid;
+  to->st_atime_ = from->stx_atime.tv_sec;
+  to->st_atime_nsec_ = from->stx_atime.tv_nsec;
+  to->st_mtime_ = from->stx_mtime.tv_sec;
+  to->st_mtime_nsec_ = from->stx_mtime.tv_nsec;
+  to->st_ctime_ = from->stx_ctime.tv_sec;
+  to->st_ctime_nsec_ = from->stx_ctime.tv_nsec;
+  to->st_size = from->stx_size;
+  to->st_blocks = from->stx_blocks;
+  to->st_blksize = from->stx_blksize;
+}
+
+int sys_statx(int fd,
+              const char* path,
+              int flags,
+              unsigned int mask,
+              struct kernel_statx* statx_buf) {
+#if defined(__NR_statx)
+  int res = syscall(__NR_statx, fd, path, flags, mask, statx_buf);
+  if (res == 0)
+    MSAN_UNPOISON(statx_buf, sizeof(*statx_buf));
+  return res;
+#else  // defined(__NR_statx)
+  RAW_CHECK(false);
+  return -ENOSYS;
+#endif
+}
+
 int sys_stat(const char* path, struct kernel_stat* stat_buf) {
   int res;
-#if !defined(__NR_stat)
+#if defined(__NR_statx)
+  kernel_statx statx_buf;
+  res = syscall(__NR_statx, AT_FDCWD, path, AT_NO_AUTOMOUNT, STATX_BASIC_STATS, &statx_buf);
+  if (res == 0)
+    statx_to_stat(stat_buf, &statx_buf);
+#elif !defined(__NR_stat)
   res = syscall(__NR_newfstatat, AT_FDCWD, path, stat_buf, 0);
 #else
   res = syscall(__NR_stat, path, stat_buf);
@@ -177,7 +222,12 @@ int sys_stat(const char* path, struct kernel_stat* stat_buf) {
 
 int sys_lstat(const char* path, struct kernel_stat* stat_buf) {
   int res;
-#if !defined(__NR_lstat)
+#if defined(__NR_statx)
+  kernel_statx statx_buf;
+  res = syscall(__NR_statx, AT_FDCWD, path, AT_NO_AUTOMOUNT | AT_SYMLINK_NOFOLLOW, STATX_BASIC_STATS, &statx_buf);
+  if (res == 0)
+    statx_to_stat(stat_buf, &statx_buf);
+#elif !defined(__NR_lstat)
   res = syscall(__NR_newfstatat, AT_FDCWD, path, stat_buf, AT_SYMLINK_NOFOLLOW);
 #else
   res = syscall(__NR_lstat, path, stat_buf);

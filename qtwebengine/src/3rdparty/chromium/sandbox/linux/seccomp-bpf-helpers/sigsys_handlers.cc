@@ -354,6 +354,7 @@ intptr_t SIGSYSSchedHandler(const struct arch_seccomp_data& args,
 
 intptr_t SIGSYSFstatatHandler(const struct arch_seccomp_data& args,
                               void* fs_denied_errno) {
+#if !defined(__loongarch__)
   if (args.nr == __NR_fstatat_default) {
     if (*reinterpret_cast<const char*>(args.args[1]) == '\0' &&
         args.args[3] == static_cast<uint64_t>(AT_EMPTY_PATH)) {
@@ -362,6 +363,7 @@ intptr_t SIGSYSFstatatHandler(const struct arch_seccomp_data& args,
     }
     return -reinterpret_cast<intptr_t>(fs_denied_errno);
   }
+#endif
 
   CrashSIGSYS_Handler(args, fs_denied_errno);
 

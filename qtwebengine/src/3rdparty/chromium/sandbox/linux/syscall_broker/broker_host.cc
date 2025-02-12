@@ -297,6 +297,21 @@ void BrokerHost::StatFileForIPC(BrokerCommand command_type,
     RAW_CHECK(reply->AddIntToMessage(0));
     RAW_CHECK(
         reply->AddDataToMessage(reinterpret_cast<char*>(&sb), sizeof(sb)));
+#elif defined(__loongarch__)
+    // handle COMMAND_STATX
+    DCHECK(command_type == COMMAND_STATX);
+    struct kernel_statx sb;
+
+    int sts = sandbox::sys_statx(AT_FDCWD, file_to_access,
+                                     follow_links ? 0 : AT_SYMLINK_NOFOLLOW,
+				     STATX_BASIC_STATS, &sb);
+    if (sts < 0) {
+      RAW_CHECK(reply->AddIntToMessage(-errno));
+      return;
+    }
+    RAW_CHECK(reply->AddIntToMessage(0));
+    RAW_CHECK(
+        reply->AddDataToMessage(reinterpret_cast<char*>(&sb), sizeof(sb)));
 #else  // defined(__NR_fstatat64)
     // We should not reach here on 64-bit systems, as the *stat*64() are only
     // necessary on 32-bit.
@@ -436,7 +451,8 @@ bool BrokerHost::HandleRemoteCommand(BrokerSimpleMessage* message,
       break;
     }
     case COMMAND_STAT:
-    case COMMAND_STAT64: {
+    case COMMAND_STAT64:
+    case COMMAND_STATX: {
       const char* requested_filename;
       if (!message->ReadString(&requested_filename)) {
         return false;

@@ -193,6 +193,21 @@ int BrokerClient::Stat64(const char* pathname,
                            sizeof(*sb));
 }
 
+int BrokerClient::Statx(const char* pathname,
+                         bool follow_links,
+                         struct kernel_statx* sb) const {
+  if (!pathname || !sb)
+    return -EFAULT;
+
+  if (fast_check_in_client_ &&
+      !CommandStatIsSafe(policy_->allowed_command_set,
+                         *policy_->file_permissions, pathname)) {
+    return -policy_->file_permissions->denied_errno();
+  }
+  return StatFamilySyscall(COMMAND_STATX, pathname, follow_links, sb,
+                           sizeof(*sb));
+}
+
 int BrokerClient::Unlink(const char* path) const {
   if (!path)
     return -EFAULT;
