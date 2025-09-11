@@ -62,6 +62,7 @@ private:
     QScopedPointer<EGLFunctions> m_functions;
     QScopedPointer<QOffscreenSurface> m_offscreenSurface;
     bool m_isDmaBufSupported = false;
+    bool m_isCreateDRMImageMesaSupported = false;
 };
 
 QT_END_NAMESPACE
