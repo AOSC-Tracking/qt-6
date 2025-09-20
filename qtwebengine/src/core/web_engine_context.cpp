@@ -21,6 +21,7 @@
 #include "base/threading/thread_restrictions.h"
 #include "cc/base/switches.h"
 #include "chrome/common/chrome_switches.h"
+#include "content/common/features.h"
 #include "content/common/process_visibility_tracker.h"
 #include "content/gpu/gpu_child_thread.h"
 #include "content/browser/compositor/surface_utils.h"
@@ -31,7 +32,10 @@
 #endif
 #include "components/discardable_memory/service/discardable_shared_memory_manager.h"
 #include "components/download/public/common/download_task_runner.h"
+#include "components/input/switches.h"
+#include "components/power_monitor/make_power_monitor_device_source.h"
 #include "components/viz/common/features.h"
+#include "components/variations/variations_ids_provider.h"
 #include "components/web_cache/browser/web_cache_manager.h"
 #include "content/app/mojo_ipc_support.h"
 #include "content/browser/devtools/devtools_http_handler.h"
@@ -76,6 +80,7 @@
 #include "ui/native_theme/native_theme_features.h"
 #include "ui/gl/gl_utils.h"
 #include "ui/gl/gl_switches.h"
+#include "url/url_features.h"
 #if defined(Q_OS_WIN)
 #include "sandbox/win/src/sandbox_types.h"
 #include "content/public/app/sandbox_helper_win.h"
@@ -102,34 +107,31 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QMutex>
-#include <QOffscreenSurface>
 #include <QQuickWindow>
 #include <QRegularExpression>
 #include <QStringList>
-#include <QSurfaceFormat>
 #include <QNetworkProxy>
 #include <QtGui/qpa/qplatformintegration.h>
 #include <QtGui/private/qguiapplication_p.h>
 #include <QtQuick/private/qsgrhisupport_p.h>
 #include <QLoggingCategory>
 
-#if QT_CONFIG(opengl) && (defined(USE_OZONE) || defined(Q_OS_WIN))
-#include "ozone/gl_context_qt.h"
+#if QT_CONFIG(opengl)
+#include <QOffscreenSurface>
 
-#include <QOpenGLContext>
-#include <qopenglcontext_platform.h>
-
-QT_BEGIN_NAMESPACE
-Q_GUI_EXPORT QOpenGLContext *qt_gl_global_share_context();
-QT_END_NAMESPACE
-#endif
+#if BUILDFLAG(IS_OZONE)
+#include "ozone/ozone_util_qt.h"
+#endif // BUILDFLAG(IS_OZONE)
+#endif // QT_CONFIG(opengl)
 
 #define STRINGIFY_LITERAL(x) #x
 #define STRINGIFY_EXPANDED(x) STRINGIFY_LITERAL(x)
 
+using namespace Qt::StringLiterals;
+
 namespace QtWebEngineCore {
 
-Q_LOGGING_CATEGORY(webEngineContextLog, "qt.webenginecontext")
+Q_WEBENGINE_LOGGING_CATEGORY(webEngineContextLog, "qt.webenginecontext")
 
 class GPUInfo
 {
@@ -149,7 +151,7 @@ public:
         Qualcomm,
         Samsung,
         Broadcom,
-        VMWare,
+        VMware,
         VirtIO,
 
         // Khronos-registered vendors
@@ -184,7 +186,7 @@ public:
             {0x5143, Qualcomm},
             {0x144D, Samsung},
             {0x14E4, Broadcom},
-            {0x15AD, VMWare},
+            {0x15AD, VMware},
             {0x1AF4, VirtIO},
             {0x10001, Vivante},
             {0x10002, VeriSilicon},
@@ -199,27 +201,29 @@ public:
         if (it != vendorIdMap.end())
             return it->second;
 
-        qWarning() << "Unknown Vendor ID:" << QStringLiteral("0x%1").arg(vendorId, 0, 16);
+        qWarning("Unknown Vendor ID: 0x%llx", vendorId);
         return Unknown;
     }
 
-    static Vendor deviceNameToVendor(const QString &deviceName)
+    static Vendor deviceNameToVendor(QLatin1StringView deviceName)
     {
         // TODO: Test and add more vendors to the list.
-        if (deviceName.contains(QLatin1StringView("AMD"), Qt::CaseInsensitive))
+        if (deviceName.contains("AMD"_L1, Qt::CaseInsensitive))
             return AMD;
-        if (deviceName.contains(QLatin1StringView("Intel"), Qt::CaseInsensitive))
+        if (deviceName.contains("Intel"_L1, Qt::CaseInsensitive))
             return Intel;
-        if (deviceName.contains(QLatin1StringView("Nvidia"), Qt::CaseInsensitive))
+        if (deviceName.contains("Nvidia"_L1, Qt::CaseInsensitive))
             return Nvidia;
+        if (deviceName.contains("VMware"_L1, Qt::CaseInsensitive))
+            return VMware;
 
-#if defined(USE_OZONE)
-        if (deviceName.contains(QLatin1StringView("Mesa llvmpipe")))
+#if BUILDFLAG(IS_OZONE)
+        if (deviceName.contains("Mesa llvmpipe"_L1))
             return Mesa;
 #endif
 
 #if defined(Q_OS_MACOS)
-        if (deviceName.contains(QLatin1StringView("Apple")))
+        if (deviceName.contains("Apple"_L1))
             return Apple;
 #endif
 
@@ -242,7 +246,7 @@ public:
             {Qualcomm, "Qualcomm"},
             {Samsung, "Samsung"},
             {Broadcom, "Broadcom"},
-            {VMWare, "VMWare"},
+            {VMware, "VMware"},
             {VirtIO, "VirtIO"},
             {Vivante, "Vivante"},
             {VeriSilicon, "VeriSilicon"},
@@ -257,11 +261,11 @@ public:
         if (it != vendorNameMap.end())
             return it->second;
 
-        Q_UNREACHABLE();
-        return "Unknown";
+        Q_UNREACHABLE_RETURN("Unknown");
     }
 
     Vendor vendor() const { return m_vendor; }
+    QString deviceName() const { return m_deviceName; }
     QString getAdapterLuid() const { return m_adapterLuid; }
 
 private:
@@ -284,6 +288,7 @@ private:
             }
             if (d3d11Rhi) {
                 m_vendor = vendorIdToVendor(d3d11Rhi->driverInfo().vendorId);
+                m_deviceName = QString::fromUtf8(d3d11Rhi->driverInfo().deviceName);
 
                 const QRhiD3D11NativeHandles *handles =
                         static_cast<const QRhiD3D11NativeHandles *>(d3d11Rhi->nativeHandles());
@@ -297,8 +302,10 @@ private:
             QRhiMetalInitParams params;
             QScopedPointer<QRhi> metalRhi(
                     QRhi::create(QRhi::Metal, &params, QRhi::Flags(), nullptr));
-            if (metalRhi)
+            if (metalRhi) {
                 m_vendor = deviceNameToVendor(QLatin1StringView(metalRhi->driverInfo().deviceName));
+                m_deviceName = QString::fromUtf8(metalRhi->driverInfo().deviceName);
+            }
         }
 #endif
 
@@ -308,8 +315,10 @@ private:
             params.fallbackSurface = QRhiGles2InitParams::newFallbackSurface();
             QScopedPointer<QRhi> glRhi(
                     QRhi::create(QRhi::OpenGLES2, &params, QRhi::Flags(), nullptr));
-            if (glRhi)
+            if (glRhi) {
                 m_vendor = deviceNameToVendor(QLatin1StringView(glRhi->driverInfo().deviceName));
+                m_deviceName = QString::fromUtf8(glRhi->driverInfo().deviceName);
+            }
         }
 #endif
 
@@ -329,6 +338,7 @@ private:
                     // see https://www.phoronix.com/news/Mesa-20.1-Vulkan-Dev-Selection
                     // Try to detect this case and at least warn about it.
                     m_vendor = vendorIdToVendor(vulkanRhi->driverInfo().vendorId);
+                    m_deviceName = QString::fromUtf8(vulkanRhi->driverInfo().deviceName);
                 }
             }
         }
@@ -339,6 +349,7 @@ private:
     }
 
     Vendor m_vendor = Unknown;
+    QString m_deviceName;
     QString m_adapterLuid;
 };
 
@@ -356,7 +367,7 @@ static bool usingSupportedSGBackend()
     QString device = QQuickWindow::sceneGraphBackend();
 
     for (int index = 0; index < args.count(); ++index) {
-        if (args.at(index).startsWith(QLatin1StringView("--device="))) {
+        if (args.at(index).startsWith("--device="_L1)) {
             device = args.at(index).mid(9);
             break;
         }
@@ -367,96 +378,16 @@ static bool usingSupportedSGBackend()
     if (device.isEmpty())
         device = qEnvironmentVariable("QMLSCENE_DEVICE");
 
-    return device.isEmpty() || device == QLatin1StringView("rhi");
+    return device.isEmpty() || device == "rhi"_L1;
 }
 
-#if QT_CONFIG(opengl)
-bool usingSoftwareDynamicGL()
-{
-    const char openGlVar[] = "QT_OPENGL";
-    if (QCoreApplication::testAttribute(Qt::AA_UseSoftwareOpenGL))
-        return true;
-
-    if (qEnvironmentVariableIsSet(openGlVar)) {
-        const QByteArray requested = qgetenv(openGlVar);
-        if (requested == "software")
-            return true;
-    }
-#if defined(Q_OS_WIN)
-    HMODULE handle = QNativeInterface::QWGLContext::openGLModuleHandle();
-    wchar_t path[MAX_PATH];
-    DWORD size = GetModuleFileName(handle, path, MAX_PATH);
-    QFileInfo openGLModule(QString::fromWCharArray(path, size));
-    return openGLModule.fileName().contains(QLatin1StringView("opengl32sw"), Qt::CaseInsensitive);
-#else
-    return false;
-#endif
-}
-
-static std::string getGLType(bool enableGLSoftwareRendering, bool disableGpu)
+static std::string getGLType(bool disableGpu)
 {
     if (disableGpu || !usingSupportedSGBackend())
         return gl::kGLImplementationDisabledName;
 
-#if defined(Q_OS_MACOS)
     return gl::kGLImplementationANGLEName;
-#else
-#if defined(Q_OS_WIN)
-    if (QQuickWindow::graphicsApi() == QSGRendererInterface::Direct3D11
-        || QQuickWindow::graphicsApi() == QSGRendererInterface::Vulkan) {
-        return gl::kGLImplementationANGLEName;
-    }
-#endif
-
-    if (usingSoftwareDynamicGL() && !enableGLSoftwareRendering)
-        return gl::kGLImplementationDisabledName;
-
-    if (!qt_gl_global_share_context() || !qt_gl_global_share_context()->isValid()) {
-        qWarning("WebEngineContext is used before QtWebEngineQuick::initialize() or OpenGL context "
-                 "creation failed.");
-        return gl::kGLImplementationDisabledName;
-    }
-
-    const QSurfaceFormat sharedFormat = qt_gl_global_share_context()->format();
-
-    switch (sharedFormat.renderableType()) {
-    case QSurfaceFormat::OpenGL:
-        if (sharedFormat.profile() == QSurfaceFormat::CoreProfile) {
-            qWarning("An OpenGL Core Profile was requested, but it is not supported "
-                     "on the current platform. Falling back to a non-Core profile. "
-                     "Note that this might cause rendering issues.");
-        }
-        return gl::kGLImplementationDesktopName;
-    case QSurfaceFormat::OpenGLES:
-        return gl::kGLImplementationEGLName;
-    case QSurfaceFormat::OpenVG:
-    case QSurfaceFormat::DefaultRenderableType:
-    default:
-        // Shared contex created but no rederable type set.
-        qWarning("Unsupported rendering surface format. Please open bug report at "
-                 "https://bugreports.qt.io");
-    }
-
-    return gl::kGLImplementationDisabledName;
-#endif // defined(Q_OS_MACOS)
 }
-#else
-static std::string getGLType(bool /*enableGLSoftwareRendering*/, bool disableGpu)
-{
-    if (disableGpu || !usingSupportedSGBackend())
-        return gl::kGLImplementationDisabledName;
-
-#if defined(Q_OS_MACOS)
-    return gl::kGLImplementationANGLEName;
-#elif defined(Q_OS_WIN)
-    if (QQuickWindow::graphicsApi() == QSGRendererInterface::Direct3D11
-        || QQuickWindow::graphicsApi() == QSGRendererInterface::Vulkan) {
-        return gl::kGLImplementationANGLEName;
-    }
-#endif
-    return gl::kGLImplementationDisabledName;
-}
-#endif // QT_CONFIG(opengl)
 
 static std::string getVulkanType(base::CommandLine *cmd)
 {
@@ -495,70 +426,38 @@ void dummyGetPluginCallback(const std::vector<content::WebPluginInfo>&)
 static void logContext(const std::string &glType, base::CommandLine *cmd)
 {
     if (Q_UNLIKELY(webEngineContextLog().isDebugEnabled())) {
-        QStringList log;
-        log << QLatin1StringView("\n");
+        QString log;
+        log += u'\n';
 
-        log << QLatin1StringView("Chromium GL Backend: " + glType) << QLatin1StringView("\n");
-        log << QLatin1StringView("Chromium ANGLE Backend: " + getAngleType(glType, cmd))
-            << QLatin1StringView("\n");
-        log << QLatin1StringView("Chromium Vulkan Backend: " + getVulkanType(cmd))
-            << QLatin1StringView("\n");
-        log << QLatin1StringView("\n");
+        log += "Chromium GL Backend: "_L1 + QLatin1StringView(glType) + "\n"_L1;
+        log += "Chromium ANGLE Backend: "_L1 + QLatin1StringView(getAngleType(glType, cmd)) + u'\n';
+        log += "Chromium Vulkan Backend: "_L1 + QLatin1StringView(getVulkanType(cmd)) + u'\n';
+        log += u'\n';
 
-        log << QLatin1StringView("QSG RHI Backend:") << QSGRhiSupport::instance()->rhiBackendName()
-            << QLatin1StringView("\n");
-        log << QLatin1StringView("QSG RHI Backend Supported:")
-            << QLatin1StringView(usingSupportedSGBackend() ? "yes" : "no")
-            << QLatin1StringView("\n");
-        log << QLatin1StringView("GPU Vendor: "
-                                 + GPUInfo::vendorToString(GPUInfo::instance()->vendor()))
-            << QLatin1StringView("\n");
-        log << QLatin1StringView("\n");
+        log += "QSG RHI Backend: "_L1 + QSGRhiSupport::instance()->rhiBackendName() + u'\n';
+        log += "QSG RHI Backend Supported: "_L1 + (usingSupportedSGBackend() ? "yes"_L1 : "no"_L1)
+                + u'\n';
+        log += "QSG RHI Device: "_L1 + GPUInfo::instance()->deviceName() + u'\n';
+        log += "QSG RHI GPU Vendor: "_L1
+                + QLatin1StringView(GPUInfo::vendorToString(GPUInfo::instance()->vendor())) + u'\n';
+        log += u'\n';
 
 #if QT_CONFIG(opengl)
-#if defined(USE_OZONE)
-        log << QLatin1StringView("Using GLX:")
-            << QLatin1StringView(GLContextHelper::getGlxPlatformInterface() ? "yes" : "no")
-            << QLatin1StringView("\n");
-        log << QLatin1StringView("Using EGL:")
-            << QLatin1StringView(GLContextHelper::getEglPlatformInterface() ? "yes" : "no")
-            << QLatin1StringView("\n");
-#endif
-#if defined(USE_OZONE) || defined(Q_OS_WIN)
-        log << QLatin1StringView("Using Shared GL:")
-            << QLatin1StringView(qt_gl_global_share_context() ? "yes" : "no")
-            << QLatin1StringView("\n");
-        if (qt_gl_global_share_context()) {
-            log << QLatin1StringView("Using Software Dynamic GL:")
-                << QLatin1StringView(usingSoftwareDynamicGL() ? "yes" : "no")
-                << QLatin1StringView("\n");
-
-            const QSurfaceFormat sharedFormat = qt_gl_global_share_context()
-                    ? qt_gl_global_share_context()->format()
-                    : QSurfaceFormat::defaultFormat();
-            const auto profile =
-                    QMetaEnum::fromType<QSurfaceFormat::OpenGLContextProfile>().valueToKey(
-                            sharedFormat.profile());
-            const auto type = QMetaEnum::fromType<QSurfaceFormat::RenderableType>().valueToKey(
-                    sharedFormat.renderableType());
-            log << QLatin1StringView("Surface Type:") << QLatin1StringView(type)
-                << QLatin1StringView("\n");
-            log << QLatin1StringView("Surface Profile:") << QLatin1StringView(profile)
-                << QLatin1StringView("\n");
-            log << QStringLiteral("Surface Version: %1.%2\n")
-                            .arg(sharedFormat.majorVersion())
-                            .arg(sharedFormat.minorVersion());
-        }
-        log << QLatin1StringView("\n");
-#endif // defined(USE_OZONE) || defined(Q_OS_WIN)
+#if BUILDFLAG(IS_OZONE)
+        log += "Using GLX: "_L1 + (OzoneUtilQt::usingGLX() ? "yes"_L1 : "no"_L1) + u'\n';
+        log += "Using EGL: "_L1 + (OzoneUtilQt::usingEGL() ? "yes"_L1 : "no"_L1) + u'\n';
+#endif // BUILDFLAG(IS_OZONE)
+        log += "Using Shared GL: "_L1 + (QOpenGLContext::globalShareContext() ? "yes"_L1 : "no"_L1)
+                + u'\n';
+        log += u'\n';
 #endif // QT_CONFIG(opengl)
 
-        log << QLatin1StringView("Init Parameters:\n");
+        log += "Init Parameters:\n"_L1;
         const base::CommandLine::SwitchMap switchMap = cmd->GetSwitches();
         for (const auto &pair : switchMap)
-            log << QStringLiteral(" *  %1 %2\n").arg(toQt(pair.first)).arg(toQt(pair.second));
+            log += " *  "_L1 + toQt(pair.first) + u' ' + toQt(pair.second) + u'\n';
 
-        qCDebug(webEngineContextLog) << qPrintable(log.join(QLatin1Char(' ')));
+        qCDebug(webEngineContextLog, "%ls", qUtf16Printable(log));
     }
 }
 
@@ -570,14 +469,14 @@ static void setupProxyPac(base::CommandLine *commandLine)
         QUrl pac_url(toQt(commandLine->GetSwitchValueASCII(switches::kProxyPacUrl)));
         if (pac_url.isValid()
             && (pac_url.isLocalFile()
-                || !pac_url.scheme().compare(QLatin1StringView("qrc"), Qt::CaseInsensitive))) {
+                || !pac_url.scheme().compare("qrc"_L1, Qt::CaseInsensitive))) {
             QFile file;
             if (pac_url.isLocalFile())
                 file.setFileName(pac_url.toLocalFile());
             else
                 file.setFileName(pac_url.path().prepend(QLatin1Char(':')));
             if (file.exists() && file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-                QByteArray ba = file.readAll();
+                const QByteArray ba = file.readAll();
                 commandLine->RemoveSwitch(switches::kProxyPacUrl);
                 commandLine->AppendSwitchASCII(switches::kProxyPacUrl,
                         ba.toBase64().prepend("data:application/x-javascript-config;base64,").toStdString());
@@ -594,6 +493,13 @@ static void cleanupVizProcess()
     content::GetHostFrameSinkManager()->SetConnectionLostCallback(base::DoNothing());
     auto factory = static_cast<content::VizProcessTransportFactory*>(content::ImageTransportFactory::GetInstance());
     factory->PrepareForShutDown();
+
+    // Wait for viz destroy tasks to be completed on the GPU thread.
+    base::WaitableEvent event(base::WaitableEvent::ResetPolicy::MANUAL,
+                              base::WaitableEvent::InitialState::NOT_SIGNALED);
+    gpuChildThread->main_thread_runner()->PostTask(
+            FROM_HERE, base::BindOnce([](base::WaitableEvent *event) { event->Signal(); }, &event));
+    event.Wait();
 }
 
 static QStringList parseEnvCommandLine(const QString &cmdLine)
@@ -655,13 +561,22 @@ void WebEngineContext::destroyProfileAdapter()
     }
 }
 
+bool WebEngineContext::profileExistOnPath(const QString &dataPath)
+{
+    for (auto existingProfileAdapter : m_profileAdapters) {
+        if (existingProfileAdapter->dataPath() == dataPath)
+            return true;
+    }
+    return false;
+}
+
 void WebEngineContext::addProfileAdapter(ProfileAdapter *profileAdapter)
 {
     Q_ASSERT(!m_profileAdapters.contains(profileAdapter));
     const QString path = profileAdapter->dataPath();
     if (!profileAdapter->isOffTheRecord() && !profileAdapter->storageName().isEmpty()) {
-        for (auto profileAdapter : m_profileAdapters) {
-            if (profileAdapter->dataPath() == path) {
+        for (auto existingProfileAdapter : m_profileAdapters) {
+            if (existingProfileAdapter->dataPath() == path) {
                 // QTBUG-66068
                 qWarning("Using the same data path for profile, may corrupt the data.");
                 break;
@@ -731,11 +646,6 @@ void WebEngineContext::destroy()
 
     // Destroy the main runner, this stops main message loop
     m_browserRunner.reset();
-
-#if QT_CONFIG(opengl) && (defined(USE_OZONE) || defined(Q_OS_WIN))
-    // gpu thread is no longer around, so no more context is used, remove the helper
-    GLContextHelper::destroy();
-#endif
 
     // These would normally be in the content-runner, but we allocated them separately:
     m_mojoIpcSupport.reset();
@@ -883,10 +793,6 @@ WebEngineContext::WebEngineContext()
     base::apple::SetOverrideAmIBundled(false);
 #endif
 
-    base::ThreadPoolInstance::Create("Browser");
-    m_contentRunner = content::ContentMainRunner::Create();
-    m_browserRunner = content::BrowserMainRunner::Create();
-
 #ifdef Q_OS_LINUX
     // Call qputenv before BrowserMainRunnerImpl::Initialize is called.
     // http://crbug.com/245466
@@ -924,7 +830,7 @@ WebEngineContext::WebEngineContext()
 #endif
     } else {
         parsedCommandLine->AppendSwitch(sandbox::policy::switches::kNoSandbox);
-        qInfo() << "Sandboxing disabled by user.";
+        qInfo("Sandboxing disabled by user.");
     }
 
     // Do not advertise a feature we have removed at compile time
@@ -940,8 +846,11 @@ WebEngineContext::WebEngineContext()
     enableFeatures.push_back("ScreenCaptureKitMacScreen");
 #endif // defined(Q_OS_MACOS)
 
-    // Avoid crashing when websites tries using this feature (since 83)
-    disableFeatures.push_back(features::kInstalledApp.name);
+    // By default the Touch Events API support (presence of 'ontouchstart' in 'window' object)
+    // will be determined based on the availability of touch screen devices.
+    if (!parsedCommandLine->HasSwitch(switches::kTouchEventFeatureDetection))
+        parsedCommandLine->AppendSwitchASCII(switches::kTouchEventFeatureDetection,
+                                             switches::kTouchEventFeatureDetectionAuto);
 
     // Not implemented but it overrides the devtools eyedropper
     // Should be sync with kEyeDropper base::Feature
@@ -950,39 +859,42 @@ WebEngineContext::WebEngineContext()
 
     // Explicitly tell Chromium about default-on features we do not support
     disableFeatures.push_back(features::kBackgroundFetch.name);
+    disableFeatures.push_back(features::kInstalledApp.name);
     parsedCommandLine->AppendSwitchASCII(switches::kDisableBlinkFeatures, "WebOTP");
     disableFeatures.push_back(features::kWebOTP.name);
     disableFeatures.push_back(features::kWebPayments.name);
     disableFeatures.push_back(features::kWebUsb.name);
 
+    // Currently causing more issues than it fixes.
+    // Probably will be removed in 134, tst_origins should be updated in this case.
+    disableFeatures.push_back(url::kStandardCompliantNonSpecialSchemeURLParsing.name);
+
     if (useEmbeddedSwitches) {
         // embedded switches are based on the switches for Android, see content/browser/android/content_startup_flags.cc
         enableFeatures.push_back(features::kOverlayScrollbar.name);
         parsedCommandLine->AppendSwitch(switches::kEnableViewport);
+        parsedCommandLine->AppendSwitch(input::switches::kValidateInputEventStream);
         parsedCommandLine->AppendSwitch(cc::switches::kDisableCompositedAntialiasing);
     }
 
-#if defined(USE_OZONE)
-    if (GPUInfo::instance()->vendor() == GPUInfo::Nvidia) {
+#if BUILDFLAG(IS_OZONE)
+    if (!isGbmSupported()) {
         disableFeatures.push_back(media::kVaapiVideoDecodeLinux.name);
         parsedCommandLine->AppendSwitch(switches::kDisableGpuMemoryBufferVideoFrames);
     }
 
+    bool usingANGLE = true;
+    // ANGLE is the default but it can be overridden from command line.
+    if (parsedCommandLine->HasSwitch(switches::kUseGL)) {
+        usingANGLE = (parsedCommandLine->GetSwitchValueASCII(switches::kUseGL)
+                      == gl::kGLImplementationANGLEName);
+    }
+
 #if QT_CONFIG(webengine_vulkan)
-    if (QQuickWindow::graphicsApi() == QSGRendererInterface::OpenGL) {
-        // FIXME: We assume that ANGLE is explicitly enabled on Linux.
-        //        Make sure to reimplement fallback if ANGLE becomes the default.
-        bool usingANGLE = false;
-        if (parsedCommandLine->HasSwitch(switches::kUseGL))
-            usingANGLE = (parsedCommandLine->GetSwitchValueASCII(switches::kUseGL)
-                          == gl::kGLImplementationANGLEName);
-        if (usingANGLE && GPUInfo::instance()->vendor() == GPUInfo::Nvidia) {
-            qWarning("Disable ANGLE because GBM is not supported with the current configuration. "
+    if (QQuickWindow::graphicsApi() == QSGRendererInterface::OpenGL && usingSupportedSGBackend()) {
+        if (usingANGLE && !isGbmSupported()) {
+            qWarning("GBM is not supported with the current configuration. "
                      "Fallback to Vulkan rendering in Chromium.");
-            parsedCommandLine->RemoveSwitch(switches::kUseANGLE);
-            parsedCommandLine->RemoveSwitch(switches::kUseGL);
-            parsedCommandLine->AppendSwitchASCII(switches::kUseGL,
-                                                 gl::kGLImplementationDesktopName);
             parsedCommandLine->AppendSwitchASCII(switches::kUseVulkan,
                                                  switches::kVulkanImplementationNameNative);
             enableFeatures.push_back(features::kVulkan.name);
@@ -990,9 +902,10 @@ WebEngineContext::WebEngineContext()
     }
 
     if (QQuickWindow::graphicsApi() == QSGRendererInterface::Vulkan && usingSupportedSGBackend()) {
-        enableFeatures.push_back(features::kVulkan.name);
         parsedCommandLine->AppendSwitchASCII(switches::kUseVulkan,
                                              switches::kVulkanImplementationNameNative);
+        enableFeatures.push_back(features::kVulkan.name);
+
         const char deviceExtensionsVar[] = "QT_VULKAN_DEVICE_EXTENSIONS";
         QByteArrayList requiredDeviceExtensions = { "VK_KHR_external_memory_fd",
                                                     "VK_EXT_external_memory_dma_buf",
@@ -1005,18 +918,17 @@ WebEngineContext::WebEngineContext()
                     found++;
             }
             if (found != requiredDeviceExtensions.size()) {
-                qWarning().nospace()
-                        << "Vulkan rendering may fail because " << deviceExtensionsVar
-                        << " environment variable is already set but it doesn't contain"
-                        << " some of the required Vulkan device extensions:\n"
-                        << qPrintable(requiredDeviceExtensions.join('\n'));
+                qWarning("Vulkan rendering may fail because %s environment variable is already "
+                         "set but it doesn't contain some of the required Vulkan device "
+                         "extensions:\n%s",
+                         deviceExtensionsVar, requiredDeviceExtensions.join('\n').constData());
             }
         } else {
             qputenv(deviceExtensionsVar, requiredDeviceExtensions.join(';'));
         }
     }
 #endif // QT_CONFIG(webengine_vulkan)
-#endif // defined(USE_OZONE)
+#endif // BUILDFLAG(IS_OZONE)
 
 #if defined(Q_OS_WIN)
     if (QQuickWindow::graphicsApi() == QSGRendererInterface::Direct3D11
@@ -1033,10 +945,6 @@ WebEngineContext::WebEngineContext()
 
     initializeFeatureList(parsedCommandLine, enableFeatures, disableFeatures);
 
-#if QT_CONFIG(opengl) && (defined(USE_OZONE) || defined(Q_OS_WIN))
-    GLContextHelper::initialize();
-#endif
-
     // If user requested GL support instead of using Skia rendering to
     // bitmaps, use software rendering via software OpenGL. This might be less
     // performant, but at least provides WebGL support.
@@ -1046,7 +954,7 @@ WebEngineContext::WebEngineContext()
     if (parsedCommandLine->HasSwitch(switches::kUseGL))
         glType = parsedCommandLine->GetSwitchValueASCII(switches::kUseGL);
     else {
-        glType = getGLType(enableGLSoftwareRendering, disableGpu);
+        glType = getGLType(disableGpu);
         parsedCommandLine->AppendSwitchASCII(switches::kUseGL, glType);
     }
 
@@ -1057,28 +965,9 @@ WebEngineContext::WebEngineContext()
             parsedCommandLine->AppendSwitch(switches::kDisableGpuRasterization);
             parsedCommandLine->AppendSwitch(switches::kIgnoreGpuBlocklist);
         }
-#if QT_CONFIG(opengl)
         if (glType != gl::kGLImplementationANGLEName) {
-            QOpenGLContext *shareContext = QOpenGLContext::globalShareContext();
-            Q_ASSERT(shareContext);
-            const QSurfaceFormat sharedFormat = shareContext->format();
-            if (sharedFormat.profile() == QSurfaceFormat::CompatibilityProfile)
-                parsedCommandLine->AppendSwitch(switches::kCreateDefaultGLContext);
-#if defined(Q_OS_WIN)
-            // This switch is used in Chromium's gl_context_wgl.cc file to determine whether to create
-            // an OpenGL Core Profile context. If the switch is not set, it would always try to create a
-            // Core Profile context, even if Qt uses a legacy profile, which causes
-            // "Could not share GL contexts" warnings, because it's not possible to share between Core and
-            // legacy profiles. See GLContextWGL::Initialize().
-            if (sharedFormat.renderableType() == QSurfaceFormat::OpenGL
-                && sharedFormat.profile() != QSurfaceFormat::CoreProfile) {
-                gl::GlWorkarounds workarounds = gl::GetGlWorkarounds();
-                workarounds.disable_es3gl_context = true;
-                gl::SetGlWorkarounds(workarounds);
-            }
-#endif
+            qWarning("Only --use-gl=angle is supported on this platform.");
         }
-#endif //QT_CONFIG(opengl)
     } else if (!disableGpu) {
         parsedCommandLine->AppendSwitch(switches::kDisableGpu);
     }
@@ -1097,6 +986,7 @@ WebEngineContext::WebEngineContext()
         contentMainParams.sandbox_info = &sandbox_info;
     }
 #endif
+    m_contentRunner = content::ContentMainRunner::Create();
     m_contentRunner->Initialize(std::move(contentMainParams));
 
     mojo::core::Configuration mojoConfiguration;
@@ -1107,11 +997,16 @@ WebEngineContext::WebEngineContext()
     m_mainDelegate->PreBrowserMain();
     base::MessagePump::OverrideMessagePumpForUIFactory(messagePumpFactory);
     content::BrowserTaskExecutor::Create();
+    auto* provider = m_mainDelegate->CreateVariationsIdsProvider();
+    if (!provider) {
+        variations::VariationsIdsProvider::Create(
+                variations::VariationsIdsProvider::Mode::kUseSignedInState);
+    }
     m_mainDelegate->PostEarlyInitialization({});
     content::StartBrowserThreadPool();
     content::BrowserTaskExecutor::PostFeatureListSetup();
     tracing::InitTracingPostThreadPoolStartAndFeatureList(false);
-    base::PowerMonitor::Initialize(std::make_unique<base::PowerMonitorDeviceSource>());
+    base::PowerMonitor::GetInstance()->Initialize(MakePowerMonitorDeviceSource());
     content::ProcessVisibilityTracker::GetInstance();
     m_discardableSharedMemoryManager = std::make_unique<discardable_memory::DiscardableSharedMemoryManager>();
 
@@ -1125,6 +1020,7 @@ WebEngineContext::WebEngineContext()
 
     content::MainFunctionParams mainParams(base::CommandLine::ForCurrentProcess());
     mainParams.startup_data = std::move(startupData);
+    m_browserRunner = content::BrowserMainRunner::Create();
     m_browserRunner->Initialize(std::move(mainParams));
 
     m_devtoolsServer.reset(new DevToolsServerQt());
@@ -1182,7 +1078,7 @@ base::CommandLine *WebEngineContext::initCommandLine(bool &useEmbeddedSwitches,
     }
 
     base::CommandLine *parsedCommandLine = base::CommandLine::ForCurrentProcess();
-    int index = appArgs.indexOf(QRegularExpression(QLatin1StringView("--webEngineArgs"),
+    int index = appArgs.indexOf(QRegularExpression(u"--webEngineArgs"_s,
                                                    QRegularExpression::CaseInsensitiveOption));
     if (qEnvironmentVariableIsSet(kChromiumFlagsEnv)) {
         appArgs = appArgs.mid(0, 1); // Take application name and drop the rest
@@ -1197,27 +1093,26 @@ base::CommandLine *WebEngineContext::initCommandLine(bool &useEmbeddedSwitches,
         }
     }
 #if defined(QTWEBENGINE_EMBEDDED_SWITCHES)
-    useEmbeddedSwitches = !appArgs.contains(QStringLiteral("--disable-embedded-switches"));
+    useEmbeddedSwitches = !appArgs.contains("--disable-embedded-switches"_L1);
 #else
-    useEmbeddedSwitches = appArgs.contains(QStringLiteral("--enable-embedded-switches"));
+    useEmbeddedSwitches = appArgs.contains("--enable-embedded-switches"_L1);
 #endif
-    enableGLSoftwareRendering =
-            appArgs.removeAll(QStringLiteral("--enable-webgl-software-rendering"));
-    appArgs.removeAll(QStringLiteral("--disable-embedded-switches"));
-    appArgs.removeAll(QStringLiteral("--enable-embedded-switches"));
+    enableGLSoftwareRendering = appArgs.removeAll("--enable-webgl-software-rendering"_L1);
+    appArgs.removeAll("--disable-embedded-switches"_L1);
+    appArgs.removeAll("--enable-embedded-switches"_L1);
 
     bool isRemoteDebugPort =
             (-1
-             != appArgs.indexOf(QRegularExpression(QStringLiteral("--remote-debugging-port=.*"),
+             != appArgs.indexOf(QRegularExpression(u"--remote-debugging-port=.*"_s,
                                                    QRegularExpression::CaseInsensitiveOption)))
             || !qEnvironmentVariable("QTWEBENGINE_REMOTE_DEBUGGING").isEmpty();
     bool isRemoteAllowOrigins =
             (-1
-             != appArgs.indexOf(QRegularExpression(QStringLiteral("--remote-allow-origins=.*"),
+             != appArgs.indexOf(QRegularExpression(u"--remote-allow-origins=.*"_s,
                                                    QRegularExpression::CaseInsensitiveOption)));
 
     if (isRemoteDebugPort && !isRemoteAllowOrigins) {
-        appArgs.append(QStringLiteral("--remote-allow-origins=*"));
+        appArgs.append(u"--remote-allow-origins=*"_s);
         qWarning("Added {--remote-allow-origins=*} to command-line arguments "
                  "to avoid web socket connection errors during remote debugging.");
     }
@@ -1240,6 +1135,46 @@ bool WebEngineContext::closingDown()
 {
     return m_closingDown;
 }
+
+#if BUILDFLAG(IS_OZONE)
+bool WebEngineContext::isGbmSupported()
+{
+    static bool supported = []() {
+        const static char kForceGbmEnv[] = "QTWEBENGINE_FORCE_USE_GBM";
+        if (Q_UNLIKELY(qEnvironmentVariableIsSet(kForceGbmEnv))) {
+            qWarning("%s environment variable is set and it is for debugging purposes only.",
+                     kForceGbmEnv);
+            bool ok;
+            int forceGbm = qEnvironmentVariableIntValue(kForceGbmEnv, &ok);
+            if (ok) {
+                qWarning("GBM support is force %s.", forceGbm != 0 ? "enabled" : "disabled");
+                return (forceGbm != 0);
+            }
+
+            qWarning("Ignoring invalid value of %s and do not force GBM. "
+                     "Use 0 to force disable or 1 to force enable.",
+                     kForceGbmEnv);
+        }
+
+        if (GPUInfo::instance()->vendor() == GPUInfo::Nvidia) {
+            // FIXME: This disables GBM for Nvidia. Remove this when Nvidia fixes its GBM support.
+            //
+            // "Buffer allocation and submission to DRM KMS using gbm is not currently supported."
+            // See: https://download.nvidia.com/XFree86/Linux-x86_64/570.86.16/README/kms.html"
+            //
+            // Chromium uses GBM to allocate scanout buffers. Scanout requires DRM KMS. If KMS is
+            // enabled, gbm_device and gbm_buffer are created without any issues but rendering to
+            // the buffer will malfunction. It is not known how to detect this problem before
+            // rendering so we just disable GBM for Nvidia.
+            return false;
+        }
+
+        return true;
+    }();
+
+    return supported;
+}
+#endif
 
 void WebEngineContext::registerMainThreadFactories()
 {
@@ -1268,7 +1203,7 @@ const char *qWebEngineChromiumVersion() noexcept
 
 const char *qWebEngineChromiumSecurityPatchVersion() noexcept
 {
-    return "132.0.6834.111"; // FIXME: Remember to update
+    return "139.0.7258.67"; // FIXME: Remember to update
 }
 
 QT_END_NAMESPACE

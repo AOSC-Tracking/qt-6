@@ -48,6 +48,7 @@ class Q_WEBENGINEQUICK_EXPORT QQuickWebEngineProfile : public QObject {
 
 public:
     QQuickWebEngineProfile(QObject *parent = nullptr);
+    explicit QQuickWebEngineProfile(const QString &storageName, QObject *parent = nullptr);
     ~QQuickWebEngineProfile();
 
     enum HttpCacheType {
@@ -167,6 +168,7 @@ private:
     friend class QQuickWebEngineSingleton;
     friend class QQuickWebEngineViewPrivate;
     friend class QQuickWebEngineView;
+    friend class QQuickWebEngineProfilePrototype;
     QScopedPointer<QQuickWebEngineProfilePrivate> d_ptr;
 };
 

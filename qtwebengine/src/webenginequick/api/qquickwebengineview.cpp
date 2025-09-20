@@ -516,8 +516,7 @@ static QQuickWebEngineView::Feature toDeprecatedFeature(QWebEnginePermission::Pe
         break;
     }
 
-    Q_UNREACHABLE();
-    return QQuickWebEngineView::Feature(-1);
+    Q_UNREACHABLE_RETURN(QQuickWebEngineView::Feature(-1));
 }
 QT_WARNING_POP
 #endif // QT_DEPRECATED_SINCE(6, 8)
@@ -879,6 +878,7 @@ QObject *QQuickWebEngineViewPrivate::accessibilityParentObject()
 
 ProfileAdapter *QQuickWebEngineViewPrivate::profileAdapter()
 {
+    initializeProfile();
     return m_profile->d_ptr->profileAdapter();
 }
 
@@ -1381,7 +1381,7 @@ void QQuickWebEngineViewPrivate::printToPdf(
         const QPageRanges &ranges, quint64 frameId)
 {
     adapter->printToPDFCallbackResult(std::move(callback), layout, ranges, /*colorMode*/ true,
-                                      /*useCustomMargins*/ true, frameId);
+                                      frameId);
 }
 
 void QQuickWebEngineViewPrivate::didPrintPageToPdf(const QString &filePath, bool success)
@@ -1450,8 +1450,9 @@ QQuickWebEngineViewPrivate::createTouchHandleDelegate(const QMap<int, QImage> &i
 {
     Q_Q(QQuickWebEngineView);
     // lifecycle managed by Chromium's TouchHandleDrawable
-    QQuickWebEngineTouchHandle *handle = new QQuickWebEngineTouchHandle();
+    QQuickWebEngineTouchHandle *handle(nullptr);
     if (m_touchHandleDelegate) {
+        handle = new QQuickWebEngineTouchHandle();
         QQmlContext *qmlContext = QQmlEngine::contextForObject(q);
         QQmlContext *context = new QQmlContext(qmlContext, handle);
         context->setContextObject(handle);
@@ -1462,7 +1463,9 @@ QQuickWebEngineViewPrivate::createTouchHandleDelegate(const QMap<int, QImage> &i
         handle->setItem(item, false);
     } else {
         QQuickItem *item = ui()->createTouchHandle();
-        Q_ASSERT(item);
+        if (!item) {
+            return nullptr;
+        }
         QQmlEngine *engine = qmlEngine(item);
         Q_ASSERT(engine);
         QQuickWebEngineTouchHandleProvider *touchHandleProvider =
@@ -1470,6 +1473,7 @@ QQuickWebEngineViewPrivate::createTouchHandleDelegate(const QMap<int, QImage> &i
                         engine->imageProvider(QQuickWebEngineTouchHandleProvider::identifier()));
         Q_ASSERT(touchHandleProvider);
         touchHandleProvider->init(images);
+        handle = new QQuickWebEngineTouchHandle();
         handle->setItem(item, true);
     }
     return handle;
@@ -1681,7 +1685,7 @@ void QQuickWebEngineView::printToPdf(const QJSValue &callback, PrintedPageSizeId
 
     // Call back with null result.
     QJSValueList args;
-    args.append(QJSValue(QByteArray().data()));
+    args.append(QJSValue(QLatin1String("")));
     QJSValue callbackCopy = callback;
     callbackCopy.call(args);
 #endif

@@ -145,7 +145,7 @@ void QVideoWindowPrivate::initRhi()
     }
 #endif
 
-#if defined(Q_OS_MACOS) || defined(Q_OS_IOS)
+#if QT_CONFIG(metal)
     if (m_graphicsApi == QRhi::Metal) {
         QRhiMetalInitParams params;
         m_rhi.reset(QRhi::create(QRhi::Metal, &params, rhiFlags));
@@ -384,7 +384,7 @@ void QVideoWindowPrivate::render()
     if (m_subtitleDirty || m_subtitleLayout.videoSize != subtitleRect.size())
         updateSubtitle(rub, subtitleRect.size());
 
-    const float mirrorFrame = frameTransformation.mirrorredHorizontallyAfterRotation ? -1.f : 1.f;
+    const float mirrorFrame = frameTransformation.mirroredHorizontallyAfterRotation ? -1.f : 1.f;
     const float xscale = mirrorFrame * float(videoRect.width()) / float(rect.width());
     const float yscale = -1.f * float(videoRect.height()) / float(rect.height());
 
@@ -401,7 +401,9 @@ void QVideoWindowPrivate::render()
     }
 
     QByteArray uniformData;
-    QVideoTextureHelper::updateUniformData(&uniformData, m_texturePool.currentFrame().surfaceFormat(), m_texturePool.currentFrame(), transform, 1.f, maxNits);
+    QVideoTextureHelper::updateUniformData(&uniformData, m_rhi.get(),
+                                           m_texturePool.currentFrame().surfaceFormat(),
+                                           m_texturePool.currentFrame(), transform, 1.f, maxNits);
     rub->updateDynamicBuffer(m_uniformBuf.get(), 0, uniformData.size(), uniformData.constData());
 
     if (m_hasSubtitle) {
@@ -412,7 +414,8 @@ void QVideoWindowPrivate::render()
 
         QByteArray uniformData;
         QVideoFrameFormat fmt(m_subtitleLayout.bounds.size().toSize(), QVideoFrameFormat::Format_ARGB8888);
-        QVideoTextureHelper::updateUniformData(&uniformData, fmt, QVideoFrame(), st, 1.f);
+        QVideoTextureHelper::updateUniformData(&uniformData, m_rhi.get(), fmt, QVideoFrame(), st,
+                                               1.f);
         rub->updateDynamicBuffer(m_subtitleUniformBuf.get(), 0, uniformData.size(), uniformData.constData());
     }
 

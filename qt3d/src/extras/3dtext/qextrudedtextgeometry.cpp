@@ -184,7 +184,7 @@ void QExtrudedTextGeometryPrivate::init()
  */
 
 /*!
- * \qmlproperty float ExtrudedTextGeometry::depth
+ * \qmlproperty real ExtrudedTextGeometry::depth
  *
  * Holds the extrusion depth of the text.
  */

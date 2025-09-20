@@ -12,9 +12,25 @@
 #include "base/types/cxx23_to_underlying.h"
 #include "media/base/container_names.h"
 #include "media/base/media_switches.h"
+#include "media/base/supported_types.h"
 #include "media/ffmpeg/ffmpeg_common.h"
 
 namespace media {
+
+// Kill switches in case things explode. Remove after M132.
+// TODO(crbug.com/355485812): Re-enable this flag.
+BASE_FEATURE(kAllowOnlyAudioCodecsDuringDemuxing,
+             "AllowOnlyAudioCodecsDuringDemuxing",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(USE_SYSTEM_FFMPEG)
+BASE_FEATURE(kForbidH264ParsingDuringDemuxing,
+             "ForbidH264ParsingDuringDemuxing",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#else
+BASE_FEATURE(kForbidH264ParsingDuringDemuxing,
+             "ForbidH264ParsingDuringDemuxing",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#endif
 
 // Internal buffer size used by AVIO for reading.
 // TODO(dalecurtis): Experiment with this buffer size and measure impact on
@@ -56,7 +72,7 @@ static int64_t AVIOSeekOperation(void* opaque, int64_t offset, int whence) {
       break;
 
     default:
-      NOTREACHED();
+      NOTREACHED_IN_MIGRATION();
   }
   return new_offset;
 }
@@ -78,11 +94,6 @@ static const char* GetAllowedDemuxers() {
                                                  "flac", "mp3",      "mov"};
 #if BUILDFLAG(USE_PROPRIETARY_CODECS)
     allowed_demuxers.push_back("aac");
-#if BUILDFLAG(IS_CHROMEOS)
-    if (base::FeatureList::IsEnabled(kCrOSLegacyMediaFormats)) {
-      allowed_demuxers.push_back("avi");
-    }
-#endif
 #endif
     return base::JoinString(allowed_demuxers, ",");
   }());
@@ -113,71 +124,23 @@ FFmpegGlue::FFmpegGlue(FFmpegURLProtocol* protocol) {
   // Enable fast, but inaccurate seeks for MP3.
   format_context_->flags |= AVFMT_FLAG_FAST_SEEK;
 
+  // We don't allow H.264 parsing during demuxing since we have our own parser
+  // and the ffmpeg one increases memory usage unnecessarily.
+#if !BUILDFLAG(IS_QTWEBENGINE) && !BUILDFLAG(USE_SYSTEM_FFMPEG)
+  if (base::FeatureList::IsEnabled(kForbidH264ParsingDuringDemuxing)) {
+    format_context_->flags |= AVFMT_FLAG_NOH264PARSE;
+  }
+#endif
+
   // Ensures format parsing errors will bail out. From an audit on 11/2017, all
   // instances were real failures. Solves bugs like http://crbug.com/710791.
   format_context_->error_recognition |= AV_EF_EXPLODE;
 
   format_context_->pb = avio_context_.get();
 
-  if (base::FeatureList::IsEnabled(kFFmpegAllowLists)) {
-    // Enhance security by forbidding ffmpeg from decoding / demuxing codecs and
-    // containers which should be unsupported.
-    //
-    // Normally these aren't even compiled in, but during codec/container
-    // deprecations and when an external ffmpeg is used this adds extra
-    // security.
-    static const base::NoDestructor<std::string> kCombinedCodecList([]() {
-      return base::JoinString(
-          {GetAllowedAudioDecoders(), GetAllowedVideoDecoders()}, ",");
-    }());
-
-    // Note: FFmpeg will try to free these strings, so we must duplicate them.
-    format_context_->codec_whitelist = av_strdup(kCombinedCodecList->c_str());
-    format_context_->format_whitelist = av_strdup(GetAllowedDemuxers());
-  }
-}
-
-// static
-const char* FFmpegGlue::GetAllowedAudioDecoders() {
-  static const base::NoDestructor<std::string> kAllowedAudioCodecs([]() {
-    // This should match the configured lists in //third_party/ffmpeg.
-    std::string allowed_decoders(
-        "vorbis,libopus,flac,pcm_u8,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,"
-        "mp3,pcm_s16be,pcm_s24be,pcm_mulaw,pcm_alaw");
-#if BUILDFLAG(USE_PROPRIETARY_CODECS)
-    allowed_decoders += ",aac";
-#endif
-    return allowed_decoders;
-  }());
-  return kAllowedAudioCodecs->c_str();
-}
-
-// static
-const char* FFmpegGlue::GetAllowedVideoDecoders() {
-  static const base::NoDestructor<std::string> kAllowedVideoCodecs([]() {
-  // This should match the configured lists in //third_party/ffmpeg.
-#if BUILDFLAG(ENABLE_FFMPEG_VIDEO_DECODERS)
-    std::vector<std::string> allowed_decoders;
-    if (base::FeatureList::IsEnabled(kTheoraVideoCodec)) {
-      allowed_decoders.push_back("theora");
-    }
-    if (base::FeatureList::IsEnabled(kFFmpegDecodeOpaqueVP8)) {
-      allowed_decoders.push_back("vp8");
-    }
-#if BUILDFLAG(USE_PROPRIETARY_CODECS)
-    allowed_decoders.push_back("h264");
-#if BUILDFLAG(IS_CHROMEOS)
-    if (base::FeatureList::IsEnabled(kCrOSLegacyMediaFormats)) {
-      allowed_decoders.push_back("mpeg4");
-    }
-#endif  // BUILDFLAG(IS_CHROMEOS)
-#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
-    return base::JoinString(allowed_decoders, ",");
-#else
-    return std::string();
-#endif  // BUILDFLAG(ENABLE_FFMPEG_VIDEO_DECODERS)
-  }());
-  return kAllowedVideoCodecs->c_str();
+  // Note: FFmpeg will try to free these strings, so we must duplicate them.
+  format_context_->codec_whitelist = av_strdup(GetAllowedAudioDecoders());
+  format_context_->format_whitelist = av_strdup(GetAllowedDemuxers());
 }
 
 bool FFmpegGlue::OpenContext(bool is_local_file) {
@@ -187,10 +150,21 @@ bool FFmpegGlue::OpenContext(bool is_local_file) {
   // destruction path to avoid double frees.
   open_called_ = true;
 
+  // We need to set the WAV decoder max size to what it had previously been set
+  // to. The auto-selectable max size ends up at 64k, which is larger than the
+  // read size from a MultiBufferDataSource, causing demuxer init to never
+  // complete.
+  AVDictionary* options = nullptr;
+  av_dict_set(&options, "max_size", "4096", 0);
+
   // By passing nullptr for the filename (second parameter) we are telling
   // FFmpeg to use the AVIO context we setup from the AVFormatContext structure.
   const int ret =
-      avformat_open_input(&format_context_, nullptr, nullptr, nullptr);
+      avformat_open_input(&format_context_, nullptr, nullptr, &options);
+
+  if (options) {
+    av_dict_free(&options);
+  }
 
   // If FFmpeg can't identify the file, read the first 8k and attempt to guess
   // at the container type ourselves. This way we can track emergent formats.
@@ -217,7 +191,7 @@ bool FFmpegGlue::OpenContext(bool is_local_file) {
     return false;
   }
 
-  // Rely on ffmpeg's parsing if we're able to succesfully open the file.
+  // Rely on ffmpeg's parsing if we're able to successfully open the file.
   if (strcmp(format_context_->iformat->name, "mov,mp4,m4a,3gp,3g2,mj2") == 0)
     container_ = container_names::MediaContainerName::kContainerMOV;
   else if (strcmp(format_context_->iformat->name, "flac") == 0)
@@ -242,20 +216,27 @@ bool FFmpegGlue::OpenContext(bool is_local_file) {
   LogContainer(is_local_file, container_);
 
 #if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(USE_SYSTEM_FFMPEG)
-  // Sometimes FFmpeg is not aware of the whitelisted codecs and
-  // configures streams and demuxers with unsupported codecs/params.
-  // Force the correct codecs to avoid problems later.
+  // 'avformat_find_stream_info' is not aware of the whitelisted codecs.
+  // However it respects the codecs set in the format_context.
+  // Try to force the correct codecs here at context creation.
   // https://ffmpeg.org/doxygen/7.0/structAVFormatContext.html#a52f39351b15890ef57cc6ff0ec9ab42d
   // https://ffmpeg.org/doxygen/7.0/structAVFormatContext.html#ae5e087f4623b907517c0f7dd8327387d
 
-  // Note: don't forget to update FFmpeg[Audio|Video]Decoder::ConfigureDecoder
-
-  if (strcmp(format_context_->iformat->name, "mp3") == 0) {
-    const AVCodec* mp3_codec = avcodec_find_decoder_by_name("mp3");
-    if (mp3_codec) {
-      format_context_->audio_codec = mp3_codec;
-    } else {
-      LOG(ERROR) << "No supported codec for mp3";
+  for (int i = 0; i < format_context_->nb_streams; i++) {
+    AVCodecParameters *params = format_context_->streams[i]->codecpar;
+    if (!params)
+      continue;
+    const AVCodec* audio_codec =
+        FindDecoder(params->codec_id, GetAllowedAudioDecoders());
+    if (audio_codec) {
+      if (format_context_->audio_codec &&
+          format_context_->audio_codec != audio_codec) {
+        LOG(INFO) << "Conflicting codecs " << format_context_->audio_codec->name
+                  << ", " << audio_codec->name;
+        format_context_->audio_codec = nullptr;
+        break;
+      }
+      format_context_->audio_codec = audio_codec;
     }
   }
 #endif

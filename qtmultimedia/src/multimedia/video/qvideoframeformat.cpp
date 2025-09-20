@@ -8,7 +8,6 @@
 #include <qdebug.h>
 #include <qlist.h>
 #include <qmetatype.h>
-#include <qpair.h>
 #include <qvariant.h>
 #include <qmatrix4x4.h>
 
@@ -667,7 +666,7 @@ void QVideoFrameFormat::setColorRange(ColorRange range)
  */
 bool QVideoFrameFormat::isMirrored() const
 {
-    return d->transformation.mirrorredHorizontallyAfterRotation;
+    return d->transformation.mirroredHorizontallyAfterRotation;
 }
 
 /*!
@@ -690,7 +689,7 @@ bool QVideoFrameFormat::isMirrored() const
 void QVideoFrameFormat::setMirrored(bool mirrored)
 {
     detach();
-    d->transformation.mirrorredHorizontallyAfterRotation = mirrored;
+    d->transformation.mirroredHorizontallyAfterRotation = mirrored;
 }
 
 /*!
@@ -747,7 +746,7 @@ QString QVideoFrameFormat::fragmentShaderFileName() const
 */
 void QVideoFrameFormat::updateUniformData(QByteArray *dst, const QVideoFrame &frame, const QMatrix4x4 &transform, float opacity) const
 {
-    QVideoTextureHelper::updateUniformData(dst, *this, frame, transform, opacity);
+    QVideoTextureHelper::updateUniformData(dst, nullptr, *this, frame, transform, opacity);
 }
 
 /*!

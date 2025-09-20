@@ -6,11 +6,14 @@
 #include "base/memory/ref_counted.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
 
+#include <QGuiApplication>
 #include <QHash>
-#include <QMutex>
+#include <QReadWriteLock>
 #include <QQuickWindow>
 
 namespace QtWebEngineCore {
+
+Q_LOGGING_CATEGORY(lcWebEngineCompositor, "qt.webengine.compositor");
 
 // Compositor::Id
 
@@ -44,7 +47,8 @@ struct Compositor::Binding
 class Compositor::BindingMap
 {
 public:
-    void lock() { m_mutex.lock(); }
+    void lock() { m_mutex.lockForRead(); }
+    void lockForWrite() { m_mutex.lockForWrite(); }
 
     void unlock() { m_mutex.unlock(); }
 
@@ -59,7 +63,7 @@ public:
     void remove(Id id) { m_map.remove(id); }
 
 private:
-    QMutex m_mutex;
+    QReadWriteLock m_mutex;
     QHash<Id, Binding *> m_map;
 } static g_bindings;
 
@@ -73,7 +77,7 @@ Compositor::Binding::~Binding()
 void Compositor::Observer::bind(Id id)
 {
     DCHECK(!m_binding);
-    g_bindings.lock();
+    g_bindings.lockForWrite();
     m_binding = g_bindings.findOrCreate(id);
     DCHECK(!m_binding->observer);
     m_binding->observer = this;
@@ -82,7 +86,7 @@ void Compositor::Observer::bind(Id id)
 
 void Compositor::Observer::unbind()
 {
-    g_bindings.lock();
+    g_bindings.lockForWrite();
     if (m_binding) {
         m_binding->observer = nullptr;
         if (m_binding->compositor == nullptr)
@@ -111,7 +115,7 @@ Compositor::Observer::~Observer()
 void Compositor::bind(Id id)
 {
     DCHECK(!m_binding);
-    g_bindings.lock();
+    g_bindings.lockForWrite();
     m_binding = g_bindings.findOrCreate(id);
     DCHECK(!m_binding->compositor);
     m_binding->compositor = this;
@@ -120,7 +124,7 @@ void Compositor::bind(Id id)
 
 void Compositor::unbind()
 {
-    g_bindings.lock();
+    g_bindings.lockForWrite();
     if (m_binding) {
         m_binding->compositor = nullptr;
         if (m_binding->observer == nullptr)
@@ -130,13 +134,12 @@ void Compositor::unbind()
     g_bindings.unlock();
 }
 
-Compositor::Handle<Compositor::Observer> Compositor::observer()
+void Compositor::readyToSwap()
 {
     g_bindings.lock();
     if (m_binding && m_binding->observer)
-        return m_binding->observer; // delay unlock
+        m_binding->observer->readyToSwap();
     g_bindings.unlock();
-    return nullptr;
 }
 
 void Compositor::waitForTexture()
@@ -149,17 +152,23 @@ void Compositor::releaseTexture()
 
 QSGTexture *Compositor::texture(QQuickWindow *, uint32_t textureOptions)
 {
-    Q_UNREACHABLE();
-    return nullptr;
+    Q_UNREACHABLE_RETURN(nullptr);
 }
 
 bool Compositor::textureIsFlipped()
 {
-    Q_UNREACHABLE();
-    return false;
+    Q_UNREACHABLE_RETURN(false);
 }
 
 void Compositor::releaseResources() { }
+
+Compositor::Compositor(Type type) : m_type(type)
+{
+    qCDebug(lcWebEngineCompositor, "Compositor Type: %s",
+            m_type == Type::Software ? "Software" : "Native");
+    qCDebug(lcWebEngineCompositor, "QPA Platform Plugin: %ls",
+            qUtf16Printable(QGuiApplication::platformName()));
+}
 
 Compositor::~Compositor()
 {

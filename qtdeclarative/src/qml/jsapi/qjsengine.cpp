@@ -397,7 +397,7 @@ QJSEngine::~QJSEngine()
  */
 void QJSEngine::collectGarbage()
 {
-    m_v4Engine->memoryManager->runGC();
+    m_v4Engine->memoryManager->runFullGC();
 }
 
 /*!
@@ -547,6 +547,8 @@ QJSValue QJSEngine::evaluate(const QString& program, const QString& fileName, in
     if (v4->isInterrupted.loadRelaxed())
         result = v4->newErrorObject(QStringLiteral("Interrupted"));
 
+    if (script.compilationUnit)
+        v4->trimCompilationUnitsForUrl(script.compilationUnit->finalUrl());
     return QJSValuePrivate::fromReturnedValue(result->asReturnedValue());
 }
 

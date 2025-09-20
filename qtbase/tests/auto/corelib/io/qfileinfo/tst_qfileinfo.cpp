@@ -138,6 +138,7 @@ private slots:
 
     void exists_data();
     void exists();
+    void deletedFileLinuxProcExists();
 
     void absolutePath_data();
     void absolutePath();
@@ -501,6 +502,34 @@ void tst_QFileInfo::exists()
         QVERIFY2(exists, msgDoesNotExist(path).constData());
     else
         QVERIFY(!exists);
+}
+
+void tst_QFileInfo::deletedFileLinuxProcExists()
+{
+#ifdef Q_OS_LINUX
+    static const char msg[] = "Hello, World\n";
+    QFileInfo fi("/proc/self/fd/");
+    if (!fi.isDir())
+        QSKIP("/proc appears not to be mounted");
+
+    QFile f("removed_file.txt");
+    QVERIFY(f.open(QIODevice::ReadWrite | QIODevice::Unbuffered));
+    f.write(msg, strlen(msg));
+
+    fi.setFile(fi.filePath() + QString::number(f.handle()));
+    QVERIFY(fi.exists());
+    QCOMPARE(fi.size(), strlen(msg));
+
+    QFile::remove("removed_file.txt");
+    fi.refresh();
+    QVERIFY(fi.exists());
+
+    fi.refresh();
+    QCOMPARE(fi.size(), strlen(msg));   // this stats, so may change flags
+    QVERIFY(fi.exists());
+#else
+    QSKIP("Linux-only test");
+#endif
 }
 
 void tst_QFileInfo::absolutePath_data()
@@ -1311,7 +1340,7 @@ void tst_QFileInfo::isSymLink_data()
 void tst_QFileInfo::isSymLink()
 {
 #ifdef Q_NO_SYMLINKS
-    QSKIP("No symlink support", SkipAll);
+    QSKIP("No symlink support");
 #else
     QFETCH(QString, path);
     QFETCH(bool, isSymLink);
@@ -1551,14 +1580,26 @@ void tst_QFileInfo::isHidden_data()
 #if defined(Q_OS_WIN)
     QVERIFY(QDir("./hidden-directory").exists() || QDir().mkdir("./hidden-directory"));
     QVERIFY(SetFileAttributesW(reinterpret_cast<LPCWSTR>(QString("./hidden-directory").utf16()),FILE_ATTRIBUTE_HIDDEN));
+    QTest::newRow("hidden-directory") << QString::fromLatin1("hidden-directory") << true;
     QTest::newRow("C:/path/to/hidden-directory") << QDir::currentPath() + QString::fromLatin1("/hidden-directory") << true;
     QTest::newRow("C:/path/to/hidden-directory/.") << QDir::currentPath() + QString::fromLatin1("/hidden-directory/.") << true;
 #endif
 #if defined(Q_OS_UNIX)
     QVERIFY(QDir("./.hidden-directory").exists() || QDir().mkdir("./.hidden-directory"));
+    QTest::newRow(".hidden-directory") << QString(".hidden-directory") << true;
+    QTest::newRow(".hidden-directory/") << QString(".hidden-directory/") << true;
+    QTest::newRow(".hidden-directory//") << QString(".hidden-directory//") << true;
+    QTest::newRow(".hidden-directory/.") << QString(".hidden-directory/.") << true;
+    QTest::newRow(".hidden-directory//.") << QString(".hidden-directory//.") << true;
+    QTest::newRow(".hidden-directory/..") << QString(".hidden-directory/..") << true;
+    QTest::newRow(".hidden-directory//..") << QString(".hidden-directory//..") << true;
     QTest::newRow("/path/to/.hidden-directory") << QDir::currentPath() + QString("/.hidden-directory") << true;
+    QTest::newRow("/path/to/.hidden-directory/") << QDir::currentPath() + QString("/.hidden-directory/") << true;
+    QTest::newRow("/path/to/.hidden-directory//") << QDir::currentPath() + QString("/.hidden-directory//") << true;
     QTest::newRow("/path/to/.hidden-directory/.") << QDir::currentPath() + QString("/.hidden-directory/.") << true;
+    QTest::newRow("/path/to/.hidden-directory//.") << QDir::currentPath() + QString("/.hidden-directory//.") << true;
     QTest::newRow("/path/to/.hidden-directory/..") << QDir::currentPath() + QString("/.hidden-directory/..") << true;
+    QTest::newRow("/path/to/.hidden-directory//..") << QDir::currentPath() + QString("/.hidden-directory//..") << true;
 #endif
 
 #if defined(Q_OS_DARWIN)
@@ -1590,7 +1631,7 @@ void tst_QFileInfo::isHiddenFromFinder()
     const char *filename = "test_foobar.txt";
 
     QFile testFile(filename);
-    testFile.open(QIODevice::WriteOnly | QIODevice::Append);
+    QVERIFY(testFile.open(QIODevice::WriteOnly | QIODevice::Append));
     testFile.write(QByteArray("world"));
     testFile.close();
 
@@ -1890,7 +1931,7 @@ void tst_QFileInfo::brokenShortcut()
     QString linkName("borkenlink.lnk");
     QFile::remove(linkName);
     QFile file(linkName);
-    file.open(QFile::WriteOnly);
+    QVERIFY(file.open(QFile::WriteOnly));
     file.write("b0rk");
     file.close();
 

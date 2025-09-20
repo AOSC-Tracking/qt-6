@@ -1,11 +1,11 @@
 // Copyright (C) 2022 The Qt Company Ltd and/or its subsidiary(-ies).
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
-#include "avfcameradebug_p.h"
+#include <QtMultimedia/private/qavfcameradebug_p.h>
 #include "avfcamera_p.h"
 #include "avfcamerasession_p.h"
 #include "avfcameraservice_p.h"
-#include "avfcamerautility_p.h"
+#include <QtMultimedia/private/qavfcamerautility_p.h>
 #include "avfcamerarenderer_p.h"
 #include <qmediacapturesession.h>
 
@@ -17,9 +17,7 @@ AVFCamera::AVFCamera(QCamera *camera)
     Q_ASSERT(camera);
 }
 
-AVFCamera::~AVFCamera()
-{
-}
+AVFCamera::~AVFCamera() = default;
 
 void AVFCamera::onActiveChanged(bool active)
 {
@@ -36,16 +34,12 @@ void AVFCamera::onCameraDeviceChanged(const QCameraDevice &device)
         m_session->setActiveCamera(m_cameraDevice);
 }
 
-bool AVFCamera::setCameraFormat(const QCameraFormat &format)
+bool AVFCamera::tryApplyCameraFormat(const QCameraFormat &newFormat)
 {
-    if (!format.isNull() && !m_cameraDevice.videoFormats().contains(format))
-        return false;
-
-    m_cameraFormat = format.isNull() ? findBestCameraFormat(m_cameraDevice) : format;
-
+    // TODO: In the future, we should be able to return false if we failed
+    // to apply the format.
     if (m_session)
-        m_session->setCameraFormat(m_cameraFormat);
-
+        m_session->setCameraFormat(newFormat);
     return true;
 }
 

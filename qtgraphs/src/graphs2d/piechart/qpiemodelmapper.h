@@ -1,7 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
-#ifndef QPIEMODELMAPPER_H
-#define QPIEMODELMAPPER_H
+#ifndef QTGRAPHS_QPIEMODELMAPPER_H
+#define QTGRAPHS_QPIEMODELMAPPER_H
 
 #include <QtCore/qobject.h>
 #include <QtGraphs/qgraphsglobal.h>
@@ -76,4 +76,4 @@ protected:
 
 QT_END_NAMESPACE
 
-#endif // QPIEMODELMAPPER_H
+#endif // QTGRAPHS_QPIEMODELMAPPER_H

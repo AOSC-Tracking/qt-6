@@ -33,8 +33,8 @@ QT_BEGIN_NAMESPACE
 
 using namespace Qt::StringLiterals;
 
-Q_LOGGING_CATEGORY(lcQmlUsedBeforeDeclared, "qt.qml.usedbeforedeclared");
-Q_LOGGING_CATEGORY(lcQmlInjectedParameter, "qt.qml.injectedparameter");
+Q_STATIC_LOGGING_CATEGORY(lcQmlUsedBeforeDeclared, "qt.qml.usedbeforedeclared");
+Q_STATIC_LOGGING_CATEGORY(lcQmlInjectedParameter, "qt.qml.injectedparameter");
 
 using namespace QV4;
 using namespace QV4::Compiler;
@@ -164,21 +164,13 @@ const char *Codegen::s_globalNames[] = {
     nullptr
 };
 
-void Codegen::generateFromProgram(const QString &fileName,
-                                  const QString &finalUrl,
-                                  const QString &sourceCode,
-                                  Program *node,
-                                  Module *module,
-                                  ContextType contextType)
+void Codegen::generateFromProgram(
+        const QString &sourceCode, Program *node, Module *module, ContextType contextType)
 {
     Q_ASSERT(node);
 
     _module = module;
     _context = nullptr;
-
-    // ### should be set on the module outside of this method
-    _module->fileName = fileName;
-    _module->finalUrl = finalUrl;
 
     if (contextType == ContextType::ScriptImportedByQML) {
         // the global object is frozen, so we know that members of it are
@@ -201,20 +193,12 @@ void Codegen::generateFromProgram(const QString &fileName,
     defineFunction(QStringLiteral("%entry"), node, nullptr, node->statements);
 }
 
-void Codegen::generateFromModule(const QString &fileName,
-                                 const QString &finalUrl,
-                                 const QString &sourceCode,
-                                 ESModule *node,
-                                 Module *module)
+void Codegen::generateFromModule(const QString &sourceCode, ESModule *node, Module *module)
 {
     Q_ASSERT(node);
 
     _module = module;
     _context = nullptr;
-
-    // ### should be set on the module outside of this method
-    _module->fileName = fileName;
-    _module->finalUrl = finalUrl;
 
     ScanFunctions scan(this, sourceCode, ContextType::ESModule);
     scan(node);
@@ -247,15 +231,10 @@ void Codegen::generateFromModule(const QString &fileName,
     defineFunction(QStringLiteral("%entry"), node, nullptr, node->body);
 }
 
-void Codegen::generateFromModule(
-        const QString &fileName, const QString &finalUrl, const Value &value, Module *module)
+void Codegen::generateFromModule(const Value &value, Module *module)
 {
     _module = module;
     _context = nullptr;
-
-    // ### should be set on the module outside of this method
-    _module->fileName = fileName;
-    _module->finalUrl = finalUrl;
 
     _module->newContext(nullptr, nullptr, ContextType::ESModule);
     enterContext(nullptr);
@@ -1142,7 +1121,7 @@ bool Codegen::visit(ClassDeclaration *ast)
     return false;
 }
 
-bool Codegen::visit(Expression *ast)
+bool Codegen::visit(CommaExpression *ast)
 {
     if (hasError())
         return false;
@@ -1491,6 +1470,7 @@ bool Codegen::visit(BinaryExpression *ast)
 
         return false;
     } else if (ast->op == QSOperator::Assign) {
+        bytecodeGenerator->setLocation(ast->left->firstSourceLocation());
         if (AST::Pattern *p = ast->left->patternCast()) {
             RegisterScope scope(this);
             Reference right = expression(ast->right);
@@ -4222,12 +4202,12 @@ QQmlRefPointer<QV4::CompiledData::CompilationUnit> Codegen::compileModule(
     }
 
     using namespace QV4::Compiler;
-    Compiler::Module compilerModule(debugMode);
+    Compiler::Module compilerModule(url, url, debugMode);
     compilerModule.unitFlags |= CompiledData::Unit::IsESModule;
     compilerModule.sourceTimeStamp = sourceTimeStamp;
     JSUnitGenerator jsGenerator(&compilerModule);
     Codegen cg(&jsGenerator, /*strictMode*/true);
-    cg.generateFromModule(url, url, sourceCode, moduleNode, &compilerModule);
+    cg.generateFromModule(sourceCode, moduleNode, &compilerModule);
     if (cg.hasError()) {
         if (diagnostics)
             *diagnostics << cg.error();
@@ -4241,11 +4221,11 @@ const QV4::CompiledData::Unit *Codegen::generateNativeModuleUnitData(
         bool debugMode, const QString &url, const Value &value)
 {
     using namespace QV4::Compiler;
-    Compiler::Module compilerModule(debugMode);
+    Compiler::Module compilerModule(url, url, debugMode);
     compilerModule.unitFlags |= CompiledData::Unit::IsESModule;
     JSUnitGenerator jsGenerator(&compilerModule);
     Codegen cg(&jsGenerator, /*strictMode*/true);
-    cg.generateFromModule(url, url, value, &compilerModule);
+    cg.generateFromModule(value, &compilerModule);
     Q_ASSERT(!cg.hasError());
     return jsGenerator.generateUnit();
 }

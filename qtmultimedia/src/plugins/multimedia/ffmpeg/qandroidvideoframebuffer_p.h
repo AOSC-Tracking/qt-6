@@ -25,10 +25,10 @@ Q_DECLARE_JNI_CLASS(QtCamera2, "org/qtproject/qt/android/multimedia/QtCamera2")
 Q_DECLARE_JNI_CLASS(QtVideoDeviceManager,
                     "org/qtproject/qt/android/multimedia/QtVideoDeviceManager")
 
-Q_DECLARE_JNI_CLASS(AndroidImage, "android/media/Image")
-Q_DECLARE_JNI_CLASS(AndroidImageFormat, "android/graphics/ImageFormat")
-Q_DECLARE_JNI_CLASS(AndroidImagePlane, "android/media/Image$Plane")
-Q_DECLARE_JNI_CLASS(JavaByteBuffer, "java/nio/ByteBuffer")
+Q_DECLARE_JNI_CLASS(Image, "android/media/Image")
+Q_DECLARE_JNI_CLASS(ImageFormat, "android/graphics/ImageFormat")
+Q_DECLARE_JNI_CLASS(ImagePlane, "android/media/Image$Plane")
+Q_DECLARE_JNI_CLASS(ByteBuffer, "java/nio/ByteBuffer")
 
 class QAndroidVideoFrameBuffer : public QAbstractVideoBuffer
 {
@@ -62,7 +62,8 @@ private:
     MapData m_mapData;
     // Currently we have maximum 3 planes here
     // We keep this data in QByteArray for proper cleaning
-    QByteArray dataCleaner[3];
+    static constexpr int MAX_PLANES = 3;
+    QByteArray dataCleaner[MAX_PLANES];
     jobject m_nativeFrame = nullptr;
     std::shared_ptr<FrameReleaseDelegate> m_frameReleaseDelegate;
     MemoryPolicy m_policy;

@@ -73,7 +73,7 @@
     \sa Item, GridLayout, RowLayout, ColumnLayout
 */
 
-Q_LOGGING_CATEGORY(lcLayouts, "qt.quick.layouts")
+Q_STATIC_LOGGING_CATEGORY(lcLayouts, "qt.quick.layouts")
 
 
 QQuickLayoutItemProxy::QQuickLayoutItemProxy(QQuickItem *parent)
@@ -226,6 +226,10 @@ void QQuickLayoutItemProxy::setTarget(QQuickItem *newTarget)
     if (newTarget == d->target)
         return;
 
+    if (d->target && d->target->property("QQuickLayoutItemProxyAttachedData").isValid()) {
+        QQuickLayoutItemProxyAttachedData *attachedData = d->target->property("QQuickLayoutItemProxyAttachedData").value<QQuickLayoutItemProxyAttachedData*>();
+        attachedData->releaseProxy(this);
+    }
     d->target = newTarget;
 
     if (newTarget) {

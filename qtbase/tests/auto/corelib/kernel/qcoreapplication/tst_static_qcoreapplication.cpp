@@ -15,6 +15,8 @@ using App = QGuiApplication;
 using App = QCoreApplication;
 #endif
 
+#include "maybeshow.h"
+
 class tst_Static_QCoreApplication : public QObject
 {
     Q_OBJECT
@@ -31,6 +33,7 @@ void tst_Static_QCoreApplication::staticApplication()
     static int argc = 1;
     const char *argv[] = { staticMetaObject.className(), nullptr };
     static App app(argc, const_cast<char **>(argv));
+    [[maybe_unused]] static auto w = maybeShowSomething();
 }
 
 struct HookManager
@@ -66,11 +69,10 @@ struct HookManager
 #if !defined(QT_GUI_LIB) && !defined(Q_OS_WIN)
         // Only tested for QtCore/QCoreApplication on Unix. QtGui has statics
         // with QObject that haven't been cleaned up.
-        if (int c = objectCount.loadRelaxed())
+        // For QtCore, we expect exactly one object: the QAdoptedThread for
+        // represents the main thread.
+        if (int c = objectCount.loadRelaxed(); c > 1)
             qFatal("%d objects still alive", c);
-
-        if (void *id = QCoreApplicationPrivate::theMainThreadId.loadRelaxed())
-            qFatal("QCoreApplicationPrivate::theMainThreadId is still set - %p", id);
 #endif
     }
 };

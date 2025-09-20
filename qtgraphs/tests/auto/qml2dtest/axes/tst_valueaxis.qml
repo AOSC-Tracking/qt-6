@@ -44,6 +44,7 @@ Item {
         titleText: "Initialized"
         titleVisible: false
         visible: false
+        alignment: Qt.AlignLeft
     }
 
     TestCase {
@@ -75,6 +76,7 @@ Item {
             compare(initial.titleText, "")
             compare(initial.titleVisible, true)
             compare(initial.visible, true)
+            compare(initial.alignment, Qt.AlignBottom)
         }
 
         function test_3_initial_change() {
@@ -100,6 +102,7 @@ Item {
             initial.titleText = "Dummy"
             initial.titleVisible = false
             initial.visible = false
+            initial.alignment = Qt.AlignTop
 
             // Properties from ValueAxis
             compare(initial.labelDecimals, 1)
@@ -121,6 +124,7 @@ Item {
             compare(initial.titleText, "Dummy")
             compare(initial.titleVisible, false)
             compare(initial.visible, false)
+            compare(initial.alignment, Qt.AlignTop)
         }
     }
 
@@ -149,6 +153,7 @@ Item {
             compare(initialized.titleText, "Initialized")
             compare(initialized.titleVisible, false)
             compare(initialized.visible, false)
+            compare(initialized.alignment, Qt.AlignLeft)
         }
 
         function test_2_initialized_change() {
@@ -173,6 +178,7 @@ Item {
             initialized.titleText = "Dummy"
             initialized.titleVisible = true
             initialized.visible = true
+            initialized.alignment = Qt.AlignRight
 
             // Properties from ValueAxis
             compare(initialized.labelDecimals, 1)
@@ -182,6 +188,9 @@ Item {
             compare(initialized.subTickCount, 2)
             compare(initialized.tickAnchor, 2)
             compare(initialized.tickInterval, 3.0)
+
+            initialized.labelFormat = "%.1f test"
+            compare(initialized.labelFormat, "%.1f test")
 
             // Common properties from AbstractAxis
             compare(initialized.gridVisible, true)
@@ -195,11 +204,12 @@ Item {
             compare(initialized.titleText, "Dummy")
             compare(initialized.titleVisible, true)
             compare(initialized.visible, true)
+            compare(initialized.alignment, Qt.AlignRight)
 
             // Signals
             compare(minSpy.count, 1)
             compare(maxSpy.count, 1)
-            compare(labelFormatSpy.count, 1)
+            compare(labelFormatSpy.count, 2)
             compare(labelDecimalsSpy.count, 1)
             compare(tickSpy.count, 1)
             compare(subTickSpy.count, 1)
@@ -217,6 +227,7 @@ Item {
             compare(titleColorSpy.count, 1)
             compare(titleVisibleSpy.count, 1)
             compare(titleFontSpy.count, 2)
+            compare(alignmentSpy.count, 1)
         }
 
         function test_3_initialized_change_to_invalid() {
@@ -336,6 +347,12 @@ Item {
             id: titleFontSpy
             target: initialized
             signalName: "titleFontChanged"
+        }
+
+        SignalSpy {
+            id: alignmentSpy
+            target: initialized
+            signalName: "alignmentChanged"
         }
     }
 }

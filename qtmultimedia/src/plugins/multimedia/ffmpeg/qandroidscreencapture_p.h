@@ -15,8 +15,8 @@
 // We mean it.
 //
 
-#include "private/qplatformsurfacecapture_p.h"
-#include <qandroidvideoframebuffer_p.h>
+#include <QtMultimedia/private/qplatformsurfacecapture_p.h>
+#include <QtFFmpegMediaPluginImpl/private/qandroidvideoframebuffer_p.h>
 #include <QJniObject>
 #include <memory>
 
@@ -35,7 +35,7 @@ public:
     QVideoFrameFormat frameFormat() const override;
 
     static bool registerNativeMethods();
-    void onNewFrameReceived(QtJniTypes::AndroidImage image);
+    void onNewFrameReceived(QtJniTypes::Image image);
 protected:
     bool setActiveInternal(bool active) override;
 

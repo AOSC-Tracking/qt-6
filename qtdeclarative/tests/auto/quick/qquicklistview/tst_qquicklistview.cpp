@@ -1,7 +1,7 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#include <QtTest/QtTest>
+#include <QtTest/QTest>
 #include <QtCore/QStringListModel>
 #include <QtCore/QSortFilterProxyModel>
 #include <QtGui/QStandardItemModel>
@@ -51,7 +51,6 @@ class tst_QQuickListView : public QQmlDataTest
     Q_OBJECT
 public:
     tst_QQuickListView();
-    ~tst_QQuickListView() { delete touchDevice; }
 
 private slots:
     // WARNING: please add new tests to tst_qquicklistview2; this file is too slow to work with.
@@ -343,12 +342,12 @@ private:
 
     QQuickView *m_view;
     QString testForView;
-    QPointingDevice *touchDevice = QTest::createTouchDevice();
+    std::unique_ptr<QPointingDevice> touchscreen{QTest::createTouchDevice()};
 #if QT_CONFIG(tabletevent)
-    QScopedPointer<const QPointingDevice> tabletStylusDevice = QScopedPointer<const QPointingDevice>(
+    std::unique_ptr<const QPointingDevice> tabletStylusDevice{
             QPointingDevicePrivate::tabletDevice(QInputDevice::DeviceType::Stylus,
                                                  QPointingDevice::PointerType::Pen,
-                                                 QPointingDeviceUniqueId::fromNumericId(1234567890)));
+                                                 QPointingDeviceUniqueId::fromNumericId(1234567890))};
 #endif
 };
 
@@ -2020,6 +2019,7 @@ void tst_QQuickListView::enforceRange_withoutHighlight()
     QTRY_COMPARE(listview->contentY(), expectedPos);
 
     expectedPos += 20 + 10;     // scroll past 1st section and section delegate of 2nd section
+    QTRY_VERIFY(window.data()->isActive());
     QTest::keyClick(window.data(), Qt::Key_Down);
 
     QTRY_COMPARE(listview->contentY(), expectedPos);
@@ -9772,13 +9772,13 @@ void tst_QQuickListView::touchCancel() // QTBUG-74679
     QVERIFY(mouseArea);
 
     QPoint p1(300, 300);
-    QTest::touchEvent(window.data(), touchDevice).press(0, p1, window.data());
+    QTest::touchEvent(window.data(), touchscreen.get()).press(0, p1, window.data());
     QQuickTouchUtils::flush(window.data());
     QTRY_VERIFY(mouseArea->isPressed());
     // and because Flickable filtered it, QQuickFlickablePrivate::pressed
     // should be true, but it's not easily tested here
 
-    QTouchEvent cancelEvent(QEvent::TouchCancel, touchDevice);
+    QTouchEvent cancelEvent(QEvent::TouchCancel, touchscreen.get());
     QCoreApplication::sendEvent(window.data(), &cancelEvent);
     // now QQuickWindowPrivate::sendUngrabEvent() will be called, Flickable will filter it,
     // QQuickFlickablePrivate::pressed will be set to false, and that will allow setCurrentIndex() to make it move
@@ -9794,7 +9794,7 @@ void tst_QQuickListView::cancelDelegatePastDragThreshold_data()
     QTest::addColumn<const QPointingDevice *>("device");
 
     QTest::newRow("primary") << QPointingDevice::primaryPointingDevice();
-    QTest::newRow("touch") << static_cast<const QPointingDevice*>(touchDevice); // TODO QTBUG-107864
+    QTest::newRow("touch") << static_cast<const QPointingDevice*>(touchscreen.get()); // TODO QTBUG-107864
 #if QT_CONFIG(tabletevent) && !defined(Q_OS_QNX)
     QTest::newRow("stylus") << tabletStylusDevice.get();
 #endif

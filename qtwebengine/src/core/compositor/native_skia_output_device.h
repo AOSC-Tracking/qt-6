@@ -60,12 +60,8 @@ public:
 
     // Overridden from SkiaOutputDevice.
     void SetFrameSinkId(const viz::FrameSinkId &frame_sink_id) override;
-    bool Reshape(const SkImageInfo &image_info,
-                 const gfx::ColorSpace &color_space,
-                 int sample_count,
-                 float device_scale_factor,
-                 gfx::OverlayTransform transform) override;
-    void Present(const absl::optional<gfx::Rect>& update_rect,
+    bool Reshape(const ReshapeParams &params) override;
+    void Present(const std::optional<gfx::Rect>& update_rect,
                  BufferPresentedCallback feedback,
                  viz::OutputSurfaceFrame frame) override;
     void EnsureBackbuffer() override;
@@ -118,10 +114,10 @@ protected:
         void consumeFence();
 
         sk_sp<SkImage> skImage();
-#if defined(USE_OZONE)
+#if BUILDFLAG(IS_OZONE)
         scoped_refptr<gfx::NativePixmap> nativePixmap();
 #elif defined(Q_OS_WIN)
-        absl::optional<gl::DCLayerOverlayImage> overlayImage() const;
+        std::optional<gl::DCLayerOverlayImage> overlayImage() const;
 #elif defined(Q_OS_MACOS)
         gfx::ScopedIOSurface ioSurface() const;
 #endif

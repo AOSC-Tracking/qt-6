@@ -2,24 +2,31 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qplatformaudiodevices_p.h"
-#include "qcameradevice.h"
-#include "qaudiosystem_p.h"
-#include "qaudiodevice.h"
+
+#include <QtMultimedia/qaudiodevice.h>
+#include <QtMultimedia/qmediadevices.h>
+#include <QtMultimedia/private/qaudiosystem_p.h>
 
 #if defined(Q_OS_ANDROID)
-#include <qandroidaudiodevices_p.h>
-#elif defined(Q_OS_DARWIN)
-#include <qdarwinaudiodevices_p.h>
-#elif defined(Q_OS_WINDOWS) && QT_CONFIG(wmf)
-#include <qwindowsaudiodevices_p.h>
-#elif QT_CONFIG(alsa)
-#include <qalsaaudiodevices_p.h>
-#elif QT_CONFIG(pulseaudio)
-#include <qpulseaudiodevices_p.h>
-#elif defined(Q_OS_QNX)
-#include <qqnxaudiodevices_p.h>
-#elif defined(Q_OS_WASM)
-#include <private/qwasmmediadevices_p.h>
+#  include <QtMultimedia/private/qandroidaudiodevices_p.h>
+#endif
+#if defined(Q_OS_DARWIN)
+#  include <QtMultimedia/private/qdarwinaudiodevices_p.h>
+#endif
+#if defined(Q_OS_WINDOWS) && QT_CONFIG(wmf)
+#  include <QtMultimedia/private/qwindowsaudiodevices_p.h>
+#endif
+#if QT_CONFIG(alsa)
+#  include <QtMultimedia/private/qalsaaudiodevices_p.h>
+#endif
+#if QT_CONFIG(pulseaudio)
+#  include <QtMultimedia/private/qpulseaudiodevices_p.h>
+#endif
+#if defined(Q_OS_QNX)
+#  include <QtMultimedia/private/qqnxaudiodevices_p.h>
+#endif
+#if defined(Q_OS_WASM)
+#  include <QtMultimedia/private/qwasmmediadevices_p.h>
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -90,11 +97,13 @@ void QPlatformAudioDevices::updateAudioOutputsCache()
         emit audioOutputsChanged(PrivateTag{});
 }
 
-QPlatformAudioSource *QPlatformAudioDevices::createAudioSource(const QAudioDevice &, QObject *)
+QPlatformAudioSource *QPlatformAudioDevices::createAudioSource(const QAudioDevice &,
+                                                               const QAudioFormat &, QObject *)
 {
     return nullptr;
 }
-QPlatformAudioSink *QPlatformAudioDevices::createAudioSink(const QAudioDevice &, QObject *)
+QPlatformAudioSink *QPlatformAudioDevices::createAudioSink(const QAudioDevice &,
+                                                           const QAudioFormat &, QObject *)
 {
     return nullptr;
 }
@@ -103,31 +112,29 @@ QPlatformAudioSource *QPlatformAudioDevices::audioInputDevice(const QAudioFormat
                                                               const QAudioDevice &deviceInfo,
                                                               QObject *parent)
 {
-    QAudioDevice info = deviceInfo;
-    if (info.isNull())
-        info = audioInputs().value(0);
+    QAudioDevice device = deviceInfo;
+    if (device.isNull())
+        device = QMediaDevices::defaultAudioInput();
 
-    QPlatformAudioSource* p = !info.isNull() ? createAudioSource(info, parent) : nullptr;
-    if (p)
-        p->setFormat(format);
-    return p;
+    if (device.isNull())
+        return nullptr;
+
+    return createAudioSource(device, format, parent);
 }
 
 QPlatformAudioSink *QPlatformAudioDevices::audioOutputDevice(const QAudioFormat &format,
                                                              const QAudioDevice &deviceInfo,
                                                              QObject *parent)
 {
-    QAudioDevice info = deviceInfo;
-    if (info.isNull())
-        info = audioOutputs().value(0);
+    QAudioDevice device = deviceInfo;
+    if (device.isNull())
+        device = QMediaDevices::defaultAudioOutput();
 
-    QPlatformAudioSink* p = !info.isNull() ? createAudioSink(info, parent) : nullptr;
-    if (p)
-        p->setFormat(format);
-    return p;
+    if (device.isNull())
+        return nullptr;
+
+    return createAudioSink(device, format, parent);
 }
-
-void QPlatformAudioDevices::prepareAudio() { }
 
 QT_END_NAMESPACE
 

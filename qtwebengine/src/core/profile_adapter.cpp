@@ -22,6 +22,7 @@
 #include "api/qwebengineurlscheme.h"
 #include "content_browser_client_qt.h"
 #include "download_manager_delegate_qt.h"
+#include "favicon_driver_qt.h"
 #include "favicon_service_factory_qt.h"
 #include "permission_manager_qt.h"
 #include "profile_adapter_client.h"
@@ -33,10 +34,6 @@
 #include "web_contents_adapter_client.h"
 #include "web_engine_context.h"
 
-#if BUILDFLAG(ENABLE_EXTENSIONS)
-#include "extensions/browser/extension_system.h"
-#endif
-
 #include <QCoreApplication>
 #include <QDir>
 #include <QJsonObject>
@@ -44,30 +41,43 @@
 #include <QString>
 #include <QStandardPaths>
 
+using namespace Qt::StringLiterals;
+
 namespace {
 inline QString buildLocationFromStandardPath(const QString &standardPath, const QString &name) {
-    QString location = standardPath;
+    QString location;
+    location += standardPath;
     if (location.isEmpty())
-        location = QDir::homePath() % QLatin1String("/.") % QCoreApplication::applicationName();
+        location += QDir::homePath() % "/."_L1 % QCoreApplication::applicationName();
 
-    location.append(QLatin1String("/QtWebEngine/") % name);
+    location += "/QtWebEngine/"_L1 % name;
     return location;
 }
 }
 
 namespace QtWebEngineCore {
 
-ProfileAdapter::ProfileAdapter(const QString &storageName):
-      m_name(storageName)
+ProfileAdapter::ProfileAdapter(const QString &storageName, const QString &dataPath,
+                               const QString &cachePath, HttpCacheType httpCacheType,
+                               PersistentCookiesPolicy persistentCookiesPolicy,
+                               int httpCacheMaximumSize,
+                               PersistentPermissionsPolicy persistentPermissionPolicy)
+    : m_name(storageName)
     , m_offTheRecord(storageName.isEmpty())
+    , m_dataPath(dataPath.isEmpty() && !m_name.isEmpty() ? buildLocationFromStandardPath(
+                         QStandardPaths::writableLocation(QStandardPaths::AppDataLocation), m_name)
+                                                         : dataPath)
     , m_downloadPath(QStandardPaths::writableLocation(QStandardPaths::DownloadLocation))
-    , m_httpCacheType(DiskHttpCache)
-    , m_persistentCookiesPolicy(AllowPersistentCookies)
-    , m_persistentPermissionsPolicy(PersistentPermissionsPolicy::StoreOnDisk)
+    , m_cachePath(cachePath.isEmpty() && !m_name.isEmpty() ? buildLocationFromStandardPath(
+                          QStandardPaths::writableLocation(QStandardPaths::CacheLocation), m_name)
+                                                           : cachePath)
+    , m_httpCacheType(httpCacheType)
+    , m_persistentCookiesPolicy(persistentCookiesPolicy)
+    , m_persistentPermissionsPolicy(persistentPermissionPolicy)
     , m_visitedLinksPolicy(TrackVisitedLinksOnDisk)
     , m_clientHintsEnabled(true)
     , m_pushServiceEnabled(false)
-    , m_httpCacheMaxSize(0)
+    , m_httpCacheMaxSize(m_name.isEmpty() ? 0 : httpCacheMaximumSize)
 {
     WebEngineContext::current()->addProfileAdapter(this);
     // creation of profile requires webengine context
@@ -77,10 +87,6 @@ ProfileAdapter::ProfileAdapter(const QString &storageName):
     // fixme: this should not be here
     m_profile->m_profileIOData->initializeOnUIThread();
     m_customUrlSchemeHandlers.insert(QByteArrayLiteral("qrc"), &m_qrcHandler);
-#if BUILDFLAG(ENABLE_EXTENSIONS)
-    if (!storageName.isEmpty())
-        extensions::ExtensionSystem::Get(m_profile.data())->InitForRegularProfile(true);
-#endif
     m_cancelableTaskTracker.reset(new base::CancelableTaskTracker());
 
     m_profile->DoFinalInit();
@@ -228,9 +234,23 @@ void ProfileAdapter::removeDownload(quint32 downloadId)
     downloadManagerDelegate()->removeDownload(downloadId);
 }
 
+void ProfileAdapter::acceptDownload(quint32 downloadId, bool accepted, bool useDownloadTargetCallback,
+                                    const QString &path, int savePageFormat)
+{
+    if (useDownloadTargetCallback)
+        downloadManagerDelegate()->downloadTargetDetermined(downloadId, accepted, path);
+    else
+        downloadManagerDelegate()->savePathDetermined(downloadId, accepted, path, savePageFormat);
+}
+
 ProfileAdapter *ProfileAdapter::createDefaultProfileAdapter()
 {
     return WebEngineContext::current()->createDefaultProfileAdapter();
+}
+
+bool ProfileAdapter::profileExistOnPath(const QString &dataPath)
+{
+    return WebEngineContext::current()->profileExistOnPath(dataPath);
 }
 
 ProfileAdapter *ProfileAdapter::defaultProfileAdapter()
@@ -253,9 +273,9 @@ QString ProfileAdapter::dataPath() const
     // a location to do so.
     QString name = m_name;
     if (m_offTheRecord)
-        name = QStringLiteral("OffTheRecord");
+        name = u"OffTheRecord"_s;
     else if (m_name.isEmpty())
-        name = QStringLiteral("UnknownProfile");
+        name = u"UnknownProfile"_s;
     return buildLocationFromStandardPath(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation), name);
 }
 
@@ -305,9 +325,9 @@ QString ProfileAdapter::httpCachePath() const
 {
     if (m_offTheRecord)
         return QString();
-    QString basePath = cachePath();
+    const QString basePath = cachePath();
     if (!basePath.isEmpty())
-        return basePath % QLatin1String("/Cache");
+        return basePath % "/Cache"_L1;
     return QString();
 }
 
@@ -520,7 +540,7 @@ void ProfileAdapter::removeUrlSchemeHandler(QWebEngineUrlSchemeHandler *handler)
 
 void ProfileAdapter::removeUrlScheme(const QByteArray &scheme)
 {
-    QByteArray canonicalScheme = scheme.toLower();
+    const QByteArray canonicalScheme = scheme.toLower();
     if (schemeType(canonicalScheme) == SchemeType::Protected) {
         qWarning("Cannot remove the URL scheme handler for an internal scheme: %s", scheme.constData());
         return;
@@ -532,7 +552,7 @@ void ProfileAdapter::removeUrlScheme(const QByteArray &scheme)
 void ProfileAdapter::installUrlSchemeHandler(const QByteArray &scheme, QWebEngineUrlSchemeHandler *handler)
 {
     Q_ASSERT(handler);
-    QByteArray canonicalScheme = scheme.toLower();
+    const QByteArray canonicalScheme = scheme.toLower();
     SchemeType type = schemeType(canonicalScheme);
 
     if (type == SchemeType::Protected) {
@@ -591,12 +611,12 @@ QList<QWebEnginePermission> ProfileAdapter::listPermissions(const QUrl &origin, 
 
 QString ProfileAdapter::httpAcceptLanguageWithoutQualities() const
 {
-    const QStringList list = m_httpAcceptLanguage.split(QLatin1Char(','));
     QString out;
-    for (const QString &str : list) {
-        if (!out.isEmpty())
-            out.append(QLatin1Char(','));
-        out.append(str.split(QLatin1Char(';')).first());
+    auto sep = ""_L1;
+    for (auto lang : m_httpAcceptLanguage.tokenize(u',')) {
+        out += sep;
+        out += *lang.tokenize(u';').begin(); // tokenize() is never empty with KeepEmptyParts!
+        sep = ","_L1;
     }
     return out;
 }
@@ -805,12 +825,19 @@ void ProfileAdapter::reinitializeHistoryService()
 {
     Q_ASSERT(!m_offTheRecord);
     if (ensureDataPathExists()) {
+        // remove the associated services first, so we can get new ones (inited with
+        // the new data paths) from the factory
+        FaviconServiceFactoryQt::RemoveFromBrowserContext(m_profile.data());
+        HistoryServiceFactoryQt::RemoveFromBrowserContext(m_profile.data());
+
         favicon::FaviconService *faviconService =
                 FaviconServiceFactoryQt::GetForBrowserContext(m_profile.data());
         history::HistoryService *historyService = static_cast<history::HistoryService *>(
                 HistoryServiceFactoryQt::GetInstance()->GetForBrowserContext(m_profile.data()));
         Q_ASSERT(historyService);
         faviconService->SetHistoryService(historyService);
+        if (auto *faviconDriver = FaviconDriverQt::GetForBrowserContext(m_profile.data()))
+            faviconDriver->setFaviconService(faviconService);
     } else {
         qWarning("Favicon database is not available for this profile.");
     }
@@ -822,14 +849,12 @@ QString ProfileAdapter::determineDownloadPath(const QString &downloadDirectory, 
     QString suggestedFilePath = suggestedFile.absoluteFilePath();
     base::FilePath tmpFilePath(toFilePath(suggestedFilePath).NormalizePathSeparatorsTo('/'));
 
-    int uniquifier = 0;
+    base::FilePath uniqueFilePath;
     {
         base::ScopedAllowBlocking allowBlock;
-        uniquifier = base::GetUniquePathNumber(tmpFilePath);
+        uniqueFilePath = base::GetUniquePath(tmpFilePath);
     }
-    if (uniquifier > 0)
-        suggestedFilePath = toQt(tmpFilePath.InsertBeforeExtensionASCII(base::StringPrintf(" (%d)", uniquifier)).AsUTF8Unsafe());
-    else if (uniquifier == -1) {
+    if (uniqueFilePath.empty()) {
         base::Time::Exploded exploded;
         base::Time::FromTimeT(startTime).LocalExplode(&exploded);
         std::string suffix = base::StringPrintf(
@@ -837,6 +862,8 @@ QString ProfileAdapter::determineDownloadPath(const QString &downloadDirectory, 
                     exploded.day_of_month, exploded.hour, exploded.minute,
                     exploded.second, exploded.millisecond);
         suggestedFilePath = toQt(tmpFilePath.InsertBeforeExtensionASCII(suffix).AsUTF8Unsafe());
+    } else if (uniqueFilePath != tmpFilePath) {
+        suggestedFilePath = toQt(uniqueFilePath.AsUTF8Unsafe());
     }
     return suggestedFilePath;
 }

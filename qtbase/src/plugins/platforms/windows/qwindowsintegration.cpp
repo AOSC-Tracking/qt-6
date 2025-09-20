@@ -50,8 +50,7 @@
 
 #include <QtCore/qoperatingsystemversion.h>
 #include <QtCore/private/qfunctions_win_p.h>
-
-#include <wrl.h>
+#include <QtCore/private/qcomptr_p.h>
 
 #include <limits.h>
 
@@ -105,7 +104,7 @@ struct QWindowsIntegrationPrivate
 #if QT_CONFIG(accessibility)
    QWindowsUiaAccessibility m_accessibility;
 #endif
-    QWindowsServices m_services;
+    mutable QScopedPointer<QWindowsServices> m_services;
 };
 
 template <typename IntType>
@@ -598,7 +597,10 @@ QPlatformTheme *QWindowsIntegration::createPlatformTheme(const QString &name) co
 
 QPlatformServices *QWindowsIntegration::services() const
 {
-    return &d->m_services;
+    if (d->m_services.isNull())
+        d->m_services.reset(new QWindowsServices);
+
+    return d->m_services.data();
 }
 
 void QWindowsIntegration::beep() const
@@ -717,8 +719,6 @@ void QWindowsIntegration::setApplicationBadge(qint64 number)
 void QWindowsIntegration::setApplicationBadge(const QImage &image)
 {
     QComHelper comHelper;
-
-    using Microsoft::WRL::ComPtr;
 
     ComPtr<ITaskbarList3> taskbarList;
     CoCreateInstance(CLSID_TaskbarList, nullptr,

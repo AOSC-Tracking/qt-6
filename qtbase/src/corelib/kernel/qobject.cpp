@@ -8,6 +8,7 @@
 #include "qobject_p_p.h"
 #include "qmetaobject_p.h"
 
+#include <QtCore/private/qtclasshelper_p.h>
 #include "qabstracteventdispatcher.h"
 #include "qabstracteventdispatcher_p.h"
 #include "qcoreapplication.h"
@@ -55,8 +56,8 @@ Q_TRACE_POINT(qtcore, QMetaObject_activate_declarative_signal_exit);
 
 static int DIRECT_CONNECTION_ONLY = 0;
 
-Q_LOGGING_CATEGORY(lcConnectSlotsByName, "qt.core.qmetaobject.connectslotsbyname")
-Q_LOGGING_CATEGORY(lcConnect, "qt.core.qobject.connect")
+Q_STATIC_LOGGING_CATEGORY(lcConnectSlotsByName, "qt.core.qmetaobject.connectslotsbyname")
+Q_STATIC_LOGGING_CATEGORY(lcConnect, "qt.core.qobject.connect")
 
 Q_CORE_EXPORT QBasicAtomicPointer<QSignalSpyCallbackSet> qt_signal_spy_callback_set = Q_BASIC_ATOMIC_INITIALIZER(nullptr);
 
@@ -101,13 +102,14 @@ static int *queuedConnectionTypes(const QMetaMethod &method)
     return typeIds;
 }
 
+// ### Future work: replace with an array of QMetaType or QtPrivate::QMetaTypeInterface *
 static int *queuedConnectionTypes(const QArgumentType *argumentTypes, int argc)
 {
     auto types = std::make_unique<int[]>(argc + 1);
     for (int i = 0; i < argc; ++i) {
         const QArgumentType &type = argumentTypes[i];
-        if (type.type())
-            types[i] = type.type();
+        if (type.metaType().isValid())
+            types[i] = type.metaType().id();
         else if (type.name().endsWith('*'))
             types[i] = QMetaType::VoidStar;
         else
@@ -151,8 +153,9 @@ void (*QAbstractDeclarativeData::setWidgetParent)(QObject *, QObject *) = nullpt
 
 QObjectData::~QObjectData() {}
 
-QMetaObject *QObjectData::dynamicMetaObject() const
+const QMetaObject *QObjectData::dynamicMetaObject() const
 {
+    // ### keep in sync with removed_api.cpp version
     return metaObject->toDynamicMetaObject(q_ptr);
 }
 
@@ -655,7 +658,7 @@ QMetaCallEvent* QMetaCallEvent::create_impl(QtPrivate::SlotObjUniquePtr slotObj,
     \reentrant
 
     QSignalBlocker can be used wherever you would otherwise use a
-    pair of calls to blockSignals(). It blocks signals in its
+    pair of calls to QObject::blockSignals(). It blocks signals in its
     constructor and in the destructor it resets the state to what
     it was before the constructor ran.
 
@@ -1288,6 +1291,17 @@ QString QObject::objectName() const
 }
 
 /*!
+    \internal
+    Only use if you know nothing can be bound yet. Usually used for
+    internal objects that do get names.
+*/
+void QObjectPrivate::setObjectNameWithoutBindings(const QString &name)
+{
+    ensureExtraData();
+    extraData->objectName.setValueBypassingBindings(name);
+}
+
+/*!
     \fn void QObject::setObjectName(const QString &name)
     Sets the object's name to \a name.
 */
@@ -1636,6 +1650,8 @@ QThread *QObject::thread() const
     thread to the current thread. There is one exception to this rule
     however: objects with no thread affinity can be "pulled" to the
     current thread.
+
+    In Qt versions prior to 6.7, this function had no return value (\c void).
 
     \sa thread()
  */
@@ -2406,6 +2422,14 @@ void QObject::removeEventFilter(QObject *obj)
     thread with no running event loop, the object will be destroyed when the
     thread finishes.
 
+    A common pattern when using a worker \c QObject in a \c QThread
+    is to connect the thread's \c finished() signal to the worker's
+    \c deleteLater() slot to ensure it is safely deleted:
+
+    \code
+    connect(thread, &QThread::finished, worker, &QObject::deleteLater);
+    \endcode
+
     Note that entering and leaving a new event loop (e.g., by opening a modal
     dialog) will \e not perform the deferred deletion; for the object to be
     deleted, the control must return to the event loop from which deleteLater()
@@ -2719,10 +2743,16 @@ int QObject::senderSignalIndex() const
 
     \snippet code/src_corelib_kernel_qobject.cpp 21
 
+    As the code snippet above illustrates, you can use this function to avoid
+    expensive operations or emitting a signal that nobody listens to.
+
+    \warning In a multithreaded application, consecutive calls to this
+    function are not guaranteed to yield the same results.
+
     \warning This function violates the object-oriented principle of
-    modularity. However, it might be useful when you need to perform
-    expensive initialization only if something is connected to a
-    signal.
+    modularity. In particular, this function must not be called from an
+    override of connectNotify() or disconnectNotify(), as those might get
+    called from any thread.
 
     \sa isSignalConnected()
 */
@@ -2779,14 +2809,17 @@ int QObject::receivers(const char *signal) const
     \snippet code/src_corelib_kernel_qobject.cpp 49
 
     As the code snippet above illustrates, you can use this function to avoid
-    expensive initialization or emitting a signal that nobody listens to.
-    However, in a multithreaded application, connections might change after
-    this function returns and before the signal gets emitted.
+    expensive operations or emitting a signal that nobody listens to.
+
+    \warning In a multithreaded application, consecutive calls to this
+    function are not guaranteed to yield the same results.
 
     \warning This function violates the object-oriented principle of
     modularity. In particular, this function must not be called from an
     override of connectNotify() or disconnectNotify(), as those might get
     called from any thread.
+
+    \sa receivers()
 */
 bool QObject::isSignalConnected(const QMetaMethod &signal) const
 {
@@ -2968,7 +3001,7 @@ QMetaObject::Connection QObject::connect(const QObject *sender, const char *sign
     ++signal; // skip code
     QArgumentTypeArray signalTypes;
     Q_ASSERT(QMetaObjectPrivate::get(smeta)->revision >= 7);
-    QByteArray signalName = QMetaObjectPrivate::decodeMethodSignature(signal, signalTypes);
+    QByteArrayView signalName = QMetaObjectPrivate::decodeMethodSignature(signal, signalTypes);
     int signal_index = QMetaObjectPrivate::indexOfSignalRelative(
             &smeta, signalName, signalTypes.size(), signalTypes.constData());
     if (signal_index < 0) {
@@ -2999,7 +3032,7 @@ QMetaObject::Connection QObject::connect(const QObject *sender, const char *sign
     ++method; // skip code
 
     QArgumentTypeArray methodTypes;
-    QByteArray methodName = QMetaObjectPrivate::decodeMethodSignature(method, methodTypes);
+    QByteArrayView methodName = QMetaObjectPrivate::decodeMethodSignature(method, methodTypes);
     const QMetaObject *rmeta = receiver->metaObject();
     int method_index_relative = -1;
     Q_ASSERT(QMetaObjectPrivate::get(rmeta)->revision >= 7);
@@ -3050,6 +3083,8 @@ QMetaObject::Connection QObject::connect(const QObject *sender, const char *sign
         return QMetaObject::Connection(nullptr);
     }
 
+    // ### Future work: attempt get the metatypes from the meta object first
+    // because it's possible they're all registered.
     int *types = nullptr;
     if ((type == Qt::QueuedConnection)
             && !(types = queuedConnectionTypes(signalTypes.constData(), signalTypes.size()))) {
@@ -3278,12 +3313,12 @@ bool QObject::disconnect(const QObject *sender, const char *signal,
     */
     bool res = false;
     const QMetaObject *smeta = sender->metaObject();
-    QByteArray signalName;
+    QByteArrayView signalName;
     QArgumentTypeArray signalTypes;
     Q_ASSERT(QMetaObjectPrivate::get(smeta)->revision >= 7);
     if (signal)
         signalName = QMetaObjectPrivate::decodeMethodSignature(signal, signalTypes);
-    QByteArray methodName;
+    QByteArrayView methodName;
     QArgumentTypeArray methodTypes;
     Q_ASSERT(!receiver || QMetaObjectPrivate::get(receiver->metaObject())->revision >= 7);
     if (method)
@@ -3468,8 +3503,7 @@ bool QObject::disconnect(const QObject *sender, const QMetaMethod &signal,
 
     \warning This function violates the object-oriented principle of
     modularity. However, it might be useful when you need to perform
-    expensive initialization only if something is connected to a
-    signal.
+    an expensive operation only if something is connected to a signal.
 
     \warning This function is called from the thread which performs the
     connection, which may be a different thread from the thread in which
@@ -3733,6 +3767,14 @@ bool QMetaObjectPrivate::disconnect(const QObject *sender,
         QObjectPrivate::ConnectionDataPointer connections(scd);
 
         if (signal_index < 0) {
+            // wildcard disconnect - warn if this disconnects destroyed()
+            if (!receiver && method_index < 0 && sender->d_func()->isSignalConnected(0)) {
+                qWarning("QObject::disconnect: wildcard call disconnects from destroyed signal of"
+                         " %s::%s", sender->metaObject()->className(),
+                                    sender->objectName().isEmpty()
+                                        ? "unnamed"
+                                        : sender->objectName().toLocal8Bit().data());
+            }
             // remove from all connection lists
             for (int sig_index = -1; sig_index < scd->signalVectorCount(); ++sig_index) {
                 if (disconnectHelper(connections.data(), sig_index, receiver, method_index, slot, senderMutex, disconnectType))
@@ -4216,7 +4258,7 @@ int QObjectPrivate::signalIndex(const char *signalName,
     const QMetaObject *base = q->metaObject();
     Q_ASSERT(QMetaObjectPrivate::get(base)->revision >= 7);
     QArgumentTypeArray types;
-    QByteArray name = QMetaObjectPrivate::decodeMethodSignature(signalName, types);
+    QByteArrayView name = QMetaObjectPrivate::decodeMethodSignature(signalName, types);
     int relative_index = QMetaObjectPrivate::indexOfSignalRelative(
             &base, name, types.size(), types.constData());
     if (relative_index < 0)
@@ -4283,18 +4325,12 @@ bool QObject::doSetProperty(const char *name, const QVariant *lvalue, QVariant *
         } else {
             if (idx == -1) {
                 d->extraData->propertyNames.append(name);
-                if (rvalue)
-                    d->extraData->propertyValues.append(std::move(*rvalue));
-                else
-                    d->extraData->propertyValues.append(*lvalue);
+                q_choose_append(d->extraData->propertyValues, value, rvalue);
             } else {
                 if (value.userType() == d->extraData->propertyValues.at(idx).userType()
                         && value == d->extraData->propertyValues.at(idx))
                     return false;
-                if (rvalue)
-                    d->extraData->propertyValues[idx] = std::move(*rvalue);
-                else
-                    d->extraData->propertyValues[idx] = *lvalue;
+                q_choose_assign(d->extraData->propertyValues[idx], value, rvalue);
             }
         }
 

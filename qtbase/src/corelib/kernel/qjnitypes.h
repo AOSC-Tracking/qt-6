@@ -4,10 +4,17 @@
 #ifndef QJNITYPES_H
 #define QJNITYPES_H
 
+#include <QtCore/qglobal.h>
+
 #if defined(Q_QDOC) || defined(Q_OS_ANDROID)
 
 #include <QtCore/qjnitypes_impl.h>
 #include <QtCore/qjniobject.h>
+
+#if 0
+// This is needed for generating the QtJniTypes forward header
+#pragma qt_class(QtJniTypes)
+#endif
 
 QT_BEGIN_NAMESPACE
 
@@ -152,7 +159,7 @@ struct JNITypeForArgImpl<QString>
 
     static QString fromVarArg(Type t)
     {
-        return QJniObject(t).toString();
+        return t ? QtJniTypes::Detail::toQString(t, QJniEnvironment::getJniEnv()) : QString();
     }
 };
 
@@ -179,7 +186,7 @@ public:
 
     static QList<T> fromVarArg(Type t)
     {
-        return QJniArray<ElementType>(t).toContainer();
+        return t ? QJniArray<ElementType>(t).toContainer() : QList<T>{};
     }
 };
 
@@ -226,13 +233,13 @@ Q_DECLARE_JNI_NATIVE_METHOD_HELPER(Method, Helper, Name)                        
     QT_DECLARE_JNI_NATIVE_METHOD_2(Method, Method)                              \
 
 #define Q_JNI_NATIVE_METHOD(Method)                                             \
-    QtJniMethods::Method##_Helper::makeJNIMethod(::Method)
+    QtJniMethods::Method##_Helper::makeJNIMethod(QT_PREPEND_NAMESPACE(Method))
 
 #define Q_DECLARE_JNI_NATIVE_METHOD_IN_CURRENT_SCOPE(...)                                   \
     QT_OVERLOADED_MACRO(QT_DECLARE_JNI_NATIVE_METHOD_IN_CURRENT_SCOPE, __VA_ARGS__)         \
 
 #define QT_DECLARE_JNI_NATIVE_METHOD_IN_CURRENT_SCOPE_2(Method, Name)                       \
-Q_DECLARE_JNI_NATIVE_METHOD_HELPER(Method, QtJniMethod, Name)                               \
+    Q_DECLARE_JNI_NATIVE_METHOD_HELPER(Method, QtJniMethod, Name)                           \
 
 #define QT_DECLARE_JNI_NATIVE_METHOD_IN_CURRENT_SCOPE_1(Method)                             \
     QT_DECLARE_JNI_NATIVE_METHOD_IN_CURRENT_SCOPE_2(Method, Method)                         \

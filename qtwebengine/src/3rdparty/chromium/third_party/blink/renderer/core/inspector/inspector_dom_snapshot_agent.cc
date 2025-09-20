@@ -216,13 +216,13 @@ void InspectorDOMSnapshotAgent::CharacterDataModified(
     CharacterData* character_data) {
   String origin_url = GetOriginUrl(character_data);
   if (origin_url)
-    origin_url_map_->insert(character_data->GetDomNodeId(), origin_url);
+    origin_url_map_->map.insert(character_data->GetDomNodeId(), origin_url);
 }
 
 void InspectorDOMSnapshotAgent::DidInsertDOMNode(Node* node) {
   String origin_url = GetOriginUrl(node);
   if (origin_url)
-    origin_url_map_->insert(node->GetDomNodeId(), origin_url);
+    origin_url_map_->map.insert(node->GetDomNodeId(), origin_url);
 }
 
 void InspectorDOMSnapshotAgent::EnableAndReset() {
@@ -266,8 +266,10 @@ protocol::Response InspectorDOMSnapshotAgent::getSnapshot(
   Document* document = inspected_frames_->Root()->GetDocument();
   if (!document)
     return protocol::Response::ServerError("Document is not available");
-  LegacyDOMSnapshotAgent legacySupport(dom_debugger_agent_,
-                                       origin_url_map_.get());
+  LegacyDOMSnapshotAgent legacySupport(
+      dom_debugger_agent_, origin_url_map_
+                               ? origin_url_map_->weak_ptr_factory.GetWeakPtr()
+                               : base::WeakPtr<OriginUrlMap>());
   return legacySupport.GetSnapshot(
       document, std::move(style_filter), std::move(include_event_listeners),
       std::move(include_paint_order), std::move(include_user_agent_shadow_tree),
@@ -519,16 +521,17 @@ void InspectorDOMSnapshotAgent::VisitNode(Node* node,
       BuildArrayForElementAttributes(node));
   BuildLayoutTreeNode(node->GetLayoutObject(), node, index, contrast);
 
-  if (origin_url_map_ && origin_url_map_->Contains(backend_node_id)) {
-    String origin_url = origin_url_map_->at(backend_node_id);
+  if (origin_url_map_ && origin_url_map_->map.Contains(backend_node_id)) {
+    String origin_url = origin_url_map_->map.at(backend_node_id);
     // In common cases, it is implicit that a child node would have the same
     // origin url as its parent, so no need to mark twice.
     if (!node->parentNode()) {
       SetRare(nodes->getOriginURL(nullptr), index, std::move(origin_url));
     } else {
       DOMNodeId parent_id = node->parentNode()->GetDomNodeId();
-      auto it = origin_url_map_->find(parent_id);
-      String parent_url = it != origin_url_map_->end() ? it->value : String();
+      auto it = origin_url_map_->map.find(parent_id);
+      String parent_url =
+          it != origin_url_map_->map.end() ? it->value : String();
       if (parent_url != origin_url)
         SetRare(nodes->getOriginURL(nullptr), index, std::move(origin_url));
     }
@@ -568,10 +571,10 @@ void InspectorDOMSnapshotAgent::VisitNode(Node* node,
       }
     }
 
-    if (element->GetPseudoId()) {
-      SetRare(
-          nodes->getPseudoType(nullptr), index,
-          InspectorDOMAgent::ProtocolPseudoElementType(element->GetPseudoId()));
+    if (element->IsPseudoElement()) {
+      SetRare(nodes->getPseudoType(nullptr), index,
+              InspectorDOMAgent::ProtocolPseudoElementType(
+                  element->GetPseudoIdForStyling()));
       if (auto tag = To<PseudoElement>(element)->view_transition_name()) {
         SetRare(nodes->getPseudoIdentifier(nullptr), index, tag);
       }
@@ -703,7 +706,7 @@ int InspectorDOMSnapshotAgent::BuildLayoutTreeNode(
                     : String();
   layout_tree_snapshot->getText()->emplace_back(AddString(text));
 
-  if (node->GetPseudoId()) {
+  if (node->GetPseudoIdForStyling()) {
     // For pseudo elements, visit the children of the layout object.
     // Combinding ::before { content: 'hello' } and ::first-letter would produce
     // two boxes for the ::before node, one for 'hello' and one for 'ello'.
@@ -761,7 +764,8 @@ InspectorDOMSnapshotAgent::BuildStylesForNode(Node* node) {
   result->reserve(css_property_filter_->size());
   for (const auto* property : *css_property_filter_) {
     const CSSValue* value = property->CSSValueFromComputedStyle(
-        *style, layout_object, /* allow_visited_style= */ true);
+        *style, layout_object, /* allow_visited_style= */ true,
+        CSSValuePhase::kResolvedValue);
     if (!value) {
       result->emplace_back(-1);
       continue;

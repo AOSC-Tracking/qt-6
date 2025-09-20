@@ -34,7 +34,7 @@ namespace Qt3DExtras {
  */
 
 /*!
- * \qmlproperty float Qt3D.Extras::ExtrudedTextMesh::depth
+ * \qmlproperty real Qt3D.Extras::ExtrudedTextMesh::depth
  *
  * Holds the extrusion depth of the text.
  */

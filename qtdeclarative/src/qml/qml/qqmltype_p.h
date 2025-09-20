@@ -148,6 +148,10 @@ public:
 
     int scopedEnumIndex(QQmlTypeLoader *typeLoader, const QV4::String *, bool *ok) const;
     int scopedEnumIndex(QQmlTypeLoader *typeLoader, const QString &, bool *ok) const;
+
+    int unscopedEnumIndex(QQmlTypeLoader *typeLoader, const QV4::String *, bool *ok) const;
+    int unscopedEnumIndex(QQmlTypeLoader *typeLoader, const QString &, bool *ok) const;
+
     int scopedEnumValue(QQmlTypeLoader *typeLoader, int index, const QV4::String *, bool *ok) const;
     int scopedEnumValue(QQmlTypeLoader *typeLoader, int index, const QString &, bool *ok) const;
     int scopedEnumValue(QQmlTypeLoader *typeLoader, const QHashedStringRef &, const QHashedStringRef &, bool *ok) const;
@@ -165,6 +169,7 @@ public:
         CompositeSingletonType = 4,
         InlineComponentType = 5,
         SequentialContainerType = 6,
+        JavaScriptType = 7,
         AnyRegistrationType = 255
     };
 

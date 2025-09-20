@@ -41,8 +41,8 @@ QT_BEGIN_NAMESPACE
     cameraFormat represents a certain video format supported by a camera device.
 
     The format is a combination of a
-    \l{pixel format}{QVideoFrameFormat::PixelFormat}, resolution and a range of frame
-    rates.
+    \l{QVideoFrameFormat::PixelFormat}{pixel format}, resolution, and a range
+    of frame frates.
 
     cameraFormat objects can be queried from \l cameraDevice to inspect the set of
     supported video formats.
@@ -199,6 +199,11 @@ bool QCameraFormat::operator==(const QCameraFormat &other) const
     availableCameras() and defaultCamera() functions. These are contained within
     QtMultimedia::MediaDevices.
 
+    The QCameraDevice instance retains its properties throughout its lifetime,
+    even if the corresponding physical device is disconnected or its settings are
+    modified. To keep track of updated properties, the user should load new instances
+    of QCameraDevice from \l{QMediaDevices} when the relevant signals are fired.
+
     This example prints the name of all available cameras:
 
     \snippet multimedia-snippets/camera.cpp Camera listing
@@ -228,6 +233,11 @@ bool QCameraFormat::operator==(const QCameraFormat &other) const
 
     The cameraDevice value type describes the properties of a camera device that
     is connected to the system.
+
+    The cameraDevice instance retains its properties throughout its lifetime,
+    even if the corresponding physical device is disconnected or its settings are
+    modified. To keep track of updated properties, the user should load new instances
+    of cameraDevice from \l{MediaDevices} when the relevant signals are fired.
 
     The list of camera devices can be queried from the \l{MediaDevices}
     type. To select a certain camera device set it as the device
@@ -261,19 +271,11 @@ QCameraDevice::QCameraDevice(const QCameraDevice &other) = default;
 QCameraDevice::~QCameraDevice() = default;
 
 /*!
-    Returns true if this QCameraDevice is equal to \a other.
+    Returns true if this QCameraDevice represents the same device as \a other.
 */
 bool QCameraDevice::operator==(const QCameraDevice &other) const
 {
-    if (d == other.d)
-        return true;
-
-    if (!d || ! other.d)
-        return false;
-
-    return (d->id == other.d->id
-            && d->description == other.d->description
-            && d->position == other.d->position);
+    return id() == other.id();
 }
 
 /*!

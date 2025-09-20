@@ -12,8 +12,6 @@
 #include <QtTest/qtesteventloop.h>
 
 #include <QtCore/qregularexpression.h>
-#include <QtCore/qoperatingsystemversion.h>
-#include <QtCore/qsystemdetection.h>
 #include <QtCore/qurl.h>
 #include <QtHttpServer/qhttpserverrequest.h>
 #include <QtHttpServer/qhttpserverresponder.h>
@@ -35,6 +33,8 @@
 #include <QtNetwork/qsslserver.h>
 #include <QtNetwork/private/qhttp2connection_p.h>
 #endif
+
+#include <QtTest/private/qtesthelpers_p.h>
 
 #if QT_CONFIG(ssl)
 
@@ -216,13 +216,13 @@ void tst_QAbstractHttpServer::request()
             Q_ASSERT(false);
         }
     } server;
-    auto tcpServer = new QTcpServer;
-    QVERIFY(tcpServer->listen());
-    server.bind(tcpServer);
+    QTcpServer tcpServer;
+    QVERIFY(tcpServer.listen());
+    server.bind(&tcpServer);
     QNetworkAccessManager networkAccessManager;
     QUrl url(QStringLiteral("http://%1:%2%3")
              .arg(host)
-             .arg(tcpServer->serverPort())
+             .arg(tcpServer.serverPort())
              .arg(path));
     if (!query.isEmpty())
         url.setQuery(query);
@@ -248,10 +248,10 @@ void tst_QAbstractHttpServer::checkListenWarns()
             Q_ASSERT(false);
         }
     } server;
-    auto tcpServer = new QTcpServer;
+    QTcpServer tcpServer;
     QTest::ignoreMessage(QtWarningMsg,
                          QRegularExpression(QStringLiteral("The TCP server .* is not listening.")));
-    server.bind(tcpServer);
+    server.bind(&tcpServer);
 }
 
 void tst_QAbstractHttpServer::websocket()
@@ -277,13 +277,13 @@ void tst_QAbstractHttpServer::websocket()
                 Q_UNUSED(request);
                 return QHttpServerWebSocketUpgradeResponse::accept();
             });
-    auto tcpServer = new QTcpServer;
-    tcpServer->listen();
-    server.bind(tcpServer);
-    auto makeWebSocket = [this, tcpServer]() mutable {
+    QTcpServer tcpServer;
+    tcpServer.listen();
+    server.bind(&tcpServer);
+    auto makeWebSocket = [this, &tcpServer]() mutable {
         auto s = std::make_unique<QWebSocket>(QString::fromUtf8(""),
                                               QWebSocketProtocol::VersionLatest, this);
-        const QUrl url(QString::fromLatin1("ws://localhost:%1").arg(tcpServer->serverPort()));
+        const QUrl url(QString::fromLatin1("ws://localhost:%1").arg(tcpServer.serverPort()));
         s->open(url);
         return s;
     };
@@ -417,18 +417,10 @@ void tst_QAbstractHttpServer::verifyWebSocketUpgrades()
     tcpServer.listen();
     server.bind(&tcpServer);
 #if QT_CONFIG(ssl)
-#ifdef Q_OS_MACOS
-#if !QT_MACOS_IOS_PLATFORM_SDK_EQUAL_OR_ABOVE(150000, 180000)
-    // Starting from macOS 15 our temporary keychain is ignored.
-    // We have to use kSecImportToMemoryOnly/kCFBooleanTrue key/value
-    // instead. This way we don't have to use QT_SSL_USE_TEMPORARY_KEYCHAIN anymore.
-    if (QSslSocket::activeBackend() == QLatin1String("securetransport")
-        && QOperatingSystemVersion::current() >= QOperatingSystemVersion::MacOSSequoia) {
+    if (QTestPrivate::isSecureTransportBlockingTest()) {
         // We were built with SDK below 15, but a file-based keychains are not working anymore on macOS 15...
         QSKIP("This test will block in keychain access");
     }
-#endif // QT_MACOS_IOS_PLATFORM_SDK_EQUAL_OR_ABOVE
-#endif // Q_OS_MACOS
 
     QSslServer sslServer;
     QSslConfiguration sslConfiguration = QSslConfiguration::defaultConfiguration();
@@ -568,18 +560,18 @@ void tst_QAbstractHttpServer::servers()
             Q_ASSERT(false);
         }
     } server;
-    auto tcpServer = new QTcpServer;
-    tcpServer->listen();
-    server.bind(tcpServer);
-    auto tcpServer2 = new QTcpServer;
-    tcpServer2->listen();
-    server.bind(tcpServer2);
+    QTcpServer tcpServer;
+    tcpServer.listen();
+    server.bind(&tcpServer);
+    QTcpServer tcpServer2;
+    tcpServer2.listen();
+    server.bind(&tcpServer2);
     QTRY_COMPARE(server.servers().size(), 2);
     QTRY_COMPARE(server.serverPorts().size(), 2);
-    QTRY_COMPARE(server.servers().first(), tcpServer);
-    QTRY_COMPARE(server.serverPorts().first(), tcpServer->serverPort());
-    QTRY_COMPARE(server.servers().last(), tcpServer2);
-    QTRY_COMPARE(server.serverPorts().last(), tcpServer2->serverPort());
+    QTRY_COMPARE(server.servers().first(), &tcpServer);
+    QTRY_COMPARE(server.serverPorts().first(), tcpServer.serverPort());
+    QTRY_COMPARE(server.servers().last(), &tcpServer2);
+    QTRY_COMPARE(server.serverPorts().last(), tcpServer2.serverPort());
 }
 
 void tst_QAbstractHttpServer::qtbug82053()
@@ -596,12 +588,12 @@ void tst_QAbstractHttpServer::qtbug82053()
 
         void missingHandler(const QHttpServerRequest &, QHttpServerResponder &) override { }
     } server;
-    auto tcpServer = new QTcpServer;
-    tcpServer->listen();
-    server.bind(tcpServer);
+    QTcpServer tcpServer;
+    tcpServer.listen();
+    server.bind(&tcpServer);
 
     QTcpSocket client;
-    client.connectToHost(QHostAddress::LocalHost, tcpServer->serverPort());
+    client.connectToHost(QHostAddress::LocalHost, tcpServer.serverPort());
     client.waitForConnected();
     client.write("CONNECT / HTTP/1.1\n\n");
     client.waitForBytesWritten();
@@ -860,10 +852,11 @@ void tst_QAbstractHttpServer::socketDisconnected()
     QSignalSpy settingsFrameReceivedSpy{ connection, &QHttp2Connection::settingsFrameReceived };
     connect(socket.get(), &QIODevice::readyRead, connection, &QHttp2Connection::handleReadyRead);
     connection->handleReadyRead();
-    QVERIFY(settingsFrameReceivedSpy.wait());
 
     auto stream = connection->createStream().unwrap();
     QVERIFY(stream);
+
+    QVERIFY(settingsFrameReceivedSpy.wait());
 
     // disconnect while request is being processed on server
     QTimer timer;

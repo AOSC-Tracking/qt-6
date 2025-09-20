@@ -595,16 +595,11 @@ void ListModel::set(int elementIndex, QV4::Object *object, QVector<int> *roles)
             const ListLayout::Role &r = m_layout->getRoleOrCreate(propertyName, ListLayout::Role::Number);
             roleIndex = e->setDoubleProperty(r, propertyValue->asDouble());
         } else if (QV4::ArrayObject *a = propertyValue->as<QV4::ArrayObject>()) {
-            const ListLayout::Role &r = m_layout->getRoleOrCreate(propertyName, ListLayout::Role::List);
-            ListModel *subModel = new ListModel(r.subLayout, nullptr);
-
-            int arrayLength = a->getLength();
-            for (int j=0 ; j < arrayLength ; ++j) {
-                o = a->get(j);
-                subModel->append(o);
-            }
-
-            roleIndex = e->setListProperty(r, subModel);
+            roleIndex = setArrayLike(&o, propertyName, e, a);
+        } else if (QV4::Sequence *s = propertyValue->as<QV4::Sequence>()) {
+            roleIndex = setArrayLike(&o, propertyName, e, s);
+        } else if (QV4::QmlListWrapper *l = propertyValue->as<QV4::QmlListWrapper>()) {
+            roleIndex = setArrayLike(&o, propertyName, e, l);
         } else if (propertyValue->isBoolean()) {
             const ListLayout::Role &r = m_layout->getRoleOrCreate(propertyName, ListLayout::Role::Bool);
             roleIndex = e->setBoolProperty(r, propertyValue->booleanValue());
@@ -686,11 +681,11 @@ void ListModel::set(int elementIndex, QV4::Object *object, ListModel::SetElement
                 e->setDoublePropertyFast(r, propertyValue->asDouble());
             }
         } else if (QV4::ArrayObject *a = propertyValue->as<QV4::ArrayObject>()) {
-            setArrayLike(&o, propertyName, e, a);
+            setArrayLikeFast(&o, propertyName, e, a);
         } else if (QV4::Sequence *s = propertyValue->as<QV4::Sequence>()) {
-            setArrayLike(&o, propertyName, e, s);
+            setArrayLikeFast(&o, propertyName, e, s);
         } else if (QV4::QmlListWrapper *l = propertyValue->as<QV4::QmlListWrapper>()) {
-            setArrayLike(&o, propertyName, e, l);
+            setArrayLikeFast(&o, propertyName, e, l);
         } else if (propertyValue->isBoolean()) {
             const ListLayout::Role &r = m_layout->getRoleOrCreate(propertyName, ListLayout::Role::Bool);
             if (r.type == ListLayout::Role::Bool) {
@@ -1576,11 +1571,15 @@ ModelNodeMetaObject::~ModelNodeMetaObject()
 {
 }
 
+#if QT_VERSION >= QT_VERSION_CHECK(7, 0, 0)
+const QMetaObject *ModelNodeMetaObject::toDynamicMetaObject(QObject *object) const
+#else
 QMetaObject *ModelNodeMetaObject::toDynamicMetaObject(QObject *object)
+#endif
 {
     if (!m_initialized) {
         m_initialized = true;
-        initialize();
+        const_cast<ModelNodeMetaObject *>(this)->initialize();
     }
     return QQmlOpenMetaObject::toDynamicMetaObject(object);
 }
@@ -1715,8 +1714,8 @@ ReturnedValue ModelObject::virtualGet(const Managed *m, PropertyKey id, const Va
 
 ReturnedValue ModelObject::virtualResolveLookupGetter(const Object *object, ExecutionEngine *engine, Lookup *lookup)
 {
-    lookup->getter = Lookup::getterFallback;
-    return lookup->getter(lookup, engine, *object);
+    lookup->call = Lookup::Call::GetterQObjectPropertyFallback;
+    return lookup->getter(engine, *object);
 }
 
 struct ModelObjectOwnPropertyKeyIterator : ObjectOwnPropertyKeyIterator
@@ -1930,7 +1929,7 @@ void DynamicRoleModelNodeMetaObject::propertyWritten(int index)
 /*!
     \qmltype ListModel
     \nativetype QQmlListModel
-    \inherits AbstractListModel
+    //! \inherits AbstractListModel
     \inqmlmodule QtQml.Models
     \ingroup qtquick-models
     \brief Defines a free-form list data source.
@@ -2064,7 +2063,11 @@ QQmlListModel::QQmlListModel(QQmlListModel *orig, QQmlListModelWorkerAgent *agen
     m_agent = agent;
     m_dynamicRoles = orig->m_dynamicRoles;
 
-    m_layout = new ListLayout(orig->m_layout);
+    if (ListLayout *layout = orig->m_layout)
+        m_layout = new ListLayout(layout);
+    else
+        m_layout = new ListLayout;
+
     m_listModel = new ListModel(m_layout, this);
 
     if (m_dynamicRoles)
@@ -2084,11 +2087,12 @@ QQmlListModel::~QQmlListModel()
         m_listModel->destroy();
         delete m_listModel;
 
-        if (m_mainThread && m_agent) {
+        if (m_mainThread && m_agent)
             m_agent->modelDestroyed();
-            m_agent->release();
-        }
     }
+
+    if (m_mainThread && m_agent)
+        m_agent->release();
 
     m_listModel = nullptr;
 
@@ -2359,7 +2363,7 @@ void QQmlListModel::setDynamicRoles(bool enableDynamicRoles)
 {
     if (m_mainThread && m_agent == nullptr) {
         if (enableDynamicRoles) {
-            if (m_layout->roleCount())
+            if (m_layout && m_layout->roleCount())
                 qmlWarning(this) << tr("unable to enable dynamic roles as this model is not empty");
             else
                 m_dynamicRoles = true;
@@ -3030,8 +3034,9 @@ bool QQmlListModelParser::definesEmptyList(const QString &s)
 
     The names used for roles must begin with a lower-case letter and should be
     common to all elements in a given model. Values must be simple constants; either
-    strings (quoted and optionally within a call to QT_TR_NOOP), boolean values
-    (true, false), numbers, or enumeration values (such as AlignText.AlignHCenter).
+    strings (quoted and optionally within a call to
+    \l [QML] {Qt::} {QT_TR_NOOP()}, boolean values (true, false), numbers, or
+    enumeration values (such as AlignText.AlignHCenter).
 
     Beginning with Qt 5.11 ListElement also allows assigning a function declaration to
     a role. This allows the definition of ListElements with callable actions.

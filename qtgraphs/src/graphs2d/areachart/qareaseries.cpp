@@ -164,6 +164,32 @@ QT_BEGIN_NAMESPACE
     This signal is emitted when the lower series changes.
 */
 
+/*!
+    \qmlsignal AreaSeries::clicked(point point)
+    This signal is emitted when the user clicks or taps an area graph.
+    The \a point specifies the event triggered position.
+*/
+
+/*!
+    \qmlsignal AreaSeries::doubleClicked(point point)
+    This signal is emitted when the user double-clicks or double-taps an area graph.
+    The \a point specifies the event triggered position.
+    This signal always occurs after \l clicked.
+*/
+
+/*!
+    \qmlsignal AreaSeries::pressed(point point)
+    This signal is emitted when the user clicks or taps the area graph and holds down
+    the mouse button or gesture.
+    The \a point specifies the event triggered position.
+*/
+
+/*!
+    \qmlsignal AreaSeries::released(point point)
+    This signal is emitted when the user releases a pressed click or tap.
+    The \a point specifies the event triggered position.
+*/
+
 QAreaSeries::QAreaSeries(QObject *parent)
     : QAbstractSeries(*(new QAreaSeriesPrivate()), parent)
 {}

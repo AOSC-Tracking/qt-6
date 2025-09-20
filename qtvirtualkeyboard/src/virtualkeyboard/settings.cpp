@@ -7,6 +7,9 @@
 #include <QFileInfo>
 #include <QDir>
 #include "virtualkeyboarddebug_p.h"
+#ifdef QT_VIRTUALKEYBOARD_SOUNDS_ENABLED
+#include <QtMultimedia/qaudio.h>
+#endif
 
 QT_BEGIN_NAMESPACE
 namespace QtVirtualKeyboard {
@@ -35,7 +38,8 @@ public:
         defaultInputMethodDisabled(false),
         defaultDictionaryDisabled(false),
         visibleFunctionKeys(QtVirtualKeyboard::KeyboardFunctionKey::All),
-        closeOnReturn(false)
+        closeOnReturn(false),
+        keySoundVolume(1.0)
     {
         ensureUserDataPathExists();
     }
@@ -68,6 +72,7 @@ public:
     bool defaultDictionaryDisabled;
     QtVirtualKeyboard::KeyboardFunctionKeys visibleFunctionKeys;
     bool closeOnReturn;
+    qreal keySoundVolume;
 };
 
 static QScopedPointer<Settings> s_settingsInstance;
@@ -372,6 +377,22 @@ void Settings::setCloseOnReturn(bool enabled)
     if (d->closeOnReturn != enabled) {
         d->closeOnReturn = enabled;
         emit closeOnReturnChanged();
+    }
+}
+
+qreal Settings::keySoundVolume() const
+{
+    Q_D(const Settings);
+    return d->keySoundVolume;
+}
+
+void Settings::setKeySoundVolume(qreal volume)
+{
+    Q_D(Settings);
+    qreal volumeBounded = qBound(0.0, volume, 1.0);
+    if (d->keySoundVolume != volumeBounded) {
+        d->keySoundVolume = volumeBounded;
+        emit keySoundVolumeChanged();
     }
 }
 

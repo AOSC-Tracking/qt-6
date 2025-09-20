@@ -9,13 +9,14 @@
 #include <qlist.h>
 #include <qstring.h>
 #include <qbitarray.h>
+#include <qvarlengtharray.h>
 #include <private/qstringiterator_p.h>
 #if 0
 #include <private/qunicodetables_p.h>
 #endif
 
-#define DATA_VERSION_S "15.1"
-#define DATA_VERSION_STR "QChar::Unicode_15_1"
+#define DATA_VERSION_S "16.0"
+#define DATA_VERSION_STR "QChar::Unicode_16_0"
 
 
 static QHash<QByteArray, QChar::UnicodeVersion> age_map;
@@ -52,6 +53,7 @@ static void initAgeMap()
         { QChar::Unicode_14_0,   "14.0" }, // UCD Revision 28
         { QChar::Unicode_15_0,   "15.0" }, // UCD Revision 30
         { QChar::Unicode_15_1,   "15.1" }, // UCD Revision 32
+        { QChar::Unicode_16_0,   "16.0" }, // UCD Revision 34
         { QChar::Unicode_Unassigned, 0 }
     };
     AgeMap *d = ageMap;
@@ -529,17 +531,26 @@ static void initSentenceBreak()
 
 static const char *line_break_class_string =
     "// see http://www.unicode.org/reports/tr14/tr14-30.html\n"
-    "// we don't use the XX, AK, AP, AS and AI classes and map them to AL instead.\n"
+    "// we don't use the XX and AI classes but map them to AL instead.\n"
     "// VI and VF classes are mapped to CM.\n"
     "enum LineBreakClass {\n"
     "    LineBreak_OP, LineBreak_CL, LineBreak_CP,\n"
-    "    LineBreak_QU, LineBreak_QU_Pi, LineBreak_QU_Pf, LineBreak_GL,\n"
-    "    LineBreak_NS, LineBreak_EX, LineBreak_SY, LineBreak_IS, LineBreak_PR,\n"
+    "    LineBreak_QU, LineBreak_QU_Pi, LineBreak_QU_Pf, LineBreak_QU_19,\n"
+    "    LineBreak_GL, LineBreak_NS, LineBreak_EX, LineBreak_SY,\n"
+    "    LineBreak_IS, LineBreak_PR,\n"
     "    LineBreak_PO, LineBreak_NU, LineBreak_AL, LineBreak_HL, LineBreak_ID,\n"
-    "    LineBreak_IN, LineBreak_HY, LineBreak_BA, LineBreak_BB, LineBreak_B2,\n"
+    "    LineBreak_IN, LineBreak_HY, LineBreak_WS_HY,\n"
+    "    LineBreak_BA, LineBreak_WS_BA,\n"
+    "    LineBreak_HYBA,\n"
+    "    LineBreak_BB, LineBreak_B2,\n"
     "    LineBreak_ZW, LineBreak_CM, LineBreak_WJ, LineBreak_H2, LineBreak_H3,\n"
     "    LineBreak_JL, LineBreak_JV, LineBreak_JT, LineBreak_RI, LineBreak_CB,\n"
-    "    LineBreak_EB, LineBreak_EM, LineBreak_ZWJ,\n"
+    "    LineBreak_EB, LineBreak_EM,\n"
+    "\n"
+    "    LineBreak_AK, LineBreak_AP, LineBreak_AS,\n"
+    "    LineBreak_VI, LineBreak_VF,\n"
+    "\n"
+    "    LineBreak_ZWJ,\n"
     "    LineBreak_SA, LineBreak_SG, LineBreak_SP,\n"
     "    LineBreak_CR, LineBreak_LF, LineBreak_BK,\n"
     "\n"
@@ -548,13 +559,22 @@ static const char *line_break_class_string =
 
 enum LineBreakClass {
     LineBreak_OP, LineBreak_CL, LineBreak_CP,
-    LineBreak_QU, LineBreak_QU_Pi, LineBreak_QU_Pf, LineBreak_GL,
-    LineBreak_NS, LineBreak_EX, LineBreak_SY, LineBreak_IS, LineBreak_PR,
+    LineBreak_QU, LineBreak_QU_Pi, LineBreak_QU_Pf, LineBreak_QU_19,
+    LineBreak_GL, LineBreak_NS, LineBreak_EX, LineBreak_SY,
+    LineBreak_IS, LineBreak_PR,
     LineBreak_PO, LineBreak_NU, LineBreak_AL, LineBreak_HL, LineBreak_ID,
-    LineBreak_IN, LineBreak_HY, LineBreak_BA, LineBreak_BB, LineBreak_B2,
+    LineBreak_IN, LineBreak_HY, LineBreak_WS_HY,
+    LineBreak_BA, LineBreak_WS_BA,
+    LineBreak_HYBA,
+    LineBreak_BB, LineBreak_B2,
     LineBreak_ZW, LineBreak_CM, LineBreak_WJ, LineBreak_H2, LineBreak_H3,
     LineBreak_JL, LineBreak_JV, LineBreak_JT, LineBreak_RI, LineBreak_CB,
-    LineBreak_EB, LineBreak_EM, LineBreak_ZWJ,
+    LineBreak_EB, LineBreak_EM,
+
+    LineBreak_AK, LineBreak_AP, LineBreak_AS,
+    LineBreak_VI, LineBreak_VF,
+
+    LineBreak_ZWJ,
     LineBreak_SA, LineBreak_SG, LineBreak_SP,
     LineBreak_CR, LineBreak_LF, LineBreak_BK,
 
@@ -616,11 +636,11 @@ static void initLineBreak()
         { LineBreak_EB, "EB" },
         { LineBreak_EM, "EM" },
         { LineBreak_ZWJ, "ZWJ" },
-        { LineBreak_AL, "AK" },
-        { LineBreak_AL, "AP" },
-        { LineBreak_AL, "AS" },
-        { LineBreak_CM, "VI" },
-        { LineBreak_CM, "VF" },
+        { LineBreak_AK, "AK" },
+        { LineBreak_AP, "AP" },
+        { LineBreak_AS, "AS" },
+        { LineBreak_VI, "VI" },
+        { LineBreak_VF, "VF" },
         { LineBreak_Unassigned, 0 }
     };
     LineBreakList *d = breaks;
@@ -823,6 +843,15 @@ static void initScriptMap()
         { QChar::Script_Kawi,                   "Kawi"},
         { QChar::Script_NagMundari,             "NagMundari"},
 
+        // 16.0
+        { QChar::Script_Garay,                   "Garay"},
+        { QChar::Script_GurungKhema,             "GurungKhema"},
+        { QChar::Script_KiratRai,                "KiratRai"},
+        { QChar::Script_OlOnal,                  "OlOnal"},
+        { QChar::Script_Sunuwar,                 "Sunuwar"},
+        { QChar::Script_Todhri,                  "Todhri"},
+        { QChar::Script_TuluTigalari,            "TuluTigalari"},
+
         // unhandled
         { QChar::Script_Unknown,                0 }
     };
@@ -886,6 +915,49 @@ enum class IdnaStatus : unsigned int {
     Deviation,
 };
 
+static const char *emoji_flags_string =
+    "enum class EmojiFlags : uchar {\n"
+    "    NoEmoji = 0,\n"
+    "    Emoji = 1,\n"
+    "    Emoji_Presentation = 2,\n"
+    "    Emoji_Modifier = 4,\n"
+    "    Emoji_Modifier_Base = 8,\n"
+    "    Emoji_Component = 16\n"
+    "};\n\n";
+
+enum class EmojiFlags : uchar
+{
+    NoEmoji = 0,
+    Emoji = 1,
+    Emoji_Presentation = 2,
+    Emoji_Modifier = 4,
+    Emoji_Modifier_Base = 8,
+    Emoji_Component = 16,
+
+    // Stored via grapheme break, so this is not added to emojiFlags property
+    Extended_Pictographic = 32,
+};
+
+static QHash<QByteArray, EmojiFlags> emojiFlagsMap;
+
+static void initEmojiFlagsMap()
+{
+    struct {
+        EmojiFlags flags;
+        const char *name;
+    } data[] = {
+        {EmojiFlags::Emoji,                 "Emoji"},
+        {EmojiFlags::Emoji_Presentation,    "Emoji_Presentation"},
+        {EmojiFlags::Emoji_Modifier,        "Emoji_Modifier"},
+        {EmojiFlags::Emoji_Modifier_Base,   "Emoji_Modifier_Base"},
+        {EmojiFlags::Emoji_Component,       "Emoji_Component"},
+        {EmojiFlags::Extended_Pictographic, "Extended_Pictographic"},
+    };
+
+    for (const auto &entry : data)
+        emojiFlagsMap[entry.name] = entry.flags;
+}
+
 // Keep this one in sync with the code in createPropertyInfo
 static const char *property_string =
     "enum Case {\n"
@@ -898,8 +970,9 @@ static const char *property_string =
     "};\n"
     "\n"
     "struct Properties {\n"
-    "    ushort category            : 8; /* 5 used */\n"
-    "    ushort direction           : 8; /* 5 used */\n"
+    "    ushort category            : 5;\n"
+    "    ushort direction           : 5;\n"
+    "    ushort emojiFlags          : 6; /* 5 used */\n"
     "    ushort combiningClass      : 8;\n"
     "    ushort joining             : 3;\n"
     "    signed short digitValue    : 5;\n"
@@ -968,6 +1041,7 @@ struct PropertyFlags {
         : combiningClass(0)
         , category(QChar::Other_NotAssigned) // Cn
         , direction(QChar::DirL)
+        , emojiFlags(0)
         , joining(QChar::Joining_None)
         , age(QChar::Unicode_Unassigned)
         , mirrorDiff(0) {}
@@ -976,6 +1050,7 @@ struct PropertyFlags {
         return (combiningClass == o.combiningClass
                 && category == o.category
                 && direction == o.direction
+                && emojiFlags == o.emojiFlags
                 && joining == o.joining
                 && age == o.age
                 && eastAsianWidth == o.eastAsianWidth
@@ -1000,12 +1075,14 @@ struct PropertyFlags {
     }
     // from UnicodeData.txt
     uchar combiningClass : 8;
-    QChar::Category category : 5;
-    QChar::Direction direction : 5;
+    uchar category : 5; // QChar::Category, but unsigned
+    uchar direction : 5; // QChar::Direction, but unsigned
+    // from emoji-data.txt
+    uchar emojiFlags : 5;
     // from ArabicShaping.txt
-    QChar::JoiningType joining : 3;
+    uchar joining : 3; // QChar::JoiningType, but unsigned
     // from DerivedAge.txt
-    QChar::UnicodeVersion age : 5;
+    uchar age : 5; // QChar::UnicodeVersion, but unsigned
     // From EastAsianWidth.txt
     EastAsianWidth eastAsianWidth = EastAsianWidth::N;
     int digitValue = -1;
@@ -1145,9 +1222,14 @@ struct UnicodeData {
         //     [U+3400..U+4DBF, U+4E00..U+9FFF, U+F900..U+FAFF, U+20000..U+2A6DF, U+2A700..U+2B73F, U+2B740..U+2B81F, U+2B820..U+2CEAF, U+2F800..U+2FA1F]
         // and any other reserved code points on
         //     [U+20000..U+2FFFD, U+30000..U+3FFFD]
+        // and some unassigned ranges in Plane 1:
+        //    [1F000..1F7FF, 1F900..1FAFF, 1FC00..1FFFD]
         if ((codepoint >= 0x3400 && codepoint <= 0x4DBF)
             || (codepoint >= 0x4E00 && codepoint <= 0x9FFF)
             || (codepoint >= 0xF900 && codepoint <= 0xFAFF)
+            || (codepoint >= 0x1F000 && codepoint <= 0x1F7FF)
+            || (codepoint >= 0x1F900 && codepoint <= 0x1FAFF)
+            || (codepoint >= 0x1FC00 && codepoint <= 0x1FFFD)
             || (codepoint >= 0x20000 && codepoint <= 0x2A6DF)
             || (codepoint >= 0x2A700 && codepoint <= 0x2B73F)
             || (codepoint >= 0x2B740 && codepoint <= 0x2B81F)
@@ -1248,10 +1330,8 @@ static void readUnicodeData()
     };
 
     QFile f("data/UnicodeData.txt");
-    if (!f.exists())
-        qFatal("Couldn't find UnicodeData.txt");
-
-    f.open(QFile::ReadOnly);
+    if (!f.open(QFile::ReadOnly))
+        qFatal() << "Couldn't open UnicodeData.txt:" << f.errorString();
 
     while (!f.atEnd()) {
         QByteArray line;
@@ -1390,10 +1470,8 @@ static void readBidiMirroring()
     qDebug("Reading BidiMirroring.txt");
 
     QFile f("data/BidiMirroring.txt");
-    if (!f.exists())
-        qFatal("Couldn't find BidiMirroring.txt");
-
-    f.open(QFile::ReadOnly);
+    if (!f.open(QFile::ReadOnly))
+        qFatal() << "Couldn't open BidiMirroring.txt:" << f.errorString();
 
     while (!f.atEnd()) {
         QByteArray line;
@@ -1442,10 +1520,8 @@ static void readArabicShaping()
     }
 
     QFile f("data/ArabicShaping.txt");
-    if (!f.exists())
-        qFatal("Couldn't find ArabicShaping.txt");
-
-    f.open(QFile::ReadOnly);
+    if (!f.open(QFile::ReadOnly))
+        qFatal() << "Couldn't open ArabicShaping.txt:" << f.errorString();
 
     while (!f.atEnd()) {
         QByteArray line;
@@ -1499,10 +1575,8 @@ static void readDerivedAge()
     qDebug("Reading DerivedAge.txt");
 
     QFile f("data/DerivedAge.txt");
-    if (!f.exists())
-        qFatal("Couldn't find DerivedAge.txt");
-
-    f.open(QFile::ReadOnly);
+    if (!f.open(QFile::ReadOnly))
+        qFatal() << "Couldn't open DerivedAge.txt:" << f.errorString();
 
     while (!f.atEnd()) {
         QByteArray line;
@@ -1551,8 +1625,8 @@ static void readEastAsianWidth()
     qDebug("Reading EastAsianWidth.txt");
 
     QFile f("data/EastAsianWidth.txt");
-    if (!f.exists() || !f.open(QFile::ReadOnly))
-        qFatal("Couldn't find or read EastAsianWidth.txt");
+    if (!f.open(QFile::ReadOnly))
+        qFatal() << "Couldn't open EastAsianWidth.txt:" << f.errorString();
 
     while (!f.atEnd()) {
         QByteArray line = f.readLine().trimmed();
@@ -1597,10 +1671,8 @@ static void readDerivedNormalizationProps()
     qDebug("Reading DerivedNormalizationProps.txt");
 
     QFile f("data/DerivedNormalizationProps.txt");
-    if (!f.exists())
-        qFatal("Couldn't find DerivedNormalizationProps.txt");
-
-    f.open(QFile::ReadOnly);
+    if (!f.open(QFile::ReadOnly))
+        qFatal() << "Couldn't open DerivedNormalizationProps.txt:" << f.errorString();
 
     while (!f.atEnd()) {
         QByteArray line;
@@ -1707,10 +1779,8 @@ static QByteArray createNormalizationCorrections()
     qDebug("Reading NormalizationCorrections.txt");
 
     QFile f("data/NormalizationCorrections.txt");
-    if (!f.exists())
-        qFatal("Couldn't find NormalizationCorrections.txt");
-
-    f.open(QFile::ReadOnly);
+    if (!f.open(QFile::ReadOnly))
+        qFatal() << "Couldn't open NormalizationCorrections.txt:" << f.errorString();
 
     QByteArray out
          = "struct NormalizationCorrection {\n"
@@ -1777,10 +1847,8 @@ static void readLineBreak()
     qDebug("Reading LineBreak.txt");
 
     QFile f("data/LineBreak.txt");
-    if (!f.exists())
-        qFatal("Couldn't find LineBreak.txt");
-
-    f.open(QFile::ReadOnly);
+    if (!f.open(QFile::ReadOnly))
+        qFatal() << "Couldn't open LineBreak.txt:" << f.errorString();
 
     while (!f.atEnd()) {
         QByteArray line;
@@ -1828,10 +1896,8 @@ static void readSpecialCasing()
     qDebug("Reading SpecialCasing.txt");
 
     QFile f("data/SpecialCasing.txt");
-    if (!f.exists())
-        qFatal("Couldn't find SpecialCasing.txt");
-
-    f.open(QFile::ReadOnly);
+    if (!f.open(QFile::ReadOnly))
+        qFatal() << "Couldn't open SpecialCasing.txt:" << f.errorString();
 
     while (!f.atEnd()) {
         QByteArray line;
@@ -1916,10 +1982,8 @@ static void readCaseFolding()
     qDebug("Reading CaseFolding.txt");
 
     QFile f("data/CaseFolding.txt");
-    if (!f.exists())
-        qFatal("Couldn't find CaseFolding.txt");
-
-    f.open(QFile::ReadOnly);
+    if (!f.open(QFile::ReadOnly))
+        qFatal() << "Couldn't open CaseFolding.txt:" << f.errorString();
 
     while (!f.atEnd()) {
         QByteArray line;
@@ -1986,10 +2050,8 @@ static void readGraphemeBreak()
     qDebug("Reading GraphemeBreakProperty.txt");
 
     QFile f("data/GraphemeBreakProperty.txt");
-    if (!f.exists())
-        qFatal("Couldn't find GraphemeBreakProperty.txt");
-
-    f.open(QFile::ReadOnly);
+    if (!f.open(QFile::ReadOnly))
+        qFatal() << "Couldn't open GraphemeBreakProperty.txt:" << f.errorString();
 
     while (!f.atEnd()) {
         QByteArray line;
@@ -2038,7 +2100,7 @@ static void readEmojiData()
 
     QFile f("data/emoji-data.txt");
     if (!f.open(QFile::ReadOnly))
-        qFatal("Couldn't find emoji-data.txt");
+        qFatal() << "Couldn't open emoji-data.txt:" << f.errorString();
 
     while (!f.atEnd()) {
         QByteArray line;
@@ -2057,10 +2119,8 @@ static void readEmojiData()
         QList<QByteArray> l = line.split(';');
         Q_ASSERT(l.size() == 2);
 
-        // NOTE: for the moment we process emoji_data only to extract
-        // the code points with Extended_Pictographic. This is needed by
-        // extended grapheme clustering (cf. the GB11 rule in UAX #29).
-        if (l[1] != "Extended_Pictographic")
+        EmojiFlags emojiFlags = emojiFlagsMap.value(l[1], EmojiFlags::NoEmoji);
+        if (emojiFlags == EmojiFlags::NoEmoji)
             continue;
 
         QByteArray codes = l[0];
@@ -2079,8 +2139,13 @@ static void readEmojiData()
         for (int codepoint = from; codepoint <= to; ++codepoint) {
             UnicodeData &ud = UnicodeData::valueRef(codepoint);
             // Check we're not overwriting the data from GraphemeBreakProperty.txt...
-            Q_ASSERT(ud.p.graphemeBreakClass == GraphemeBreak_Any);
-            ud.p.graphemeBreakClass = GraphemeBreak_Extended_Pictographic;
+            Q_ASSERT(emojiFlags != EmojiFlags::Extended_Pictographic
+                    // Extended_Pictographic should only replace GB_Any
+                    || ud.p.graphemeBreakClass == GraphemeBreak_Any);
+            if (emojiFlags == EmojiFlags::Extended_Pictographic)
+                ud.p.graphemeBreakClass = GraphemeBreak_Extended_Pictographic;
+            else
+                ud.p.emojiFlags |= int(emojiFlags);
         }
     }
 }
@@ -2090,10 +2155,8 @@ static void readWordBreak()
     qDebug("Reading WordBreakProperty.txt");
 
     QFile f("data/WordBreakProperty.txt");
-    if (!f.exists())
-        qFatal("Couldn't find WordBreakProperty.txt");
-
-    f.open(QFile::ReadOnly);
+    if (!f.open(QFile::ReadOnly))
+        qFatal() << "Couldn't open WordBreakProperty.txt:" << f.errorString();
 
     while (!f.atEnd()) {
         QByteArray line;
@@ -2150,10 +2213,8 @@ static void readSentenceBreak()
     qDebug("Reading SentenceBreakProperty.txt");
 
     QFile f("data/SentenceBreakProperty.txt");
-    if (!f.exists())
-        qFatal("Couldn't find SentenceBreakProperty.txt");
-
-    f.open(QFile::ReadOnly);
+    if (!f.open(QFile::ReadOnly))
+        qFatal() << "Couldn't open SentenceBreakProperty.txt:" << f.errorString();
 
     while (!f.atEnd()) {
         QByteArray line;
@@ -2341,10 +2402,8 @@ static void readBlocks()
     qDebug("Reading Blocks.txt");
 
     QFile f("data/Blocks.txt");
-    if (!f.exists())
-        qFatal("Couldn't find Blocks.txt");
-
-    f.open(QFile::ReadOnly);
+    if (!f.open(QFile::ReadOnly))
+        qFatal() << "Couldn't open Blocks.txt:" << f.errorString();
 
     while (!f.atEnd()) {
         QByteArray line = f.readLine();
@@ -2393,10 +2452,8 @@ static void readScripts()
     qDebug("Reading Scripts.txt");
 
     QFile f("data/Scripts.txt");
-    if (!f.exists())
-        qFatal("Couldn't find Scripts.txt");
-
-    f.open(QFile::ReadOnly);
+    if (!f.open(QFile::ReadOnly))
+        qFatal() << "Couldn't open Scripts.txt:" << f.errorString();
 
     while (!f.atEnd()) {
         QByteArray line = f.readLine();
@@ -2447,8 +2504,8 @@ static void readIdnaMappingTable()
     qDebug("Reading IdnaMappingTable.txt");
 
     QFile f("data/IdnaMappingTable.txt");
-    if (!f.exists() || !f.open(QFile::ReadOnly))
-        qFatal("Couldn't find or read IdnaMappingTable.txt");
+    if (!f.open(QFile::ReadOnly))
+        qFatal() << "Couldn't open IdnaMappingTable.txt:" << f.errorString();
 
     while (!f.atEnd()) {
         QByteArray line = f.readLine().trimmed();
@@ -2831,7 +2888,7 @@ static void computeUniqueProperties()
         }
         d.propertyIndex = index;
     }
-    qDebug("    %zd unique unicode properties found", ssize_t(uniqueProperties.size()));
+    qDebug("    %" PRIdQSIZETYPE " unique unicode properties found", uniqueProperties.size());
 }
 
 struct UniqueBlock {
@@ -2987,11 +3044,14 @@ static QByteArray createPropertyInfo()
     for (int i = 0; i < uniqueProperties.size(); ++i) {
         const PropertyFlags &p = uniqueProperties.at(i);
         out += "\n    { ";
-//     "        ushort category            : 8; /* 5 used */\n"
+//     "        ushort category            : 5;\n"
         out += QByteArray::number( p.category );
         out += ", ";
-//     "        ushort direction           : 8; /* 5 used */\n"
+//     "        ushort direction           : 5;\n"
         out += QByteArray::number( p.direction );
+        out += ", ";
+//     "        ushort emojiFlags          : 6; /* 5 used */\n"
+        out += QByteArray::number ( p.emojiFlags );
         out += ", ";
 //     "        ushort combiningClass      : 8;\n"
         out += QByteArray::number( p.combiningClass );
@@ -3018,7 +3078,7 @@ static QByteArray createPropertyInfo()
 //     "            ushort special    : 1;\n"
 //     "            signed short diff : 15;\n"
 //     "        } cases[NumCases];\n"
-        out += " { {";
+        out += "{ {";
         out += QByteArray::number( p.lowerCaseSpecial );
         out += ", ";
         out += QByteArray::number( p.lowerCaseDiff );
@@ -3150,7 +3210,7 @@ static QByteArray createSpecialCaseMap()
     out += QByteArray::number(maxN);
     out += ";\n\n";
 
-    qDebug("    memory usage: %zd bytes", ssize_t(specialCaseMap.size() * sizeof(unsigned short)));
+    qDebug("    memory usage: %zu bytes", specialCaseMap.size() * sizeof(unsigned short));
 
     return out;
 }
@@ -3375,7 +3435,7 @@ static QByteArray createLigatureInfo()
     const int BMP_BLOCKSIZE = 32;
     const int BMP_SHIFT = 5;
     const int BMP_END = 0x3100;
-    const int SMP_END = 0x12000;
+    const int SMP_END = 0x1FC00; // https://www.unicode.org/roadmaps/smp/
     const int SMP_BLOCKSIZE = 256;
     const int SMP_SHIFT = 8;
 
@@ -3586,6 +3646,7 @@ int main(int, char **)
     initLineBreak();
     initScriptMap();
     initIdnaStatusMap();
+    initEmojiFlagsMap();
 
     readUnicodeData();
     readBidiMirroring();
@@ -3635,7 +3696,8 @@ int main(int, char **)
         "//\n\n";
 
     QFile f("../../src/corelib/text/qunicodetables.cpp");
-    f.open(QFile::WriteOnly|QFile::Truncate);
+    if (!f.open(QFile::WriteOnly|QFile::Truncate))
+        qFatal() << "Cannot open output file" << f.fileName() << "error:" << f.errorString();
     f.write(header);
     f.write(note);
     f.write("#include \"qunicodetables_p.h\"\n\n");
@@ -3654,7 +3716,8 @@ int main(int, char **)
     f.close();
 
     f.setFileName("../../src/corelib/text/qunicodetables_p.h");
-    f.open(QFile::WriteOnly | QFile::Truncate);
+    if (!f.open(QFile::WriteOnly | QFile::Truncate))
+        qFatal() << "Cannot open output file" << f.fileName() << "error:" << f.errorString();
     f.write(header);
     f.write(note);
     f.write(warning);
@@ -3673,6 +3736,7 @@ int main(int, char **)
     f.write(sentence_break_class_string);
     f.write(line_break_class_string);
     f.write(idna_status_string);
+    f.write(emoji_flags_string);
     f.write(methods);
     f.write("} // namespace QUnicodeTables\n\n"
             "QT_END_NAMESPACE\n\n"

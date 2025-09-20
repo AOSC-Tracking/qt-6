@@ -1,7 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
-#ifndef QGRAPHS3DNAMESPACE_H
-#define QGRAPHS3DNAMESPACE_H
+#ifndef QTGRAPHS_QGRAPHS3DNAMESPACE_H
+#define QTGRAPHS_QGRAPHS3DNAMESPACE_H
 #include <QtCore/qobjectdefs.h>
 #include <QtGraphs/qtgraphsexports.h>
 #include <QtQmlIntegration/qqmlintegration.h>
@@ -93,9 +93,16 @@ Q_ENUM_NS(CameraPreset)
 enum class GridLineType { Shader, Geometry };
 Q_ENUM_NS(GridLineType)
 
+enum class TransparencyTechnique {
+    Default,
+    Approximate,
+    Accurate,
+};
+Q_ENUM_NS(TransparencyTechnique)
+
 } // namespace QtGraphs3D
 Q_DECLARE_OPERATORS_FOR_FLAGS(QtGraphs3D::SelectionFlags)
 
 QT_END_NAMESPACE
 
-#endif // QGRAPHS3DNAMESPACE_H
+#endif // QTGRAPHS_QGRAPHS3DNAMESPACE_H

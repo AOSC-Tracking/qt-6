@@ -37,7 +37,14 @@ public:
         PrivateSignal,
         QmlSignalHandler,
         AssociatedProperties,
-        BindableProperty
+        BindableProperty,
+        OverloadNote
+    };
+
+    enum class AdmonitionPrefix : unsigned char
+    {
+        None,
+        Note
     };
 
     Generator(FileResolver& file_resolver);
@@ -73,7 +80,7 @@ public:
     virtual QString fileBase(const Node *node) const;
 
 protected:
-    static QFile *openSubPageFile(const Node *node, const QString &fileName);
+    static QFile *openSubPageFile(const PageNode *node, const QString &fileName);
     void beginSubPage(const Node *node, const QString &fileName);
     void endSubPage();
     [[nodiscard]] virtual QString fileExtension() const = 0;
@@ -118,10 +125,10 @@ protected:
     void generateNoexceptNote(const Node *node, CodeMarker *marker);
     void generateStatus(const Node *node, CodeMarker *marker);
     virtual void generateAddendum(const Node *node, Addendum type, CodeMarker *marker,
-                                  bool generateNote);
+                                  AdmonitionPrefix prefix);
     virtual void generateAddendum(const Node *node, Addendum type, CodeMarker *marker)
     {
-        generateAddendum(node, type, marker, true);
+        generateAddendum(node, type, marker, AdmonitionPrefix::Note);
     };
     void generateThreadSafeness(const Node *node, CodeMarker *marker);
     bool generateComparisonCategory(const Node *node, CodeMarker *marker = nullptr);
@@ -162,6 +169,7 @@ protected:
     // provided.
     static bool comparePaths(const QString &a, const QString &b) { return (a < b); }
     static bool appendTrademark(const Atom *atom);
+    static std::optional<std::pair<QString, QString>> cmakeRequisite(const CollectionNode *cn);
 
     static Qt::SortOrder sortOrder(const QString &str)
     {

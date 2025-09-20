@@ -598,7 +598,8 @@ QList<QVirtualKeyboardInputEngine::InputMode> OpenWnnInputMethod::inputModes(con
             << QVirtualKeyboardInputEngine::InputMode::Hiragana
             << QVirtualKeyboardInputEngine::InputMode::Katakana
             << QVirtualKeyboardInputEngine::InputMode::FullwidthLatin
-            << QVirtualKeyboardInputEngine::InputMode::Latin;
+            << QVirtualKeyboardInputEngine::InputMode::Latin
+            << QVirtualKeyboardInputEngine::InputMode::HiraganaFlick;
 }
 
 bool OpenWnnInputMethod::setInputMode(const QString &locale, QVirtualKeyboardInputEngine::InputMode inputMode)

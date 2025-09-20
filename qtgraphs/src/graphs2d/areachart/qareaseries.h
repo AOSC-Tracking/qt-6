@@ -1,8 +1,8 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QAREASERIES_H
-#define QAREASERIES_H
+#ifndef QTGRAPHS_QAREASERIES_H
+#define QTGRAPHS_QAREASERIES_H
 
 #include <QtGraphs/qabstractseries.h>
 #include <QtGraphs/qgraphsglobal.h>
@@ -70,6 +70,11 @@ Q_SIGNALS:
     void upperSeriesChanged();
     void lowerSeriesChanged();
 
+    Q_REVISION(6, 9) void clicked(QPoint point);
+    Q_REVISION(6, 9) void doubleClicked(QPoint point);
+    Q_REVISION(6, 9) void pressed(QPoint point);
+    Q_REVISION(6, 9) void released(QPoint point);
+
 protected:
     QAreaSeries(QAreaSeriesPrivate &dd, QObject *parent = nullptr);
 
@@ -81,4 +86,4 @@ private:
 
 QT_END_NAMESPACE
 
-#endif // QAREASERIES_H
+#endif // QTGRAPHS_QAREASERIES_H

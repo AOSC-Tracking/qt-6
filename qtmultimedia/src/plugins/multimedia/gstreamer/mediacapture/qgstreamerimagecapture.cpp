@@ -24,7 +24,8 @@
 QT_BEGIN_NAMESPACE
 
 namespace {
-Q_LOGGING_CATEGORY(qLcImageCaptureGst, "qt.multimedia.imageCapture")
+
+Q_STATIC_LOGGING_CATEGORY(qLcImageCaptureGst, "qt.multimedia.imageCapture")
 
 struct ThreadPoolSingleton
 {
@@ -109,7 +110,7 @@ QMaybe<QPlatformImageCapture *> QGstreamerImageCapture::create(QImageCapture *pa
     static const auto error = qGstErrorMessageIfElementsNotAvailable(
             "queue", "capsfilter", "videoconvert", "jpegenc", "jifmux", "fakesink");
     if (error)
-        return *error;
+        return QUnexpected{ *error };
 
     return new QGstreamerImageCapture(parent);
 }
@@ -353,12 +354,12 @@ void QGstreamerImageCapture::convertBufferToImage(const QMutexLocker<QRecursiveM
 void QGstreamerImageCapture::setResolution(const QSize &resolution)
 {
     QGstCaps padCaps = bin.staticPad("sink").currentCaps();
-    if (padCaps.isNull()) {
+    if (!padCaps) {
         qDebug() << "Camera not ready";
         return;
     }
     QGstCaps caps = padCaps.copy();
-    if (caps.isNull())
+    if (!caps)
         return;
 
     gst_caps_set_simple(caps.caps(), "width", G_TYPE_INT, resolution.width(), "height", G_TYPE_INT,

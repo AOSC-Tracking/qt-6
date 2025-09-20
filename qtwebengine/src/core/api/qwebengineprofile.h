@@ -142,6 +142,7 @@ private:
 
     friend class QWebEnginePagePrivate;
     QScopedPointer<QWebEngineProfilePrivate> d_ptr;
+    friend class QWebEngineProfileBuilder;
 };
 
 QT_END_NAMESPACE

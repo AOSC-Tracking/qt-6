@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 add_subdirectory(Confused)
+add_subdirectory(WithSubDir)
 
 set(cpp_sources
     ambiguous.h
@@ -18,11 +19,13 @@ set(cpp_sources
     invisible.h
     largeValueType.h
     listprovider.h
+    listsingleton.h
     multiforeign.h
     objectwithmethod.h
     person.cpp person.h
     qmlusing.h
     resettable.h
+    scriptstringholder.h
     sequenceToIterable.h
     sequencetypeexample.cpp sequencetypeexample.h
     state.h
@@ -46,17 +49,20 @@ set(qml_files
     BaseConstraint.qml
     BaseMember.qml
     BindingExpression.qml
+    Categorizer.qml
     CxxTypeFromDir.qml
     CxxTypeFromImplicit.qml
     Cycle1.qml
     Cycle2.qml
     Cycle3.qml
     CppMethodListReturnType.qml
+    DeduplicateConversionOrigins.qml
     Dummy.qml
     Dummy2.qml
     EditConstraint.qml
     Enums.qml
     Foozle.qml
+    GetOptionalLookupNonVoidableBase.qml
     GetOptionalLookupOnQJSValueNonStrict.qml
     GetOptionalLookupShadowed.qml
     Loopy.qml
@@ -102,8 +108,10 @@ set(qml_files
     blockComments.qml
     boolCoercions.qml
     boolPointerMerge.qml
+    brokenAs.qml
     boundComponents.qml
     callContextPropertyLookupResult.qml
+    callObjectLookupOnNull.qml
     callWithSpread.qml
     childobject.qml
     colorAsVariant.qml
@@ -130,6 +138,8 @@ set(qml_files
     dateConversions.qml
     deadShoeSize.qml
     deadStoreLoop.qml
+    destroyAndToString.qml
+    detachOnAssignment.qml
     dialog.qml
     dialogButtonBox.qml
     dynamicscene.qml
@@ -147,6 +157,7 @@ set(qml_files
     equalityQUrl.qml
     equalityTestsWithNullOrUndefined.qml
     equalityVarAndNonStorable.qml
+    equalityVarWithOutConversion.qml
     equalsUndefined.qml
     exceptionFromInner.qml
     excessiveParameters.qml
@@ -184,6 +195,7 @@ set(qml_files
     invisibleListElementType.qml
     invisibleTypes.qml
     isnan.qml
+    iterateUnknownValue.qml
     iteration.qml
     javaScriptArgument.qml
     jsArrayMethods.qml
@@ -208,16 +220,19 @@ set(qml_files
     mathMinMax.qml
     mathOperations.qml
     mathStaticProperties.qml
+    mergeSideEffects.qml
     mergedObjectRead.qml
     mergedObjectWrite.qml
     methodOnListLookup.qml
     methods.qml
     modulePrefix.qml
     moveRegVoid.qml
+    multiRedirect.qml
     multiforeign.qml
     multipleCtors.qml
     namespaceWithEnum.qml
     noBindingLoop.qml
+    noBuiltinsImport.qml
     noQQmlData.qml
     nonNotifyable.qml
     noscope.qml
@@ -231,6 +246,7 @@ set(qml_files
     objectInVar.qml
     objectLookupOnListElement.qml
     objectWithStringListMethod.qml
+    oldEnum.qml
     optionalComparison.qml
     outOfBounds.qml
     overriddenMember.qml
@@ -242,6 +258,7 @@ set(qml_files
     pressAndHoldButton.qml
     qmlUsing.qml
     qtbug113150.qml
+    qtfont.qml
     reduceWithNullThis.qml
     readEnumFromInstance.qml
     readonlyListProperty.qml
@@ -290,10 +307,12 @@ set(qml_files
     typePropagationLoop.qml
     typePropertyClash.qml
     typedArray.qml
+    unclearComponentBoundaries.qml
     undefinedResets.qml
     undefinedToDouble.qml
     unknownAttached.qml
     unknownParameter.qml
+    unknownUnderlyingType.qml
     unstoredUndefined.qml
     unusedAttached.qml
     urlString.qml
@@ -402,6 +421,7 @@ set_target_properties(codegen_test_module PROPERTIES
 
 target_compile_definitions(codegen_test_module PUBLIC
     -DGENERATED_CPP_FOLDER="${CMAKE_CURRENT_BINARY_DIR}/.rcc/qmlcache"
+    -DQT_NO_CAST_FROM_ASCII
 )
 
 qt6_add_qml_module(codegen_test_module
@@ -422,6 +442,8 @@ qt6_add_qml_module(codegen_test_module
     OUTPUT_DIRECTORY TestTypes # Make sure tst_qmlcachegen doesn't see our output
     __QT_INTERNAL_DISAMBIGUATE_QMLDIR_RESOURCE
 )
+
+target_link_libraries(codegen_test_module PRIVATE Qt6::QmlPrivate)
 
 if(${CMAKE_VERSION} GREATER_EQUAL "3.19.0")
     qt_target_qml_sources(codegen_test_module
@@ -467,6 +489,8 @@ qt6_add_qml_module(codegen_test_module_verify
     TARGET_PATH verify/TestTypes      # Different target path to avoid resource file name clashes
     __QT_INTERNAL_DISAMBIGUATE_QMLDIR_RESOURCE
 )
+
+target_link_libraries(codegen_test_module_verify PRIVATE Qt::QmlPrivate)
 
 add_dependencies(codegen_test_module_verify Qt::Quick Qt::QuickTemplates2 Qt::QuickShapesPrivate)
 

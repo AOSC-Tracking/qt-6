@@ -2149,6 +2149,17 @@ void QTextCharFormat::setFont(const QFont &font, FontPropertiesInheritanceBehavi
 
 /*!
     Returns the font for this character format.
+
+    This function takes into account the format's font attributes (such as fontWeight()
+    and fontPointSize()) and resolves them on top of the default font, defined as follows.
+    If the format is part of a document, that is the document's default font.
+    Otherwise the properties are resolved on top of a default constructed QFont.
+
+    For example, if this format's font size hasn't been changed from the default font,
+    fontPointSize() returns 0, while \c {font().pointSize()} returns the actual
+    size used for drawing.
+
+    \sa QTextDocument::defaultFont()
 */
 QFont QTextCharFormat::font() const
 {
@@ -3291,7 +3302,7 @@ QTextTableFormat::QTextTableFormat(const QTextFormat &fmt)
     \fn void QTextTableFormat::setBorderCollapse(bool borderCollapse)
     \since 5.14
 
-    Enabling \a borderCollapse will have the following implications:
+    By default, \l borderCollapse() is \c true, which has the following implications:
     \list
     \li The borders and grid of the table will be rendered following the
         CSS table \c border-collapse: \c collapse rules
@@ -3308,9 +3319,11 @@ QTextTableFormat::QTextTableFormat(const QTextFormat &fmt)
         \endlist
     \endlist
 
-    With borderCollapse disabled, cell borders can still be styled
+    With \a borderCollapse set to \c false, cell borders can still be styled
     using QTextTableCellFormat but styling will be applied only within
     the cell's frame, which is probably not very useful in practice.
+
+    \note In Qt versions prior to 6.8, the default value was \c false.
 
     \sa setBorder(), setBorderBrush(), setBorderStyle()
     \sa QTextTableCellFormat
@@ -3320,7 +3333,7 @@ QTextTableFormat::QTextTableFormat(const QTextFormat &fmt)
     \fn bool QTextTableFormat::borderCollapse() const
     \since 5.14
 
-    Returns true if borderCollapse is enabled.
+    Returns \c true if table borders are to be collapsed. The default is \c true.
 
     \sa setBorderCollapse()
 */

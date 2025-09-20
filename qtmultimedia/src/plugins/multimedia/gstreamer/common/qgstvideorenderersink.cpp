@@ -34,7 +34,7 @@
 
 // NOLINTBEGIN(readability-convert-member-functions-to-static)
 
-static Q_LOGGING_CATEGORY(qLcGstVideoRenderer, "qt.multimedia.gstvideorenderer")
+Q_STATIC_LOGGING_CATEGORY(qLcGstVideoRenderer, "qt.multimedia.gstvideorenderer");
 
 QT_BEGIN_NAMESPACE
 
@@ -138,7 +138,7 @@ QT_WARNING_POP
 
 void QGstVideoRenderer::handleNewBuffer(RenderBufferState state)
 {
-    auto videoBuffer = std::make_unique<QGstVideoBuffer>(state.buffer, m_videoInfo, m_sink,
+    auto videoBuffer = std::make_unique<QGstVideoBuffer>(state.buffer, state.videoInfo, m_sink,
                                                          state.format, state.memoryFormat);
     QVideoFrame frame = QVideoFramePrivate::createFrame(std::move(videoBuffer), state.format);
     QGstUtils::setFrameTimeStampsFromBuffer(&frame, state.buffer.get());
@@ -220,6 +220,7 @@ GstFlowReturn QGstVideoRenderer::render(GstBuffer *buffer)
     RenderBufferState state{
         QGstBufferHandle{ buffer, QGstBufferHandle::NeedsRef },
         m_format,
+        m_videoInfo,
         m_memoryFormat,
     };
 
@@ -237,17 +238,21 @@ bool QGstVideoRenderer::query(GstQuery *query)
 {
 #if QT_CONFIG(gstreamer_gl)
     if (GST_QUERY_TYPE(query) == GST_QUERY_CONTEXT) {
-        const gchar *type;
+        const gchar *type = nullptr;
         gst_query_parse_context_type(query, &type);
 
-        if (strcmp(type, "gst.gl.local_context") != 0)
+        QLatin1StringView typeStr(type);
+        if (typeStr != QLatin1StringView("gst.gl.GLDisplay")
+            && typeStr != QLatin1StringView("gst.gl.local_context")) {
             return false;
+        }
 
         QMutexLocker locker(&m_sinkMutex);
         if (!m_sink)
             return false;
 
-        auto *gstGlContext = m_sink->gstGlLocalContext();
+        auto *gstGlContext = typeStr == QLatin1StringView("gst.gl.GLDisplay")
+                ? m_sink->gstGlDisplayContext() : m_sink->gstGlLocalContext();
         if (!gstGlContext)
             return false;
 
@@ -472,7 +477,7 @@ gboolean QGstVideoRendererSink::set_caps(GstBaseSink *base, GstCaps *gcaps)
 
     qCDebug(qLcGstVideoRenderer) << "set_caps:" << caps;
 
-    if (caps.isNull()) {
+    if (!caps) {
         sink->renderer->stop();
         return TRUE;
     }

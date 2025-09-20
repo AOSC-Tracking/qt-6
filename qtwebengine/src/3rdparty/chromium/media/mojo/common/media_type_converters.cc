@@ -2,23 +2,28 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "media/mojo/common/media_type_converters.h"
 
-#include <stddef.h>
-#include <stdint.h>
 #include <memory>
 
 #include "base/logging.h"
+#include "base/numerics/checked_math.h"
 #include "base/numerics/safe_conversions.h"
 #include "media/base/audio_buffer.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/decrypt_config.h"
+#include "media/base/sample_format.h"
 #include "media/base/subsample_entry.h"
 #include "mojo/public/cpp/system/buffer.h"
 
 namespace mojo {
 
-// TODO(crbug.com/611224): Stop using TypeConverters.
+// TODO(crbug.com/40468949): Stop using TypeConverters.
 
 // static
 media::mojom::DecryptConfigPtr
@@ -48,8 +53,8 @@ TypeConverter<std::unique_ptr<media::DecryptConfig>,
 // static
 media::mojom::DecoderBufferSideDataPtr
 TypeConverter<media::mojom::DecoderBufferSideDataPtr,
-              absl::optional<media::DecoderBufferSideData>>::
-    Convert(const absl::optional<media::DecoderBufferSideData>& input) {
+              std::optional<media::DecoderBufferSideData>>::
+    Convert(const std::optional<media::DecoderBufferSideData>& input) {
   if (!input.has_value()) {
     return nullptr;
   }
@@ -58,23 +63,26 @@ TypeConverter<media::mojom::DecoderBufferSideDataPtr,
   mojo_side_data->alpha_data = input->alpha_data;
   mojo_side_data->spatial_layers = input->spatial_layers;
   mojo_side_data->secure_handle = input->secure_handle;
-
+  mojo_side_data->front_discard = input->discard_padding.first;
+  mojo_side_data->back_discard = input->discard_padding.second;
   return mojo_side_data;
 }
 
 // static
-absl::optional<media::DecoderBufferSideData>
-TypeConverter<absl::optional<media::DecoderBufferSideData>,
+std::optional<media::DecoderBufferSideData>
+TypeConverter<std::optional<media::DecoderBufferSideData>,
               media::mojom::DecoderBufferSideDataPtr>::
     Convert(const media::mojom::DecoderBufferSideDataPtr& input) {
   if (!input) {
-    return absl::nullopt;
+    return std::nullopt;
   }
-  auto side_data = absl::make_optional<media::DecoderBufferSideData>(
+  auto side_data = std::make_optional<media::DecoderBufferSideData>(
       media::DecoderBufferSideData());
   side_data->alpha_data = input->alpha_data;
   side_data->spatial_layers = input->spatial_layers;
   side_data->secure_handle = input->secure_handle;
+  side_data->discard_padding.first = input->front_discard;
+  side_data->discard_padding.second = input->back_discard;
   return side_data;
 }
 
@@ -93,10 +101,7 @@ TypeConverter<media::mojom::DecoderBufferPtr, media::DecoderBuffer>::Convert(
   mojo_buffer->timestamp = input.timestamp();
   mojo_buffer->duration = input.duration();
   mojo_buffer->is_key_frame = input.is_key_frame();
-  mojo_buffer->data_size = base::checked_cast<uint32_t>(input.data_size());
-  mojo_buffer->front_discard = input.discard_padding().first;
-  mojo_buffer->back_discard = input.discard_padding().second;
-
+  mojo_buffer->data_size = base::checked_cast<uint32_t>(input.size());
   mojo_buffer->side_data =
       media::mojom::DecoderBufferSideData::From(input.side_data());
 
@@ -125,7 +130,7 @@ TypeConverter<scoped_refptr<media::DecoderBuffer>,
 
   if (input->side_data) {
     buffer->set_side_data(
-        input->side_data.To<absl::optional<media::DecoderBufferSideData>>());
+        input->side_data.To<std::optional<media::DecoderBufferSideData>>());
   }
 
   buffer->set_timestamp(input->timestamp);
@@ -136,10 +141,6 @@ TypeConverter<scoped_refptr<media::DecoderBuffer>,
     buffer->set_decrypt_config(
         input->decrypt_config.To<std::unique_ptr<media::DecryptConfig>>());
   }
-
-  media::DecoderBuffer::DiscardPadding discard_padding(input->front_discard,
-                                                       input->back_discard);
-  buffer->set_discard_padding(discard_padding);
 
   // TODO(dalecurtis): We intentionally do not deserialize the data section of
   // the DecoderBuffer here; this must instead be done by clients via their
@@ -188,7 +189,7 @@ TypeConverter<scoped_refptr<media::AudioBuffer>, media::mojom::AudioBufferPtr>::
       static_cast<size_t>(input->channel_layout) > media::CHANNEL_LAYOUT_MAX ||
       ChannelLayoutToChannelCount(input->channel_layout) !=
           input->channel_count) {
-    LOG(ERROR) << "Receive an invalid audio buffer, replace it with EOS.";
+    DLOG(ERROR) << "Receive an invalid audio buffer, replace it with EOS.";
     return media::AudioBuffer::CreateEOSBuffer();
   }
 
@@ -200,13 +201,31 @@ TypeConverter<scoped_refptr<media::AudioBuffer>, media::mojom::AudioBufferPtr>::
         input->timestamp);
   }
 
+  // Safe to cast, since we already checked `sample_format` doesn't exceed
+  // media::kSampleFormatMax above.
+  const size_t bytes_per_channel = SampleFormatToBytesPerChannel(
+      static_cast<media::SampleFormat>(input->sample_format));
+
+  // `bytes_per_channel` could be 0 if we received a kUnknownFormat. In that
+  // case, and in the case of a overflow below, `min_data_size` will be 0,
+  // and we will return an EOS below.
+  const size_t min_data_size =
+      base::CheckMul(input->frame_count,
+                     base::CheckMul(input->channel_count, bytes_per_channel))
+          .ValueOrDefault(0u);
+  if (input->data.size() < min_data_size) {
+    DLOG(ERROR) << "Received invalid AudioBuffer, replace it with EOS.";
+    return media::AudioBuffer::CreateEOSBuffer();
+  }
+
   // Setup channel pointers.  AudioBuffer::CopyFrom() will only use the first
   // one in the case of interleaved data.
   std::vector<const uint8_t*> channel_ptrs(input->channel_count, nullptr);
   const size_t size_per_channel = input->data.size() / input->channel_count;
   DCHECK_EQ(0u, input->data.size() % input->channel_count);
-  for (int i = 0; i < input->channel_count; ++i)
+  for (int i = 0; i < input->channel_count; ++i) {
     channel_ptrs[i] = input->data.data() + i * size_per_channel;
+  }
 
   return media::AudioBuffer::CopyFrom(
       input->sample_format, input->channel_layout, input->channel_count,

@@ -1074,13 +1074,13 @@
     by QWidget::setGeometry().
 
     \value WA_NoChildEventsForParent Indicates that the widget does
-    not want ChildAdded or ChildRemoved events sent to its
+    not want \l{QEvent::}{ChildAdded} or \l{QEvent::}{ChildRemoved} events sent to its
     parent. This is rarely necessary but can help to avoid automatic
     insertion widgets like splitters and layouts. This is set by a
     widget's author.
 
     \value WA_NoChildEventsFromChildren Indicates that the widget does
-    not want to receive ChildAdded or ChildRemoved events sent from its
+    not want to receive \l{QEvent::}{ChildAdded} or \l{QEvent::}{ChildRemoved} events sent from its
     children. This is set by a widget's author.
 
     \value WA_NoMouseReplay Used for pop-up widgets. Indicates that the most
@@ -1328,7 +1328,7 @@
     QQuickWidget to be drawn last, on top of other widgets. Ignored for other
     type of widgets. Setting this attribute breaks the stacking order, but
     allows having a semi-transparent OpenGL widget with other widgets visible
-    underneath. It is strongly recommended to call update() on the widget's
+    underneath. It is strongly recommended to call \l{QWidget::}{update()} on the widget's
     top-level window after enabling or disabling this attribute.
 
     \value WA_ContentsMarginsRespectsSafeArea A QWidget respects the safe
@@ -1412,7 +1412,7 @@
                           On Windows keyboards, this key is mapped to the
                           Windows key.
     \value Key_Alt
-    \value Key_AltGr      On Windows, when the KeyDown event for this key is
+    \value Key_AltGr      On Windows, when the \c KeyDown event for this key is
                           sent, the Ctrl+Alt modifiers are also set.
     \value Key_CapsLock
     \value Key_NumLock
@@ -2302,8 +2302,7 @@
     \value WindowContextHelpButtonHint  Adds a context help button to dialogs.
            On some platforms this implies Qt::WindowSystemMenuHint for it to work.
 
-    \value MacWindowToolBarButtonHint On \macos adds a tool bar button (i.e.,
-           the oblong button that is on the top right of windows that have toolbars).
+    \omitvalue MacWindowToolBarButtonHint
 
     \value WindowFullscreenButtonHint On \macos adds a fullscreen button.
 
@@ -2346,14 +2345,20 @@
     \value WindowDoesNotAcceptFocus Informs the window system that this window should
            not receive the input focus.
 
-    \value MaximizeUsingFullscreenGeometryHint Informs the window system that when
-           maximizing the window it should use as much of the available screen geometry
-           as possible, including areas that may be covered by system UI such as status
-           bars or application launchers. This may result in the window being placed
-           under these system UIs, but does not guarantee it, depending on whether or
-           not the platform supports it. When the flag is enabled the user is responsible
-           for taking QScreen::availableGeometry() into account, so that any UI elements
-           in the application that require user interaction are not covered by system UI.
+    \note On Windows, this prevents the window from appearing in the taskbar.
+
+    \value MaximizeUsingFullscreenGeometryHint Deprecated alias for Qt::ExpandedClientAreaHint
+
+    \value [since 6.9] ExpandedClientAreaHint Requests that the window's client area is
+           expanded to areas where it might be obscured by, or conflicting with other UI
+           elements, such as the window's titlebar controls or other system UIs. The
+           window's \l{QWindow::safeAreaMargins()}{safe area margins} will reflect any
+           areas that may have conflicting UI elements.
+
+    \value [since 6.9] NoTitleBarBackgroundHint Requests that the window's title bar is drawn
+           without a background color. This flag is useful in combination with
+           Qt::ExpandedClientAreaHint, to give the perception that the window's
+           client area seamlessly blends with the titlebar area and controls.
 
     \value WindowType_Mask  A mask for extracting the window type
                             part of the window flags.
@@ -2400,7 +2405,7 @@
     \enum Qt::SplitBehaviorFlags
     \since 5.14
 
-    This enum specifies how the split() functions should behave with
+    This enum specifies how the QString::split() functions should behave with
     respect to empty strings.
 
     \value KeepEmptyParts  If a field is empty, keep it in the result.
@@ -2499,7 +2504,7 @@
     This enum is used in widgets that can display both plain text and
     rich text, for example QLabel. It is used for deciding whether a text
     string should be interpreted as one or the other. This is normally
-    done by passing one of the enum values to a QTextEdit::setTextFormat()
+    done by passing one of the enum values to a QStaticText::setTextFormat()
     function.
 
     \value PlainText  The text string is interpreted as a plain text
@@ -3349,7 +3354,7 @@
   This enum describes the possible High-DPI scale factor rounding policies, which
   decide how non-integer scale factors (such as Windows 150%) are handled.
 
-  The active policy is set by calling QGuiApplication::setHighDdpiScaleFactorRoundingPolicy() before
+  The active policy is set by calling QGuiApplication::setHighDpiScaleFactorRoundingPolicy() before
   the application object is created.
 
   \sa QGuiApplication::setHighDpiScaleFactorRoundingPolicy()

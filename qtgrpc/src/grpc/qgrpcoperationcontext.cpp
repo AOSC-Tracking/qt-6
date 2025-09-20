@@ -61,7 +61,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \fn void finished(const QGrpcStatus &status)
+    \fn void QGrpcOperationContext::finished(const QGrpcStatus &status)
 
     This signal should be emitted by the channel when an RPC finishes.
 
@@ -103,8 +103,9 @@ QT_BEGIN_NAMESPACE
     This signal is emitted by QGrpcOperation when requesting cancellation of the
     communication.
 
-    The channel is expected to connect its cancellation logic to this signal and
-    attempt to cancel the RPC and return immediately. Successful cancellation
+    The channel is expected to connect its cancellation logic to this signal
+    and attempt to cancel the RPC and finish it with a
+    \l{QtGrpc::StatusCode::}{Cancelled} status code. Successful cancellation
     cannot be guaranteed. Further processing of the data received from a
     channel is not required and should be avoided.
 
@@ -158,6 +159,7 @@ public:
     QGrpcCallOptions options;
     std::shared_ptr<QAbstractProtobufSerializer> serializer;
     QHash<QByteArray, QByteArray> serverMetadata;
+    QMetaType responseMetaType;
 };
 
 /*!
@@ -260,6 +262,24 @@ void QGrpcOperationContext::setServerMetadata(QHash<QByteArray, QByteArray> &&me
 {
     Q_D(QGrpcOperationContext);
     d->serverMetadata = std::move(metadata);
+}
+
+/*!
+    Returns the meta type of the RPC result message.
+ */
+QMetaType QGrpcOperationContext::responseMetaType() const
+{
+    Q_D(const QGrpcOperationContext);
+    return d->responseMetaType;
+}
+
+/*!
+    Stores the \a metaType of the RPC result message.
+*/
+void QGrpcOperationContext::setResponseMetaType(QMetaType metaType)
+{
+    Q_D(QGrpcOperationContext);
+    d->responseMetaType = metaType;
 }
 
 // For future extensions

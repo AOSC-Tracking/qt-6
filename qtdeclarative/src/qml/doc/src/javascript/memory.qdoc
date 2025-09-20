@@ -142,7 +142,9 @@ the JavaScript heap, though, but rather managed using new and delete.
 \section1 Garbage Collection
 
 The garbage collector used in the JavaScript engine is a non-moving,
-stop-the-world Mark and Sweep design. In the \e mark phase we traverse all the
+Mark and Sweep design. Since Qt 6.8, it runs incrementally by default (unless
+\l QV4_GC_TIMELIMIT is set to 0).
+In the \e mark phase we traverse all the
 known places where live references to objects can be found. In particular:
 
 \list
@@ -186,7 +188,7 @@ or by a heuristic that takes the following aspects into account:
 
 In order to observe the development of both the address space and the number
 of objects allocated in it, it is best to use a specialized tool. The
-\l{Qt Creator: QML Profiler}{QML Profiler} provides a visualization that
+\l{\QC: Profiling QML Applications}{QML Profiler} provides a visualization that
 helps here. More generic tools cannot see what the JavaScript memory manager
 does within the address space it reserves and may not even notice that part
 of the address space is not committed to physical memory.

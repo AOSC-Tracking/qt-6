@@ -86,7 +86,10 @@ void RenderArea::paintEvent(QPaintEvent * /* event */)
     if (m_level == 0.0)
         return;
 
-    const int pos = qRound(qreal(frame.width() - 1) * m_level);
+    float remappedLevel = QtAudio::convertVolume(m_level, QtAudio::LinearVolumeScale,
+                                                 QtAudio::LogarithmicVolumeScale);
+
+    const int pos = qRound(qreal(frame.width() - 1) * remappedLevel);
     painter.fillRect(frame.left() + 1, frame.top() + 1, pos, frame.height() - 1, Qt::red);
 }
 
@@ -132,9 +135,20 @@ void InputTest::initializeWindow()
 void InputTest::initializeAudio(const QAudioDevice &deviceInfo)
 {
     QAudioFormat format;
-    format.setSampleRate(8000);
+    format.setSampleRate(44100);
     format.setChannelCount(1);
     format.setSampleFormat(QAudioFormat::Int16);
+
+    bool sampleRateSupported = format.sampleRate() < deviceInfo.maximumSampleRate()
+            && format.sampleRate() > deviceInfo.minimumSampleRate();
+    bool channelCountSupported = format.channelCount() < deviceInfo.maximumChannelCount()
+            && format.channelCount() > deviceInfo.minimumChannelCount();
+
+    if (!sampleRateSupported)
+        format.setSampleRate(deviceInfo.preferredFormat().sampleRate());
+
+    if (!channelCountSupported)
+        format.setChannelCount(deviceInfo.preferredFormat().channelCount());
 
     m_audioInfo.reset(new AudioInfo(format));
     connect(m_audioInfo.data(), &AudioInfo::levelChanged, m_canvas, &RenderArea::setLevel);

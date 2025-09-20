@@ -76,7 +76,7 @@
 
 #if QT_CONFIG(accessibility)
 #include "browser_accessibility_qt.h"
-#include "content/browser/accessibility/browser_accessibility_manager.h"
+#include "ui/accessibility/platform/browser_accessibility_manager.h"
 #include <QtGui/qaccessible.h>
 #endif
 
@@ -92,6 +92,8 @@
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "extensions/extension_web_contents_observer_qt.h"
 #endif
+
+using namespace Qt::StringLiterals;
 
 namespace QtWebEngineCore {
 
@@ -317,8 +319,8 @@ static void deserializeNavigationHistory(QDataStream &input, int *currentIndex, 
         std::unique_ptr<content::NavigationEntry> entry = content::NavigationController::CreateNavigationEntry(
             toGurl(virtualUrl),
             content::Referrer(toGurl(referrerUrl), static_cast<network::mojom::ReferrerPolicy>(referrerPolicy)),
-            absl::nullopt, // optional initiator_origin
-            absl::nullopt, // optional initiator_base_url
+            std::nullopt, // optional initiator_origin
+            std::nullopt, // optional initiator_base_url
             // Use a transition type of reload so that we don't incorrectly
             // increase the typed count.
             ui::PAGE_TRANSITION_RELOAD,
@@ -504,7 +506,7 @@ void WebContentsAdapter::initialize(content::SiteInstance *site)
     Q_ASSERT(rvh);
     if (!m_webContents->GetPrimaryMainFrame()->IsRenderFrameLive())
         static_cast<content::WebContentsImpl*>(m_webContents.get())->CreateRenderViewForRenderManager(
-                rvh, absl::nullopt, nullptr);
+                rvh, std::nullopt, nullptr);
 
     m_webContentsDelegate->RenderViewHostChanged(nullptr, rvh);
 
@@ -659,13 +661,13 @@ void WebContentsAdapter::load(const QWebEngineHttpRequest &request)
     Q_UNUSED(guard);
 
     // Add URL scheme if missing from view-source URL.
-    if (request.url().scheme() == content::kViewSourceScheme) {
+    if (request.url().scheme() == QLatin1StringView(content::kViewSourceScheme)) {
         QUrl pageUrl = QUrl(request.url().toString().remove(0,
                                                            strlen(content::kViewSourceScheme) + 1));
         if (pageUrl.scheme().isEmpty()) {
             QUrl extendedUrl = QUrl::fromUserInput(pageUrl.toString());
-            extendedUrl = QUrl(QString("%1:%2").arg(content::kViewSourceScheme,
-                                                    extendedUrl.toString()));
+            extendedUrl = QUrl(QLatin1StringView(content::kViewSourceScheme) + u':'
+                               + extendedUrl.toString());
             gurl = toGurl(extendedUrl);
         }
     }
@@ -733,7 +735,7 @@ void WebContentsAdapter::setContent(const QByteArray &data, const QString &mimeT
 
     WebEngineSettings::get(m_adapterClient->webEngineSettings())->doApply();
 
-    QByteArray encodedData = data.toPercentEncoding();
+    const QByteArray encodedData = data.toPercentEncoding();
     std::string urlString;
     if (!mimeType.isEmpty())
         urlString = std::string("data:") + mimeType.toStdString() + std::string(",");
@@ -750,7 +752,8 @@ void WebContentsAdapter::setContent(const QByteArray &data, const QString &mimeT
     content::NavigationController::LoadURLParams params((dataUrlToLoad));
     params.load_type = content::NavigationController::LOAD_TYPE_DATA;
     params.base_url_for_data_url = toGurl(baseUrl);
-    params.virtual_url_for_data_url = baseUrl.isEmpty() ? GURL(url::kAboutBlankURL) : toGurl(baseUrl);
+    params.virtual_url_for_special_cases =
+            baseUrl.isEmpty() ? GURL(url::kAboutBlankURL) : toGurl(baseUrl);
     params.can_load_local_resources = true;
     params.transition_type = ui::PageTransitionFromInt(ui::PAGE_TRANSITION_TYPED | ui::PAGE_TRANSITION_FROM_API);
     params.override_user_agent = content::NavigationController::UA_OVERRIDE_TRUE;
@@ -980,10 +983,10 @@ void WebContentsAdapter::serializeNavigationHistory(QDataStream &output)
 void WebContentsAdapter::setZoomFactor(qreal factor)
 {
     CHECK_INITIALIZED();
-    if (factor < blink::kMinimumPageZoomFactor || factor > blink::kMaximumPageZoomFactor)
+    if (factor < blink::kMinimumBrowserZoomFactor || factor > blink::kMaximumBrowserZoomFactor)
         return;
 
-    double zoomLevel = blink::PageZoomFactorToZoomLevel(static_cast<double>(factor));
+    double zoomLevel = blink::ZoomFactorToZoomLevel(static_cast<double>(factor));
     content::HostZoomMap *zoomMap = content::HostZoomMap::GetForWebContents(m_webContents.get());
 
     if (zoomMap) {
@@ -998,7 +1001,7 @@ void WebContentsAdapter::setZoomFactor(qreal factor)
 qreal WebContentsAdapter::currentZoomFactor() const
 {
     CHECK_INITIALIZED(1);
-    return blink::PageZoomLevelToZoomFactor(content::HostZoomMap::GetZoomLevel(m_webContents.get()));
+    return blink::ZoomLevelToZoomFactor(content::HostZoomMap::GetZoomLevel(m_webContents.get()));
 }
 
 ProfileQt* WebContentsAdapter::profile()
@@ -1030,12 +1033,12 @@ QAccessibleInterface *WebContentsAdapter::browserAccessible()
     content::RenderFrameHostImpl *rfh = static_cast<content::RenderFrameHostImpl *>(m_webContents->GetPrimaryMainFrame());
     if (!rfh)
         return nullptr;
-    content::BrowserAccessibilityManager *manager = rfh->GetOrCreateBrowserAccessibilityManager();
+    ui::BrowserAccessibilityManager *manager = rfh->GetOrCreateBrowserAccessibilityManager();
     if (!manager) // FIXME!
         return nullptr;
-    content::BrowserAccessibility *acc = manager->GetFromAXNode(manager->GetRoot());
+    ui::BrowserAccessibility *acc = manager->GetFromAXNode(manager->GetRoot());
 
-    return content::toQAccessibleInterface(acc);
+    return ui::toQAccessibleInterface(acc);
 }
 #endif // QT_CONFIG(accessibility)
 
@@ -1045,7 +1048,8 @@ content::RenderFrameHost *WebContentsAdapter::renderFrameHostFromFrameId(quint64
     if (frameId == kUseMainFrameId) {
         result = m_webContents->GetPrimaryMainFrame();
     } else {
-        auto *ftn = content::FrameTreeNode::GloballyFindByID(static_cast<int>(frameId));
+        auto *ftn = content::FrameTreeNode::GloballyFindByID(
+                static_cast<content::FrameTreeNodeId>(frameId));
         if (!ftn)
             return nullptr;
 
@@ -1069,7 +1073,7 @@ void WebContentsAdapter::runJavaScript(const QString &javaScript, quint32 worldI
     if (!rfh)
         return exit();
     if (!static_cast<content::RenderFrameHostImpl*>(rfh)->GetAssociatedLocalFrame()) {
-        qWarning() << "Local frame is gone, not running script";
+        qWarning("Local frame is gone, not running script");
         return exit();
     }
 
@@ -1365,7 +1369,7 @@ void WebContentsAdapter::printToPDF(const QPageLayout &pageLayout, const QPageRa
 
 void WebContentsAdapter::printToPDFCallbackResult(
         std::function<void(QSharedPointer<QByteArray>)> &&callback, const QPageLayout &pageLayout,
-        const QPageRanges &pageRanges, bool colorMode, bool useCustomMargins, quint64 frameId)
+        const QPageRanges &pageRanges, bool colorMode, quint64 frameId)
 {
 #if QT_CONFIG(webengine_printing_and_pdf)
     CHECK_INITIALIZED();
@@ -1376,7 +1380,7 @@ void WebContentsAdapter::printToPDFCallbackResult(
     if (content::WebContents *guest = guestWebContents())
         webContents = guest;
     PrintViewManagerQt::FromWebContents(webContents)
-            ->PrintToPDFWithCallback(pageLayout, pageRanges, colorMode, useCustomMargins, frameId,
+            ->PrintToPDFWithCallback(pageLayout, pageRanges, colorMode, frameId,
                                      std::move(internalCallback));
     m_printCallbacks.emplace(m_nextRequestId++, std::move(callback));
 #else
@@ -1530,8 +1534,8 @@ void WebContentsAdapter::grantMouseLockPermission(const QUrl &securityOrigin, bo
             granted = false;
     }
 
-    m_webContents->GotResponseToLockMouseRequest(granted ? blink::mojom::PointerLockResult::kSuccess
-                                                         : blink::mojom::PointerLockResult::kPermissionDenied);
+    m_webContents->GotResponseToPointerLockRequest(granted ? blink::mojom::PointerLockResult::kSuccess
+                                                           : blink::mojom::PointerLockResult::kPermissionDenied);
 }
 
 void WebContentsAdapter::handlePendingMouseLockPermission()
@@ -1539,8 +1543,8 @@ void WebContentsAdapter::handlePendingMouseLockPermission()
     CHECK_INITIALIZED();
     auto it = m_pendingMouseLockPermissions.find(toQt(m_webContents->GetLastCommittedURL().DeprecatedGetOriginAsURL()));
     if (it != m_pendingMouseLockPermissions.end()) {
-        m_webContents->GotResponseToLockMouseRequest(it.value() ? blink::mojom::PointerLockResult::kSuccess
-                                                                : blink::mojom::PointerLockResult::kPermissionDenied);
+        m_webContents->GotResponseToPointerLockRequest(it.value() ? blink::mojom::PointerLockResult::kSuccess
+                                                                  : blink::mojom::PointerLockResult::kPermissionDenied);
         m_pendingMouseLockPermissions.erase(it);
     }
 }
@@ -1620,7 +1624,9 @@ static QMimeData *mimeDataFromDropData(const content::DropData &dropData)
     if (!dropData.custom_data.empty()) {
         base::Pickle pickle;
         ui::WriteCustomDataToPickle(dropData.custom_data, &pickle);
-        mimeData->setData(QLatin1String(ui::kMimeTypeWebCustomData), QByteArray((const char*)pickle.data(), pickle.size()));
+        mimeData->setData(QString::fromStdString(
+                                  ui::ClipboardFormatType::DataTransferCustomType().Serialize()),
+                          QByteArray((const char*)pickle.data(), pickle.size()));
     }
     return mimeData;
 }
@@ -1750,8 +1756,10 @@ static void fillDropDataFromMimeData(content::DropData *dropData, const QMimeDat
         dropData->html = toOptionalString16(mimeData->html());
     if (mimeData->hasText())
         dropData->text = toOptionalString16(mimeData->text());
-    if (mimeData->hasFormat(QLatin1String(ui::kMimeTypeWebCustomData))) {
-        const QByteArray customData = mimeData->data(QLatin1String(ui::kMimeTypeWebCustomData));
+    const QString serializedDataTransferCustomType =
+            QString::fromStdString(ui::ClipboardFormatType::DataTransferCustomType().Serialize());
+    if (mimeData->hasFormat(serializedDataTransferCustomType)) {
+        const QByteArray customData = mimeData->data(serializedDataTransferCustomType);
         const base::span custom_data(customData.constData(), (long unsigned)customData.length());
         if (auto maybe_data = ui::ReadCustomDataIntoMap(base::as_bytes(custom_data)))
             dropData->custom_data = *std::move(maybe_data);
@@ -1942,17 +1950,18 @@ void WebContentsAdapter::changeTextDirection(bool leftToRight)
 
 quint64 WebContentsAdapter::mainFrameId() const
 {
-    CHECK_INITIALIZED(content::RenderFrameHost::kNoFrameTreeNodeId);
-    return static_cast<quint64>(m_webContents->GetPrimaryMainFrame()->GetFrameTreeNodeId());
+    CHECK_INITIALIZED(-1); // content::RenderFrameHost::kNoFrameTreeNodeId);
+    return static_cast<quint64>(
+            m_webContents->GetPrimaryMainFrame()->GetFrameTreeNodeId().GetUnsafeValue());
 }
 
 #define CHECK_INITIALIZED_AND_VALID_FRAME(webengine_frame_id_variable, frame_tree_node_variable,   \
                                           return_value)                                            \
     CHECK_INITIALIZED(return_value);                                                               \
-    if (webengine_frame_id_variable == kInvalidFrameId)                                            \
+    if (webengine_frame_id_variable == -1) /* kInvalidFrameId)*/                                   \
         return return_value;                                                                       \
     auto *frame_tree_node_variable = content::FrameTreeNode::GloballyFindByID(                     \
-            static_cast<int>(webengine_frame_id_variable));                                        \
+            static_cast<content::FrameTreeNodeId>(webengine_frame_id_variable));                   \
     if (!frame_tree_node_variable)                                                                 \
     return return_value
 
@@ -1966,7 +1975,7 @@ QString WebContentsAdapter::frameHtmlName(quint64 id) const
 {
     CHECK_INITIALIZED_AND_VALID_FRAME(id, ftn, QString());
     auto &maybeName = ftn->html_name();
-    return maybeName ? QString::fromStdString(*maybeName) : QString("");
+    return maybeName ? QString::fromStdString(*maybeName) : ""_L1;
 }
 
 QList<quint64> WebContentsAdapter::frameChildren(quint64 id) const
@@ -1976,7 +1985,7 @@ QList<quint64> WebContentsAdapter::frameChildren(quint64 id) const
     size_t numChildren = ftn->child_count();
     result.reserve(numChildren);
     for (size_t i = 0; i < numChildren; ++i) {
-        result.push_back(ftn->child_at(i)->frame_tree_node_id());
+        result.push_back(ftn->child_at(i)->frame_tree_node_id().GetUnsafeValue());
     }
     return result;
 }
@@ -2002,7 +2011,7 @@ std::optional<quint64> WebContentsAdapter::findFrameIdByName(const QString &name
     auto *ftn = content::FrameTreeNode::From(m_webContents->GetPrimaryMainFrame());
     Q_ASSERT(ftn);
     if (auto *foundFtn = ftn->frame_tree().FindByName(name.toStdString()))
-        return foundFtn->frame_tree_node_id();
+        return foundFtn->frame_tree_node_id().GetUnsafeValue();
     return {};
 }
 
@@ -2228,7 +2237,7 @@ void WebContentsAdapter::discard()
 
     if (m_webContents->IsLoading()) {
         m_webContentsDelegate->didFailLoad(m_webContentsDelegate->url(webContents()), net::Error::ERR_ABORTED,
-                                           QStringLiteral("Discarded"));
+                                           u"Discarded"_s);
         m_webContentsDelegate->DidStopLoading();
     }
 
@@ -2283,7 +2292,7 @@ void WebContentsAdapter::undiscard()
     Q_ASSERT(rvh);
     if (!m_webContents->GetPrimaryMainFrame()->IsRenderFrameLive())
         static_cast<content::WebContentsImpl *>(m_webContents.get())
-                ->CreateRenderViewForRenderManager(rvh, absl::nullopt, nullptr);
+                ->CreateRenderViewForRenderManager(rvh, std::nullopt, nullptr);
     m_webContentsDelegate->RenderViewHostChanged(nullptr, rvh);
     m_adapterClient->initializationFinished();
     m_adapterClient->selectionChanged();

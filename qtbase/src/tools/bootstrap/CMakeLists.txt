@@ -121,8 +121,6 @@ qt_internal_extend_target(Bootstrap CONDITION WIN32
         ../../corelib/io/qfsfileengine_win.cpp
         ../../corelib/io/qstandardpaths_win.cpp
         ../../corelib/kernel/qcoreapplication_win.cpp
-        ../../corelib/kernel/qwinregistry.cpp
-        ../../corelib/plugin/qsystemlibrary.cpp
         ../../corelib/kernel/qfunctions_win.cpp
     PUBLIC_LIBRARIES
         advapi32
@@ -130,6 +128,11 @@ qt_internal_extend_target(Bootstrap CONDITION WIN32
         ole32
         shell32
         user32
+)
+
+qt_internal_extend_target(Bootstrap CONDITION MSVC AND CLANG
+    LIBRARIES
+        clang_rt.builtins-x86_64
 )
 
 qt_internal_extend_target(Bootstrap CONDITION APPLE
@@ -140,9 +143,18 @@ qt_internal_extend_target(Bootstrap CONDITION APPLE
         ../../corelib/kernel/qcore_mac.mm
         ../../corelib/kernel/qcoreapplication_mac.cpp
         ../../corelib/tools/qversionnumber.cpp
+    NO_UNITY_BUILD_SOURCES
+        kernel/qcore_mac.mm # See below
+    NO_PCH_SOURCES
+        kernel/qcore_mac.mm # See below
     PUBLIC_LIBRARIES
         ${FWFoundation}
 )
+
+if(APPLE)
+    # For QObjCWeakPointer
+    set_source_files_properties(../../corelib/kernel/qcore_mac.mm PROPERTIES COMPILE_FLAGS -fobjc-weak)
+endif()
 
 qt_internal_extend_target(Bootstrap CONDITION MACOS
     SOURCES
@@ -169,6 +181,7 @@ qt_internal_extend_target(Bootstrap CONDITION CMAKE_CROSSCOMPILING OR NOT QT_FEA
         ../../3rdparty/pcre2/src/pcre2_chartables.c
         ../../3rdparty/pcre2/src/pcre2_chkdint.c
         ../../3rdparty/pcre2/src/pcre2_compile.c
+        ../../3rdparty/pcre2/src/pcre2_compile_class.c
         ../../3rdparty/pcre2/src/pcre2_config.c
         ../../3rdparty/pcre2/src/pcre2_context.c
         ../../3rdparty/pcre2/src/pcre2_dfa_match.c

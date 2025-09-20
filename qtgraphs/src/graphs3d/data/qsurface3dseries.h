@@ -1,8 +1,8 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QSURFACE3DSERIES_H
-#define QSURFACE3DSERIES_H
+#ifndef QTGRAPHS_QSURFACE3DSERIES_H
+#define QTGRAPHS_QSURFACE3DSERIES_H
 
 #include <QtGraphs/qabstract3dseries.h>
 #include <QtGraphs/qsurfacedataproxy.h>
@@ -31,6 +31,8 @@ class Q_GRAPHS_EXPORT QSurface3DSeries : public QAbstract3DSeries
                    wireframeColorChanged FINAL)
     Q_PROPERTY(
         QSurfaceDataArray dataArray READ dataArray WRITE setDataArray NOTIFY dataArrayChanged FINAL)
+    QML_ELEMENT
+    QML_UNCREATABLE("Trying to create uncreatable: QSurface3DSeries, use Surface3DSeries instead.")
 
 public:
     enum DrawFlag {

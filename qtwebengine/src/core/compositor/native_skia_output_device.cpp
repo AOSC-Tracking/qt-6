@@ -19,7 +19,7 @@
 #include "ui/gfx/gpu_fence.h"
 #include "ui/gl/gl_fence.h"
 
-#if defined(USE_OZONE)
+#if BUILDFLAG(IS_OZONE)
 #include "ui/ozone/public/ozone_platform.h"
 #endif
 
@@ -50,16 +50,19 @@ NativeSkiaOutputDevice::NativeSkiaOutputDevice(
     , m_representationFactory(shared_image_representation_factory)
     , m_deps(dependency)
 {
+    qCDebug(lcWebEngineCompositor, "Skia Graphics Context Type: %s",
+            gpu::GrContextTypeToString(contextState->gr_context_type()).c_str());
+
     capabilities_.uses_default_gl_framebuffer = false;
     capabilities_.supports_surfaceless = true;
     capabilities_.output_surface_origin = gfx::SurfaceOrigin::kTopLeft;
-    capabilities_.preserve_buffer_content = true;
-    capabilities_.only_invalidates_damage_rect = false;
 
-#if defined(USE_OZONE)
+#if BUILDFLAG(IS_OZONE)
     m_isNativeBufferSupported = ui::OzonePlatform::GetInstance()
                                         ->GetPlatformRuntimeProperties()
                                         .supports_native_pixmaps;
+    qCDebug(lcWebEngineCompositor, "Native Buffer Supported: %s",
+            m_isNativeBufferSupported ? "yes" : "no");
 #endif
 }
 
@@ -73,18 +76,14 @@ void NativeSkiaOutputDevice::SetFrameSinkId(const viz::FrameSinkId &id)
     bind(id);
 }
 
-bool NativeSkiaOutputDevice::Reshape(const SkImageInfo &image_info,
-                                     const gfx::ColorSpace &colorSpace,
-                                     int sample_count,
-                                     float device_scale_factor,
-                                     gfx::OverlayTransform transform)
+bool NativeSkiaOutputDevice::Reshape(const ReshapeParams &params)
 {
-    m_shape = Shape{image_info, device_scale_factor, colorSpace, sample_count};
-    DCHECK_EQ(transform, gfx::OVERLAY_TRANSFORM_NONE);
+    m_shape = Shape{ params.image_info, params.device_scale_factor, params.color_space, params.sample_count };
+    DCHECK_EQ(params.transform, gfx::OVERLAY_TRANSFORM_NONE);
     return true;
 }
 
-void NativeSkiaOutputDevice::Present(const absl::optional<gfx::Rect> &update_rect,
+void NativeSkiaOutputDevice::Present(const std::optional<gfx::Rect> &update_rect,
                                      BufferPresentedCallback feedback,
                                      viz::OutputSurfaceFrame frame)
 {
@@ -99,9 +98,7 @@ void NativeSkiaOutputDevice::Present(const absl::optional<gfx::Rect> &update_rec
         std::swap(m_middleBuffer, m_backBuffer);
         m_readyToUpdate = true;
     }
-
-    if (auto obs = observer())
-        obs->readyToSwap();
+    readyToSwap();
 }
 
 void NativeSkiaOutputDevice::EnsureBackbuffer()
@@ -213,6 +210,8 @@ NativeSkiaOutputDevice::Buffer::Buffer(NativeSkiaOutputDevice *parent)
 
 NativeSkiaOutputDevice::Buffer::~Buffer()
 {
+    DCHECK(!textureCleanupCallback);
+
     if (m_scopedSkiaWriteAccess)
         endWriteSkia(false);
 
@@ -226,20 +225,33 @@ NativeSkiaOutputDevice::Buffer::~Buffer()
 // found in the LICENSE file.
 bool NativeSkiaOutputDevice::Buffer::initialize()
 {
-    uint32_t kDefaultSharedImageUsage = gpu::SHARED_IMAGE_USAGE_DISPLAY_READ
-            | gpu::SHARED_IMAGE_USAGE_DISPLAY_WRITE
-            | gpu::SHARED_IMAGE_USAGE_GLES2_FRAMEBUFFER_HINT;
+    qCDebug(lcWebEngineCompositor, "Initializing buffer %p with SharedImage:", this);
+
+    gpu::SharedImageUsageSet sharedImageUsage =
+            gpu::SHARED_IMAGE_USAGE_DISPLAY_READ
+          | gpu::SHARED_IMAGE_USAGE_DISPLAY_WRITE;
+    if (m_parent->m_contextState->gr_context_type() == gpu::GrContextType::kGL)
+        sharedImageUsage |= gpu::SHARED_IMAGE_USAGE_GLES2_READ;
     if (m_parent->m_isNativeBufferSupported)
-        kDefaultSharedImageUsage |= gpu::SHARED_IMAGE_USAGE_SCANOUT;
+        sharedImageUsage |= gpu::SHARED_IMAGE_USAGE_SCANOUT;
 
-    auto mailbox = gpu::Mailbox::GenerateForSharedImage();
+    qCDebug(lcWebEngineCompositor, "  Usage: %s",
+            gpu::CreateLabelForSharedImageUsage(sharedImageUsage).c_str());
+    qCDebug(lcWebEngineCompositor, "  Pixels size: %dx%d", m_shape.imageInfo.width(),
+            m_shape.imageInfo.height());
 
-    SkColorType skColorType = m_shape.imageInfo.colorType();
+    auto mailbox = gpu::Mailbox::Generate();
+
+    const SkColorType skColorType = m_shape.imageInfo.colorType();
+    const viz::SharedImageFormat sharedImageFormat =
+            viz::SkColorTypeToSinglePlaneSharedImageFormat(skColorType);
+    qCDebug(lcWebEngineCompositor, "  Format: %s", sharedImageFormat.ToString().c_str());
+
     if (!m_parent->m_factory->CreateSharedImage(
-                mailbox, viz::SkColorTypeToSinglePlaneSharedImageFormat(skColorType),
+                mailbox, sharedImageFormat,
                 { m_shape.imageInfo.width(), m_shape.imageInfo.height() }, m_shape.colorSpace,
                 kTopLeft_GrSurfaceOrigin, kPremul_SkAlphaType, m_parent->m_deps->GetSurfaceHandle(),
-                kDefaultSharedImageUsage, "QWE_SharedImageBuffer")) {
+                sharedImageUsage, "QWE_SharedImageBuffer")) {
         LOG(ERROR) << "CreateSharedImage failed.";
         return false;
     }
@@ -251,6 +263,7 @@ bool NativeSkiaOutputDevice::Buffer::initialize()
         LOG(ERROR) << "ProduceSkia() failed.";
         return false;
     }
+    qCDebug(lcWebEngineCompositor, "  Backing: %s", m_skiaRepresentation->backing_name());
 
     if (m_parent->m_isNativeBufferSupported) {
         m_overlayRepresentation = m_parent->m_representationFactory->ProduceOverlay(m_mailbox);
@@ -407,7 +420,7 @@ sk_sp<SkImage> NativeSkiaOutputDevice::Buffer::skImage()
     QMutexLocker locker(&m_skImageMutex);
     return m_cachedSkImage;
 }
-#if defined(USE_OZONE)
+#if BUILDFLAG(IS_OZONE)
 scoped_refptr<gfx::NativePixmap> NativeSkiaOutputDevice::Buffer::nativePixmap()
 {
     DCHECK(m_presentCount);
@@ -417,7 +430,7 @@ scoped_refptr<gfx::NativePixmap> NativeSkiaOutputDevice::Buffer::nativePixmap()
     return m_scopedOverlayReadAccess->GetNativePixmap();
 }
 #elif defined(Q_OS_WIN)
-absl::optional<gl::DCLayerOverlayImage> NativeSkiaOutputDevice::Buffer::overlayImage() const
+std::optional<gl::DCLayerOverlayImage> NativeSkiaOutputDevice::Buffer::overlayImage() const
 {
     DCHECK(m_presentCount);
     return m_scopedOverlayReadAccess->GetDCLayerOverlayImage();

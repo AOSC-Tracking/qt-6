@@ -16,10 +16,11 @@
 //
 
 #include "qmediametadata.h"
-#include "private/qplatformmediaplayer_p.h"
-#include "qffmpeg_p.h"
+#include <QtFFmpegMediaPluginImpl/private/qffmpegtime_p.h>
+#include <QtMultimedia/private/qplatformmediaplayer_p.h>
+#include <QtFFmpegMediaPluginImpl/private/qffmpeg_p.h>
 #include "qvideoframe.h"
-#include <private/qmultimediautils_p.h>
+#include <QtMultimedia/private/qmultimediautils_p.h>
 
 #include <array>
 #include <optional>
@@ -48,7 +49,7 @@ public:
 
     struct ContextError
     {
-        int code = 0;
+        QMediaPlayer::Error code{};
         QString description;
     };
 
@@ -64,7 +65,7 @@ public:
 
     const QList<StreamInfo> &streamInfo(QPlatformMediaPlayer::TrackType trackType) const;
 
-    qint64 duration() const { return m_duration; }
+    TrackDuration duration() const { return m_duration; }
 
     const QMediaMetaData &metaData() const { return m_metaData; }
 
@@ -76,7 +77,7 @@ public:
 
     int currentStreamIndex(QPlatformMediaPlayer::TrackType trackType) const;
 
-    using Maybe = QMaybe<QSharedPointer<MediaDataHolder>, ContextError>;
+    using Maybe = QMaybe<std::shared_ptr<MediaDataHolder>, ContextError>;
     static Maybe create(const QUrl &url, QIODevice *stream,
                         const std::shared_ptr<ICancelToken> &cancelToken);
 
@@ -95,7 +96,7 @@ private:
     StreamIndexes m_currentAVStreamIndex = { -1, -1, -1 };
     StreamsMap m_streamMap;
     StreamIndexes m_requestedStreams = { -1, -1, -1 };
-    qint64 m_duration = 0;
+    TrackDuration m_duration = TrackDuration(0);
     QMediaMetaData m_metaData;
     std::optional<QImage> m_cachedThumbnail;
 };

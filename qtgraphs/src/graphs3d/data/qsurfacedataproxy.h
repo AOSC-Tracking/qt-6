@@ -1,8 +1,8 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QSURFACEDATAPROXY_H
-#define QSURFACEDATAPROXY_H
+#ifndef QTGRAPHS_QSURFACEDATAPROXY_H
+#define QTGRAPHS_QSURFACEDATAPROXY_H
 
 #include <QtGraphs/qabstractdataproxy.h>
 #include <QtGraphs/qsurfacedataitem.h>
@@ -24,6 +24,8 @@ class Q_GRAPHS_EXPORT QSurfaceDataProxy : public QAbstractDataProxy
     Q_PROPERTY(qsizetype rowCount READ rowCount NOTIFY rowCountChanged FINAL)
     Q_PROPERTY(qsizetype columnCount READ columnCount NOTIFY columnCountChanged FINAL)
     Q_PROPERTY(QSurface3DSeries *series READ series NOTIFY seriesChanged FINAL)
+    QML_NAMED_ELEMENT(SurfaceDataProxy)
+    QML_UNCREATABLE("")
 
 public:
     explicit QSurfaceDataProxy(QObject *parent = nullptr);

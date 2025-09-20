@@ -40,42 +40,77 @@ const Qt::InputMethodQueries supportedQueries3 = Qt::ImEnabled |
                                                 Qt::ImCursorRectangle;
 }
 
-void QWaylandTextInputv3::zwp_text_input_v3_enter(struct ::wl_surface *surface)
+void QWaylandTextInputv3::enableSurface(::wl_surface *surface)
 {
-    qCDebug(qLcQpaWaylandTextInput) << Q_FUNC_INFO << m_surface << surface;
+    qCDebug(qLcQpaWaylandTextInput) << Q_FUNC_INFO << surface;
+
+    if (m_surface == surface)
+        return; // already enabled
+    if (m_surface)
+        qCWarning(qLcQpaWaylandTextInput()) << Q_FUNC_INFO << "Try to enable surface" << surface << "with focusing surface" << m_surface;
 
     m_surface = surface;
-
     m_pendingPreeditString.clear();
     m_pendingCommitString.clear();
     m_pendingDeleteBeforeText = 0;
     m_pendingDeleteAfterText = 0;
+    m_surroundingText.clear();
+    m_cursor = 0;
+    m_cursorPos = 0;
+    m_anchorPos = 0;
+    m_contentHint = 0;
+    m_contentPurpose = 0;
+    m_cursorRect = QRect();
 
     enable();
     updateState(supportedQueries3, update_state_enter);
+}
+
+void QWaylandTextInputv3::disableSurface(::wl_surface *surface)
+{
+    qCDebug(qLcQpaWaylandTextInput) << Q_FUNC_INFO << surface;
+
+    if (!m_surface)
+        return; // already disabled
+    if (m_surface != surface)
+        qCWarning(qLcQpaWaylandTextInput()) << Q_FUNC_INFO << "Try to disable surface" << surface << "with focusing surface" << m_surface;
+
+    m_currentPreeditString.clear();
+    m_surface = nullptr;
+    disable();
+    commit();
+}
+
+void QWaylandTextInputv3::zwp_text_input_v3_enter(struct ::wl_surface *surface)
+{
+    qCDebug(qLcQpaWaylandTextInput) << Q_FUNC_INFO << m_surface << surface;
+
+    if (m_surface)
+        qCWarning(qLcQpaWaylandTextInput) << Q_FUNC_INFO << "Got enter event without leaving a surface " << m_surface;
+
+    enableSurface(surface);
 }
 
 void QWaylandTextInputv3::zwp_text_input_v3_leave(struct ::wl_surface *surface)
 {
     qCDebug(qLcQpaWaylandTextInput) << Q_FUNC_INFO;
 
-    if (m_surface != surface) {
-        qCWarning(qLcQpaWaylandTextInput()) << Q_FUNC_INFO << "Got leave event for surface" << surface << "focused surface" << m_surface;
-        return;
-    }
+    if (!m_surface)
+        return; // Nothing to leave
 
-    m_currentPreeditString.clear();
+    if (m_surface != surface)
+        qCWarning(qLcQpaWaylandTextInput()) << Q_FUNC_INFO << "Got leave event for surface" << surface << "with focusing surface" << m_surface;
 
-    m_surface = nullptr;
-
-    disable();
-    commit();
-    qCDebug(qLcQpaWaylandTextInput) << Q_FUNC_INFO << "Done";
+    disableSurface(surface);
 }
 
 void QWaylandTextInputv3::zwp_text_input_v3_preedit_string(const QString &text, int32_t cursorBegin, int32_t cursorEnd)
 {
     qCDebug(qLcQpaWaylandTextInput) << Q_FUNC_INFO << text << cursorBegin << cursorEnd;
+    if (!m_surface) {
+        qCWarning(qLcQpaWaylandTextInput) << "Got preedit_string event without entering a surface";
+        return;
+    }
 
     if (!QGuiApplication::focusObject())
         return;
@@ -88,6 +123,10 @@ void QWaylandTextInputv3::zwp_text_input_v3_preedit_string(const QString &text, 
 void QWaylandTextInputv3::zwp_text_input_v3_commit_string(const QString &text)
 {
     qCDebug(qLcQpaWaylandTextInput) << Q_FUNC_INFO << text;
+    if (!m_surface) {
+        qCWarning(qLcQpaWaylandTextInput) << "Got commit_string event without entering a surface";
+        return;
+    }
 
     if (!QGuiApplication::focusObject())
         return;
@@ -98,6 +137,10 @@ void QWaylandTextInputv3::zwp_text_input_v3_commit_string(const QString &text)
 void QWaylandTextInputv3::zwp_text_input_v3_delete_surrounding_text(uint32_t beforeText, uint32_t afterText)
 {
     qCDebug(qLcQpaWaylandTextInput) << Q_FUNC_INFO << beforeText << afterText;
+    if (!m_surface) {
+        qCWarning(qLcQpaWaylandTextInput) << "Got delete_surrounding_text event without entering a surface";
+        return;
+    }
 
     if (!QGuiApplication::focusObject())
         return;
@@ -109,6 +152,9 @@ void QWaylandTextInputv3::zwp_text_input_v3_delete_surrounding_text(uint32_t bef
 void QWaylandTextInputv3::zwp_text_input_v3_done(uint32_t serial)
 {
     qCDebug(qLcQpaWaylandTextInput) << Q_FUNC_INFO << "with serial" << serial << m_currentSerial;
+
+    if (!m_surface)
+        return;
 
     // This is a case of double click.
     // text_input_v3 will ignore this done signal and just keep the selection of the clicked word.
@@ -263,7 +309,8 @@ void QWaylandTextInputv3::updateState(Qt::InputMethodQueries queries, uint32_t f
         // The worst case will be supposed here.
         const int MAX_MESSAGE_SIZE = 4000;
 
-        const int textSize = text.toUtf8().size();
+        const QByteArray utf8 = text.toUtf8();
+        const int textSize = utf8.size();
         if (textSize > MAX_MESSAGE_SIZE) {
             qCDebug(qLcQpaWaylandTextInput) << "SurroundText size is over "
                                             << MAX_MESSAGE_SIZE
@@ -271,18 +318,19 @@ void QWaylandTextInputv3::updateState(Qt::InputMethodQueries queries, uint32_t f
             const int selectionStart = qMin(cursor, anchor);
             const int selectionEnd = qMax(cursor, anchor);
             const int selectionLength = selectionEnd - selectionStart;
-            const int selectionSize = QStringView{text}.sliced(selectionStart, selectionLength).toUtf8().size();
+            QByteArray selection = QStringView{text}.sliced(selectionStart, selectionLength).toUtf8();
+            const int selectionSize = selection.size();
             // If selection is bigger than 4000 byte, it is fixed to 4000 byte.
             // anchor will be moved in the 4000 byte boundary.
             if (selectionSize > MAX_MESSAGE_SIZE) {
                 if (anchor > cursor) {
                     cursor = 0;
                     anchor = MAX_MESSAGE_SIZE;
-                    text = text.sliced(selectionStart, selectionLength);
+                    text = QString::fromUtf8(QByteArrayView{selection}.sliced(0, MAX_MESSAGE_SIZE));
                 } else {
                     anchor = 0;
                     cursor = MAX_MESSAGE_SIZE;
-                    text = text.sliced(selectionEnd - selectionLength, selectionLength);
+                    text = QString::fromUtf8(QByteArrayView{selection}.sliced(selectionSize - MAX_MESSAGE_SIZE, MAX_MESSAGE_SIZE));
                 }
             } else {
                 // This is not optimal in some cases.
@@ -294,10 +342,10 @@ void QWaylandTextInputv3::updateState(Qt::InputMethodQueries queries, uint32_t f
                 cursor = QWaylandInputMethodEventBuilder::indexToWayland(text, cursor);
                 anchor = QWaylandInputMethodEventBuilder::indexToWayland(text, anchor);
                 if (selEndSize < MAX_MESSAGE_SIZE) {
-                    text = QString::fromUtf8(QByteArrayView{text.toUtf8()}.first(MAX_MESSAGE_SIZE));
+                    text = QString::fromUtf8(QByteArrayView{utf8}.first(MAX_MESSAGE_SIZE));
                 } else {
                     const int startOffset = selEndSize - MAX_MESSAGE_SIZE;
-                    text = QString::fromUtf8(QByteArrayView{text.toUtf8()}.sliced(startOffset, MAX_MESSAGE_SIZE));
+                    text = QString::fromUtf8(QByteArrayView{utf8}.sliced(startOffset, MAX_MESSAGE_SIZE));
                     cursor -= startOffset;
                     anchor -= startOffset;
                 }
@@ -345,8 +393,7 @@ void QWaylandTextInputv3::updateState(Qt::InputMethodQueries queries, uint32_t f
         }
     }
 
-    if (flags == update_state_enter
-            || (flags == update_state_change && needsCommit))
+    if (needsCommit)
         commit();
 }
 

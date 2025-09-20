@@ -2,6 +2,7 @@
 // Copyright (C) 2016 Intel Corporation.
 // Copyright (C) 2019 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Giuseppe D'Angelo <giuseppe.dangelo@kdab.com>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:data-parser
 
 #include "qbytearray.h"
 #include "qbytearraymatcher.h"
@@ -33,6 +34,7 @@
 
 #include <algorithm>
 #include <QtCore/q26numeric.h>
+#include <string>
 
 #ifdef Q_OS_WIN
 #  if !defined(QT_BOOTSTRAPPED) && (defined(QT_NO_CAST_FROM_ASCII) || defined(QT_NO_CAST_FROM_BYTEARRAY))
@@ -835,7 +837,7 @@ QByteArray qUncompress(const uchar* data, qsizetype nbytes)
     \endcompareswith
     \compareswith strong QChar char16_t QString QStringView QLatin1StringView \
                   QUtf8StringView
-    When comparing with string types, the content is interpreted as utf-8.
+    When comparing with string types, the content is interpreted as UTF-8.
     \endcompareswith
 
     QByteArray can be used to store both raw bytes (including '\\0's)
@@ -1882,6 +1884,15 @@ QByteArray::QByteArray(qsizetype size, Qt::Initialization)
 }
 
 /*!
+    \fn QByteArray::QByteArray(QByteArrayView v)
+    \since 6.8
+
+    Constructs a byte array initialized with the byte array view's data.
+
+    The QByteArray will be null if and only if \a v is null.
+*/
+
+/*!
     Sets the size of the byte array to \a size bytes.
 
     If \a size is greater than the current size, the byte array is
@@ -2209,12 +2220,11 @@ QByteArray& QByteArray::append(char ch)
     This function will only allocate memory if the number of elements in the
     range exceeds the capacity of this byte array or this byte array is shared.
 
-    \note This function overload only participates in overload resolution if
-    \c InputIterator meets the requirements of a
-    \l {https://en.cppreference.com/w/cpp/named_req/InputIterator} {LegacyInputIterator}.
-
     \note The behavior is undefined if either argument is an iterator into *this or
     [\a first, \a last) is not a valid range.
+
+    \constraints \c InputIterator meets the requirements of a
+    \l {https://en.cppreference.com/w/cpp/named_req/InputIterator} {LegacyInputIterator}.
 */
 
 QByteArray &QByteArray::assign(QByteArrayView v)
@@ -2384,13 +2394,12 @@ QByteArray &QByteArray::remove(qsizetype pos, qsizetype len)
     if (pos + len > d->size)
         len = d->size - pos;
 
-    auto begin = d.begin();
+    const auto toRemove_start = d.begin() + pos;
     if (!d->isShared()) {
-        d->erase(begin + pos, len);
+        d->erase(toRemove_start, len);
         d.data()[d.size] = '\0';
     } else {
         QByteArray copy{size() - len, Qt::Uninitialized};
-        const auto toRemove_start = d.begin() + pos;
         copy.d->copyRanges({{d.begin(), toRemove_start},
                            {toRemove_start + len, d.end()}});
         swap(copy);
@@ -2508,17 +2517,21 @@ QByteArray &QByteArray::replace(QByteArrayView before, QByteArrayView after)
     const char *a = after.data();
     qsizetype asize = after.size();
 
+    if (bsize == 1 && asize == 1)
+        return replace(*b, *a); // use the fast char-char algorithm
+
     if (isNull() || (b == a && bsize == asize))
         return *this;
 
     // protect against before or after being part of this
+    std::string pinnedNeedle, pinnedReplacement;
     if (QtPrivate::q_points_into_range(a, d)) {
-        QVarLengthArray copy(a, a + asize);
-        return replace(before, QByteArrayView{copy});
+        pinnedReplacement.assign(a, a + asize);
+        a = pinnedReplacement.data();
     }
     if (QtPrivate::q_points_into_range(b, d)) {
-        QVarLengthArray copy(b, b + bsize);
-        return replace(QByteArrayView{copy}, after);
+        pinnedNeedle.assign(b, b + bsize);
+        b = pinnedNeedle.data();
     }
 
     QByteArrayMatcher matcher(b, bsize);
@@ -2547,7 +2560,7 @@ QByteArray &QByteArray::replace(QByteArrayView before, QByteArrayView after)
             } else {
                 to = index;
             }
-            if (asize) {
+            if (asize > 0) {
                 memcpy(d + to, a, asize);
                 to += asize;
             }
@@ -2626,8 +2639,18 @@ QByteArray &QByteArray::replace(char before, char after)
 {
     if (before != after) {
         if (const auto pos = indexOf(before); pos >= 0) {
-            const auto detachedData = data();
-            std::replace(detachedData + pos, detachedData + size(), before, after);
+            if (d.needsDetach()) {
+                QByteArray tmp(size(), Qt::Uninitialized);
+                auto dst = tmp.d.data();
+                dst = std::copy(d.data(), d.data() + pos, dst);
+                *dst++ = after;
+                std::replace_copy(d.data() + pos + 1, d.end(), dst, before, after);
+                swap(tmp);
+            } else {
+                // in-place
+                d.data()[pos] = after;
+                std::replace(d.data() + pos + 1, d.end(), before, after);
+            }
         }
     }
     return *this;
@@ -2730,12 +2753,12 @@ static qsizetype lastIndexOfHelper(const char *haystack, qsizetype l, const char
                                    qsizetype ol, qsizetype from)
 {
     auto delta = l - ol;
-    if (from < 0)
-        from = delta;
-    if (from < 0 || from > l)
+    if (from > l)
         return -1;
-    if (from > delta)
+    if (from < 0 || from > delta)
         from = delta;
+    if (from < 0)
+        return -1;
 
     const char *end = haystack;
     haystack += from;
@@ -3571,6 +3594,17 @@ QDataStream &operator>>(QDataStream &in, QByteArray &ba)
     array \a a2.
 */
 
+/*! \fn QByteArray operator+(const QByteArray &lhs, QByteArrayView rhs)
+    \fn QByteArray operator+(QByteArrayView lhs, const QByteArray &rhs)
+    \overload
+    \since 6.9
+    \relates QByteArray
+
+    Returns a byte array that is the result of concatenating \a lhs and \a rhs.
+
+    \sa QByteArray::operator+=()
+*/
+
 /*!
     \fn QByteArray QByteArray::simplified() const
 
@@ -4019,7 +4053,8 @@ double QByteArray::toDouble(bool *ok) const
 
 auto QtPrivate::toDouble(QByteArrayView a) noexcept -> ParsedNumber<double>
 {
-    auto r = qt_asciiToDouble(a.data(), a.size(), WhitespacesAllowed);
+    a = a.trimmed();
+    auto r = qt_asciiToDouble(a.data(), a.size());
     if (r.ok())
         return ParsedNumber{r.result};
     else
@@ -4898,7 +4933,7 @@ QByteArray QByteArray::fromEcmaUint8Array(emscripten::val uint8array)
     \since 6.5
     \ingroup platform-type-conversions
 
-    \sa toEcmaUint8Array()
+    \sa fromEcmaUint8Array()
 */
 emscripten::val QByteArray::toEcmaUint8Array()
 {

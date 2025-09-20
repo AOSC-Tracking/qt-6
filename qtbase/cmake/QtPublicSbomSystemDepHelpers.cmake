@@ -77,10 +77,7 @@ function(_qt_internal_sbom_record_system_library_spdx_ids)
         # kind of zstd build was done. Make sure to check if the target exists before recording it.
         if(TARGET "${target}")
             set(target_unaliased "${target}")
-            get_target_property(aliased_target "${target}" ALIASED_TARGET)
-            if(aliased_target)
-                set(target_unaliased ${aliased_target})
-            endif()
+            _qt_internal_dealias_target(target_unaliased)
 
             _qt_internal_sbom_record_system_library_spdx_id(${target_unaliased} ${args})
         else()
@@ -100,6 +97,8 @@ function(_qt_internal_sbom_record_system_library_spdx_id target)
         message(FATAL_ERROR "Could not generate spdx id for system library target: ${target}")
     endif()
 
+    set_target_properties("${target}" PROPERTIES _qt_internal_sbom_is_system_library TRUE)
+
     set_property(GLOBAL PROPERTY
         _qt_internal_sbom_recorded_system_library_package_${target} "${package_spdx_id}")
 endfunction()
@@ -114,14 +113,18 @@ function(_qt_internal_sbom_add_recorded_system_libraries)
     set(unconsumed_targets "${recorded_targets}")
     set(generated_package_names "")
 
+    message(DEBUG
+        "System libraries that were marked consumed "
+        "(some target linked to them): ${consumed_targets}")
+    message(DEBUG
+        "System libraries that were recorded "
+        "(they were marked with qt_find_package()): ${recorded_targets}")
+
     foreach(target IN LISTS consumed_targets)
         # Some system targets like qtspeech SpeechDispatcher::SpeechDispatcher might be aliased,
         # and we can't set properties on them, so unalias the target name.
         set(target_original "${target}")
-        get_target_property(aliased_target "${target}" ALIASED_TARGET)
-        if(aliased_target)
-            set(target ${aliased_target})
-        endif()
+        _qt_internal_dealias_target(target)
 
         get_property(args GLOBAL PROPERTY
             _qt_internal_sbom_recorded_system_library_options_${target})

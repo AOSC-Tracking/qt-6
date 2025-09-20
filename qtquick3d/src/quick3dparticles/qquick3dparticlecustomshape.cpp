@@ -14,7 +14,7 @@ QT_BEGIN_NAMESPACE
 
 /*!
     \qmltype ParticleCustomShape3D
-    \inherits ParticleAbtractShape3D
+    \inherits ParticleAbstractShape3D
     \inqmlmodule QtQuick3D.Particles3D
     \brief Loads custom particle shapes for emitters and affectors.
     \since 6.3
@@ -59,6 +59,11 @@ QQuick3DParticleCustomShape::QQuick3DParticleCustomShape(QObject *parent)
     \qmlproperty url ParticleCustomShape3D::source
 
     This property holds the location of the shape file.
+
+     \warning \a source is expected to contain trusted content. Application
+     developers are advised to carefully consider the potential implications
+     before passing in user-provided source files that are not part of the
+     application.
 */
 
 QUrl QQuick3DParticleCustomShape::source() const

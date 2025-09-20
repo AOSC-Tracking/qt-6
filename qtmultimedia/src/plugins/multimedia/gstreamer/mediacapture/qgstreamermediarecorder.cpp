@@ -22,7 +22,7 @@
 #include <gst/video/video.h>
 #include <gst/pbutils/encoding-profile.h>
 
-static Q_LOGGING_CATEGORY(qLcMediaRecorder, "qt.multimedia.encoder")
+Q_STATIC_LOGGING_CATEGORY(qLcMediaRecorder, "qt.multimedia.recorder");
 
 QT_BEGIN_NAMESPACE
 
@@ -129,7 +129,7 @@ static GstEncodingProfile *createVideoProfile(const QMediaEncoderSettings &setti
     auto *formatInfo = QGstreamerIntegration::instance()->gstFormatsInfo();
 
     QGstCaps caps = formatInfo->videoCaps(settings.mediaFormat());
-    if (caps.isNull())
+    if (!caps)
         return nullptr;
 
     QSize videoResolution = settings.videoResolution();
@@ -152,7 +152,7 @@ static GstEncodingProfile *createAudioProfile(const QMediaEncoderSettings &setti
     auto *formatInfo = QGstreamerIntegration::instance()->gstFormatsInfo();
 
     auto caps = formatInfo->audioCaps(settings.mediaFormat());
-    if (caps.isNull())
+    if (!caps)
         return nullptr;
 
     GstEncodingProfile *profile =
@@ -291,7 +291,7 @@ void QGstreamerMediaRecorder::record(QMediaEncoderSettings &settings)
 
     if (hasAudio) {
         audioSink = gstEncodebin.getRequestPad("audio_%u");
-        if (audioSink.isNull())
+        if (!audioSink)
             qWarning() << "Unsupported audio codec";
         else
             audioPauseControl.installOn(audioSink);
@@ -299,7 +299,7 @@ void QGstreamerMediaRecorder::record(QMediaEncoderSettings &settings)
 
     if (hasVideo) {
         videoSink = gstEncodebin.getRequestPad("video_%u");
-        if (videoSink.isNull())
+        if (!videoSink)
             qWarning() << "Unsupported video codec";
         else
             videoPauseControl.installOn(videoSink);

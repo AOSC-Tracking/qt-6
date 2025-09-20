@@ -17,10 +17,12 @@
 
 QT_BEGIN_NAMESPACE
 
+using namespace Qt::StringLiterals;
+
 // Probably, might be increased. To be investigated and tested on Android implementation
 static constexpr int MaxPendingImagesCount = 1;
 
-static Q_LOGGING_CATEGORY(qLcImageCapture, "qt.multimedia.imageCapture")
+Q_STATIC_LOGGING_CATEGORY(qLcImageCapture, "qt.multimedia.imageCapture")
 
 QFFmpegImageCapture::QFFmpegImageCapture(QImageCapture *parent)
   : QPlatformImageCapture(parent)
@@ -131,6 +133,22 @@ void QFFmpegImageCapture::setCaptureSession(QPlatformMediaCaptureSession *sessio
                 &QFFmpegImageCapture::onVideoSourceChanged);
 
     onVideoSourceChanged();
+}
+
+void QFFmpegImageCapture::cancelPendingImage(QImageCapture::Error error, const QString &errorMsg)
+{
+    if (m_pendingImages.empty()) {
+        qCDebug(qLcImageCapture) <<
+            "QImageCapture backend received an event to cancel a pending capture, "
+            "but no captures are pending. Most likely an internal Qt bug.";
+        return;
+    }
+
+    PendingImage cancelledImage = m_pendingImages.dequeue();
+
+    emit QPlatformImageCapture::error(cancelledImage.id, error, errorMsg);
+
+    updateReadyForCapture();
 }
 
 void QFFmpegImageCapture::updateReadyForCapture()
@@ -248,7 +266,7 @@ void QFFmpegImageCapture::setImageSettings(const QImageEncoderSettings &settings
     auto s = settings;
     const auto supportedFormats = QPlatformMediaIntegration::instance()->formatInfo()->imageFormats;
     if (supportedFormats.isEmpty()) {
-        emit error(-1, QImageCapture::FormatError, "No image formats supported, can't capture.");
+        emit error(-1, QImageCapture::FormatError, u"No image formats supported, can't capture."_s);
         return;
     }
     if (s.format() == QImageCapture::UnspecifiedFormat) {
@@ -257,7 +275,7 @@ void QFFmpegImageCapture::setImageSettings(const QImageEncoderSettings &settings
             f = supportedFormats.first();
         s.setFormat(f);
     } else if (!supportedFormats.contains(settings.format())) {
-        emit error(-1, QImageCapture::FormatError, "Image format not supported.");
+        emit error(-1, QImageCapture::FormatError, u"Image format not supported."_s);
         return;
     }
 

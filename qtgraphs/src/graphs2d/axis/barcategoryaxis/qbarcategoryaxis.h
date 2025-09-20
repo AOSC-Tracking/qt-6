@@ -1,8 +1,8 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QBARCATEGORYAXIS_H
-#define QBARCATEGORYAXIS_H
+#ifndef QTGRAPHS_QBARCATEGORYAXIS_H
+#define QTGRAPHS_QBARCATEGORYAXIS_H
 
 #include <QtGraphs/qabstractaxis.h>
 #include <QtGraphs/qgraphsglobal.h>
@@ -64,4 +64,4 @@ private:
 
 QT_END_NAMESPACE
 
-#endif // QBARCATEGORYAXIS_H
+#endif // QTGRAPHS_QBARCATEGORYAXIS_H

@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:data-parser
 
 #include "qplatformdefs.h"
 #include "qdir.h"
@@ -51,33 +52,41 @@ static QString driveSpec(const QString &path)
 }
 #endif
 
-enum {
-#if defined(Q_OS_WIN)
-    OSSupportsUncPaths = true
-#else
-    OSSupportsUncPaths = false
-#endif
-};
-
 // Return the length of the root part of an absolute path, for use by cleanPath(), cd().
-static qsizetype rootLength(QStringView name, bool allowUncPaths)
+static qsizetype rootLength(QStringView name, QDirPrivate::PathNormalizations flags)
 {
-    const qsizetype len = name.size();
-    // starts with double slash
-    if (allowUncPaths && name.startsWith("//"_L1)) {
-        // Server name '//server/path' is part of the prefix.
-        const qsizetype nextSlash = name.indexOf(u'/', 2);
-        return nextSlash >= 0 ? nextSlash + 1 : len;
-    }
+    constexpr bool UseWindowsRules = false // So we don't #include <QOperatingSystemVersion>
 #if defined(Q_OS_WIN)
-    if (len >= 2 && name.at(1) == u':') {
-        // Handle a possible drive letter
-        return len > 2 && name.at(2) == u'/' ? 3 : 2;
-    }
+            || true
 #endif
-    if (len && name.at(0) == u'/')
-        return 1;
-    return 0;
+            ;
+    const qsizetype len = name.size();
+    char16_t firstChar = len > 0 ? name.at(0).unicode() : u'\0';
+    char16_t secondChar = len > 1 ? name.at(1).unicode() : u'\0';
+    if constexpr (UseWindowsRules) {
+        // Handle possible UNC paths which start with double slash
+        bool urlMode = flags.testAnyFlags(QDirPrivate::UrlNormalizationMode);
+        if (firstChar == u'/' && secondChar == u'/' && !urlMode) {
+            // Server name '//server/path' is part of the prefix.
+            const qsizetype nextSlash = name.indexOf(u'/', 2);
+            return nextSlash >= 0 ? nextSlash + 1 : len;
+        }
+
+        // Handle a possible drive letter
+        qsizetype driveLength = 2;
+        if (firstChar == u'/' && urlMode && len > 2 && name.at(2) == u':') {
+            // Drive-in-URL-Path mode, e.g. "/c:" or "/c:/autoexec.bat"
+            ++driveLength;
+            secondChar = u':';
+        }
+        if (secondChar == u':') {
+            if (len > driveLength && name.at(driveLength) == u'/')
+                return driveLength + 1;     // absolute drive path, e.g. "c:/config.sys"
+            return driveLength;             // relative drive path, e.g. "c:" or "d:swapfile.sys"
+        }
+    }
+
+    return firstChar == u'/' ? 1 : 0;
 }
 
 //************* QDirPrivate
@@ -1485,22 +1494,26 @@ QFileInfoList QDir::entryInfoList(const QStringList &nameFilters, Filters filter
 #endif // !QT_BOOTSTRAPPED
 
 /*!
-    Creates a sub-directory called \a dirName.
+    Creates a sub-directory called \a dirName with the given \a permissions.
 
-    Returns \c true on success; otherwise returns \c false.
+    Returns \c true on success; returns \c false if the operation failed or
+    the directory already existed.
 
-    If the directory already exists when this function is called, it will return \c false.
+//! [dir-creation-mode-bits-unix]
+    On POSIX systems \a permissions are modified by the
+    \l{https://pubs.opengroup.org/onlinepubs/9799919799/functions/umask.html}{\c umask}
+    (file creation mask) of the current process, which means some permission
+    bits might be disabled.
+//! [dir-creation-mode-bits-unix]
 
-    The permissions of the created directory are set to \a{permissions}.
+    On Windows, by default, a new directory inherits its permissions from its
+    parent directory. \a permissions are emulated using ACLs. These ACLs may
+    be in non-canonical order when the group is granted less permissions than
+    others. Files and directories with such permissions will generate warnings
+    when the Security tab of the Properties dialog is opened. Granting the
+    group all permissions granted to others avoids such warnings.
 
-    On POSIX systems the permissions are influenced by the value of \c umask.
-
-    On Windows the permissions are emulated using ACLs. These ACLs may be in non-canonical
-    order when the group is granted less permissions than others. Files and directories with
-    such permissions will generate warnings when the Security tab of the Properties dialog
-    is opened. Granting the group all permissions granted to others avoids such warnings.
-
-    \sa rmdir()
+    \sa rmdir(), mkpath(), rmpath()
 
     \since 6.3
 */
@@ -1515,16 +1528,28 @@ bool QDir::mkdir(const QString &dirName, QFile::Permissions permissions) const
 
     QString fn = filePath(dirName);
     if (!d->fileEngine)
-        return QFileSystemEngine::createDirectory(QFileSystemEntry(fn), false, permissions);
+        return QFileSystemEngine::mkdir(QFileSystemEntry(fn), permissions);
     return d->fileEngine->mkdir(fn, false, permissions);
 }
 
 /*!
     \overload
-    Creates a sub-directory called \a dirName with default permissions.
+    Creates a sub-directory called \a dirName with the platform-specific
+    default permissions.
 
-    On POSIX systems the default is to grant all permissions allowed by \c umask.
-    On Windows, the new directory inherits its permissions from its parent directory.
+    Returns \c true on success; returns \c false if the operation failed or
+    the directory already existed.
+
+//! [windows-permissions-acls]
+    On Windows, by default, a new directory inherits its permissions from its
+    parent directory. Permissions are emulated using ACLs. These ACLs may be
+    in non-canonical order when the group is granted less permissions than
+    others. Files and directories with such permissions will generate warnings
+    when the Security tab of the Properties dialog is opened. Granting the
+    group all permissions granted to others avoids such warnings.
+//! [windows-permissions-acls]
+
+    \sa rmdir(), mkpath(), rmpath()
 */
 bool QDir::mkdir(const QString &dirName) const
 {
@@ -1537,7 +1562,7 @@ bool QDir::mkdir(const QString &dirName) const
 
     QString fn = filePath(dirName);
     if (!d->fileEngine)
-        return QFileSystemEngine::createDirectory(QFileSystemEntry(fn), false);
+        return QFileSystemEngine::mkdir(QFileSystemEntry(fn));
     return d->fileEngine->mkdir(fn, false);
 }
 
@@ -1561,22 +1586,23 @@ bool QDir::rmdir(const QString &dirName) const
 
     QString fn = filePath(dirName);
     if (!d->fileEngine)
-        return QFileSystemEngine::removeDirectory(QFileSystemEntry(fn), false);
+        return QFileSystemEngine::rmdir(QFileSystemEntry(fn));
 
     return d->fileEngine->rmdir(fn, false);
 }
 
 /*!
-    Creates the directory path \a dirPath.
+    Creates a directory named \a dirPath.
 
-    The function will create all parent directories necessary to
-    create the directory.
+    If \a dirPath doesn't already exist, this method will create it - along with
+    any nonexistent parent directories - with the default permissions.
 
-    Returns \c true if successful; otherwise returns \c false.
+    Returns \c true on success or if \a dirPath already existed; otherwise
+    returns \c false.
 
-    If the path already exists when this function is called, it will return true.
+    \include qdir.cpp windows-permissions-acls
 
-    \sa rmpath()
+    \sa rmpath(), mkdir(), rmdir()
 */
 bool QDir::mkpath(const QString &dirPath) const
 {
@@ -1589,7 +1615,7 @@ bool QDir::mkpath(const QString &dirPath) const
 
     QString fn = filePath(dirPath);
     if (!d->fileEngine)
-        return QFileSystemEngine::createDirectory(QFileSystemEntry(fn), true);
+        return QFileSystemEngine::mkpath(QFileSystemEntry(fn));
     return d->fileEngine->mkdir(fn, true);
 }
 
@@ -1615,7 +1641,7 @@ bool QDir::rmpath(const QString &dirPath) const
 
     QString fn = filePath(dirPath);
     if (!d->fileEngine)
-        return QFileSystemEngine::removeDirectory(QFileSystemEntry(fn), true);
+        return QFileSystemEngine::rmpath(QFileSystemEntry(fn));
     return d->fileEngine->rmdir(fn, true);
 }
 
@@ -2212,26 +2238,21 @@ bool QDir::match(const QString &filter, const QString &fileName)
     This method is shared with QUrl, so it doesn't deal with QDir::separator(),
     nor does it remove the trailing slash, if any.
 
-    When dealing with URLs, we are following section 5.2.4 (Remove dot
-    segments) from http://www.ietf.org/rfc/rfc3986.txt. URL mode differs from
-    from local path mode in these ways:
+    When dealing with URLs, we are following the "Remove dot segments"
+    algorithm from https://www.ietf.org/rfc/rfc3986.html#section-5.2.4
+    URL mode differs from local path mode in these ways:
     1) it can set *path to empty ("." becomes "")
     2) directory path outputs end in / ("a/.." becomes "a/" instead of "a")
     3) a sequence of "//" is treated as multiple path levels ("a/b//.." becomes
        "a/b/" and "a/b//../.." becomes "a/"), which matches the behavior
        observed in web browsers.
 
-    However, QUrl also uses local path mode for local URLs; with one exception:
-    Even in local mode we leave one trailing slash for paths ending in "/." if
-    the KeepLocalTrailingSlash flag is given. This reflects how QUrl needs to
-    treat local URLs due to compatibility constraints.
+    As a Qt extension, for local URLs we treat multiple slashes as one slash.
 */
 bool qt_normalizePathSegments(QString *path, QDirPrivate::PathNormalizations flags)
 {
-    const bool allowUncPaths = flags.testAnyFlag(QDirPrivate::AllowUncPaths);
     const bool isRemote = flags.testAnyFlag(QDirPrivate::RemotePath);
-    const bool keepLocalTrailingSlash = flags.testAnyFlags(QDirPrivate::KeepLocalTrailingSlash);
-    const qsizetype prefixLength = rootLength(*path, allowUncPaths);
+    const qsizetype prefixLength = rootLength(*path, flags);
 
     // RFC 3986 says: "The input buffer is initialized with the now-appended
     // path components and the output buffer is initialized to the empty
@@ -2284,7 +2305,7 @@ bool qt_normalizePathSegments(QString *path, QDirPrivate::PathNormalizations fla
                 if (isRemote)
                     *out++ = *in++;
                 else
-                    ++in;
+                    ++in; // Skip multiple slashes for local URLs
 
                 // Note: we may exit this loop with in == end, in which case we
                 // *shouldn't* dereference *in. But since we are pointing to a
@@ -2330,10 +2351,10 @@ bool qt_normalizePathSegments(QString *path, QDirPrivate::PathNormalizations fla
                     continue;
                 }
             }
-            while (out > start && *--out != u'/')
-                ;
-            while (!isRemote && out > start && out[-1] == u'/')
-                --out;
+
+            if (out > start)
+                --out; // backtrack the first dot
+            // backtrack the previous path segment
             while (out > start && out[-1] != u'/')
                 --out;
             in += 2;    // the two dots
@@ -2341,27 +2362,12 @@ bool qt_normalizePathSegments(QString *path, QDirPrivate::PathNormalizations fla
             ++in;       // the one dot
         }
 
-        if (out > start) {
-            // Always backtrack one slash
-            if (out[-1] == u'/' && in != end)
-                --out;
-
-            if (!isRemote) {
-                bool removedAnySlashes = false;
-
-                // Backtrack all slashes ...
-                while (out > start && out[-1] == u'/') {
-                    --out;
-                    removedAnySlashes = true;
-                }
-
-                // ... except a trailing one if it exists and flag given
-                if (removedAnySlashes && keepLocalTrailingSlash && out > start) {
-                    ++out;
-                    break;
-                }
-            }
-        }
+        // Not at 'end' yet, prepare for the next loop iteration by backtracking one slash.
+        // E.g.: /a/b/../c    >>> /a/b/../c
+        //          ^out            ^out
+        // the next iteration will copy '/c' to the output buffer >>> /a/c
+        if (in != end && out > start && out[-1] == u'/')
+            --out;
         if (out == start) {
             // We've reached the root. Make sure we don't turn a relative path
             // to absolute or, in the case of local paths that are already
@@ -2389,8 +2395,7 @@ static bool qt_cleanPath(QString *path)
 
     QString &ret = *path;
     ret = QDir::fromNativeSeparators(ret);
-    auto normalization = OSSupportsUncPaths ? QDirPrivate::AllowUncPaths : QDirPrivate::DefaultNormalization;
-    bool ok = qt_normalizePathSegments(&ret, normalization);
+    bool ok = qt_normalizePathSegments(&ret, QDirPrivate::DefaultNormalization);
 
     // Strip away last slash except for root directories
     if (ret.size() > 1 && ret.endsWith(u'/')) {

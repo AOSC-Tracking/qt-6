@@ -5,6 +5,7 @@ import QtCore
 import QtQml
 import QtQuick
 import QtQuick.Controls.Fusion
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import QtQuick.Window
 import QtWebEngine
@@ -71,7 +72,7 @@ ApplicationWindow {
     Action {
         shortcut: StandardKey.AddTab
         onTriggered: {
-            tabBar.createTab(tabBar.count != 0 ? currentWebView.profile : defaultProfile);
+            tabBar.createTab(tabBar.count != 0 ? currentWebView.profile : defaultProfilePrototype.instance());
             addressBar.forceActiveFocus();
             addressBar.selectAll();
         }
@@ -318,10 +319,10 @@ ApplicationWindow {
                         id: offTheRecordEnabled
                         text: "Off The Record"
                         checkable: true
-                        checked: currentWebView && currentWebView.profile === otrProfile
+                        checked: currentWebView && currentWebView.profile === otrPrototype.instance()
                         onToggled: function(checked) {
                             if (currentWebView) {
-                                currentWebView.profile = checked ? otrProfile : defaultProfile;
+                                currentWebView.profile = checked ? otrPrototype.instance() : defaultProfilePrototype.instance();
                             }
                         }
                     }
@@ -495,7 +496,7 @@ ApplicationWindow {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        Component.onCompleted: createTab(defaultProfile)
+        Component.onCompleted: createTab(defaultProfilePrototype.instance())
 
         function createTab(profile, focusOnNewTab = true, url = undefined) {
             var webview = tabComponent.createObject(tabLayout, {profile: profile});
@@ -824,10 +825,29 @@ ApplicationWindow {
         visible: false
     }
 
+    MessageDialog {
+        id: downloadAcceptDialog
+        property var downloadRequest: downloadView.pendingDownloadRequest
+        title: "Download requested"
+        text: downloadRequest ? downloadRequest.suggestedFileName : ""
+        buttons: Dialog.No | Dialog.Yes
+        onAccepted: {
+            downloadView.visible = true;
+            downloadView.append(downloadRequest);
+            downloadRequest.accept();
+        }
+        onRejected: {
+            downloadRequest.cancel();
+        }
+        onButtonClicked: {
+            visible = false;
+        }
+        visible: false
+    }
+
     function onDownloadRequested(download) {
-        downloadView.visible = true;
-        downloadView.append(download);
-        download.accept();
+        downloadView.pendingDownloadRequest = download;
+        downloadAcceptDialog.visible = true;
     }
 
     FindBar {

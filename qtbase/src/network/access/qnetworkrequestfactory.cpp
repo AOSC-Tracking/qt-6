@@ -1,5 +1,6 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qnetworkrequestfactory.h"
 #include "qnetworkrequestfactory_p.h"
@@ -17,7 +18,7 @@ QT_DEFINE_QESDP_SPECIALIZATION_DTOR(QNetworkRequestFactoryPrivate)
 
 using namespace Qt::StringLiterals;
 
-Q_LOGGING_CATEGORY(lcQrequestfactory, "qt.network.access.request.factory")
+Q_STATIC_LOGGING_CATEGORY(lcQrequestfactory, "qt.network.access.request.factory")
 
 /*!
     \class QNetworkRequestFactory
@@ -361,7 +362,7 @@ void QNetworkRequestFactory::clearUserName()
 /*!
     Returns the password set to this factory.
 
-    \sa password(), clearPassword(), userName()
+    \sa setPassword(), clearPassword(), userName()
 */
 QString QNetworkRequestFactory::password() const
 {

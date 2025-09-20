@@ -2,7 +2,8 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#include <QtTest/QtTest>
+#include <QtTest/QTest>
+#include <QtTest/QSignalSpy>
 #include <QtQml/qqmlcomponent.h>
 #include <QtQml/qqmlengine.h>
 #include <QtQml/qqmlexpression.h>
@@ -10,7 +11,10 @@
 #include <QtCore/qfileinfo.h>
 #include <QtCore/qdebug.h>
 #include <QtCore/qdir.h>
+#include <QtCore/qlibraryinfo.h>
 #include <QtCore/qnumeric.h>
+#include <QtCore/qprocess.h>
+#include <QtCore/qtemporaryfile.h>
 #include <private/qqmlengine_p.h>
 #include <private/qqmlvmemetaobject_p.h>
 #include <private/qv4qmlcontext_p.h>
@@ -27,6 +31,7 @@
 #include <private/qv4objectiterator_p.h>
 #include <private/qqmlabstractbinding_p.h>
 #include <private/qqmlvaluetypeproxybinding_p.h>
+#include <private/qqmltimer_p.h>
 #include <QtCore/private/qproperty_p.h>
 #include <QtQuick/qquickwindow.h>
 #include <QtQuick/private/qquickitem_p.h>
@@ -203,6 +208,7 @@ private slots:
     void assignSequenceTypes();
     void sequenceSort_data();
     void sequenceSort();
+    void sequenceConversionViaSequentialIterableFallback();
     void dateParse();
     void utcDate();
     void negativeYear();
@@ -430,6 +436,8 @@ private slots:
     void methodCallOnDerivedSingleton();
 
     void proxyMetaObject();
+
+    void jittedJavaScriptExpressionDoesNotCrashOnExceptionBeingThrown();
 
 private:
 //    static void propertyVarWeakRefCallback(v8::Persistent<v8::Value> object, void* parameter);
@@ -1477,6 +1485,21 @@ void tst_qqmlecmascript::attachedProperties()
 
         QCOMPARE(attached->value2(), 9);
     }
+    {
+        qmlRegisterAnonymousType<MyQmlAttachedObject>("Qt.test", 1);
+        QQmlComponent component(&engine, testFileUrl("attachedLifeCycleMethods.qml"));
+        QScopedPointer<QObject> object(component.create());
+        QVERIFY2(object, qPrintable(component.errorString()));
+
+        MyQmlAttachedObject *attached = qobject_cast<MyQmlAttachedObject *>(
+            qmlAttachedPropertiesObject<MyQmlObject>(object.data()));
+        QVERIFY(attached != nullptr);
+
+        QCOMPARE(attached->value2(), 42);
+        QVERIFY(attached->classBeginCalled);
+        QVERIFY(attached->componentCompleteCalled);
+        QVERIFY(attached->orderCorrect);
+    }
 }
 
 void tst_qqmlecmascript::enums()
@@ -1510,7 +1533,7 @@ void tst_qqmlecmascript::enums()
     // Non-existent enums
     {
     QUrl file = testFileUrl("enums.2.qml");
-    QString w2 = QLatin1String("QQmlExpression: Expression ") + testFileUrl("enums.2.qml").toString() + QLatin1String(":9:5 depends on non-NOTIFYable properties:");
+    QString w2 = QLatin1String("QQmlExpression: Expression ") + testFileUrl("enums.2.qml").toString() + QLatin1String(":9:5 depends on non-bindable properties:");
     QString w3 = QLatin1String("    MyUnregisteredEnumTypeObject::enumProperty");
     QString w4 = file.toString() + ":7:5: Unable to assign [undefined] to int";
     QString w5 = file.toString() + ":8:5: Unable to assign [undefined] to int";
@@ -4750,7 +4773,7 @@ void tst_qqmlecmascript::singletonTypeImportOrder()
     QQmlComponent component(&engine, testFileUrl("singletontype/singletonTypeImportOrder.qml"));
     QScopedPointer<QObject> object(component.create());
     QVERIFY2(object, qPrintable(component.errorString()));
-    QCOMPARE(object->property("v").toInt(), 1);
+    QCOMPARE(object->property("v").toInt(), 2);
 }
 
 void tst_qqmlecmascript::singletonTypeResolution()
@@ -6056,7 +6079,6 @@ void tst_qqmlecmascript::readonlyDeclaration()
 Q_DECLARE_METATYPE(QList<int>)
 Q_DECLARE_METATYPE(QList<qreal>)
 Q_DECLARE_METATYPE(QList<bool>)
-Q_DECLARE_METATYPE(QList<QString>)
 Q_DECLARE_METATYPE(QList<QUrl>)
 void tst_qqmlecmascript::sequenceConversionRead()
 {
@@ -7557,7 +7579,7 @@ void tst_qqmlecmascript::nonNotifyable()
 
     QString expected1 = QLatin1String("QQmlExpression: Expression ") +
                         component.url().toString() +
-                        QLatin1String(":5:5 depends on non-NOTIFYable properties:");
+                        QLatin1String(":5:5 depends on non-bindable properties:");
     QString expected2 = QLatin1String("    ") +
                         QLatin1String(object->metaObject()->className()) +
                         QLatin1String("::value");
@@ -7573,7 +7595,7 @@ void tst_qqmlecmascript::nonNotifyableConstant()
     QQmlComponent component(&engine, testFileUrl("nonNotifyableConstant.qml"));
     QQmlTestMessageHandler messageHandler;
 
-    // Shouldn't produce an error message about non-NOTIFYable properties,
+    // Shouldn't produce an error message about non-bindable properties,
     // as the property has the CONSTANT attribute.
     QScopedPointer<QObject> object(component.create());
     QVERIFY2(object, qPrintable(component.errorString()));
@@ -8064,7 +8086,7 @@ public:
 
     void init(QV4::ExecutionEngine *v4, QV4::WeakValue *weakRef, bool *resultPtr)
     {
-        QV4::QObjectWrapper::wrap(v4, this);
+        (void) QV4::QObjectWrapper::wrap(v4, this); // Intentionally drop the wrapper
         QQmlEngine::setObjectOwnership(this, QQmlEngine::JavaScriptOwnership);
 
         this->resultPtr = resultPtr;
@@ -8376,6 +8398,19 @@ void tst_qqmlecmascript::sequenceSort()
     QMetaObject::invokeMethod(object.data(), function.toLatin1().constData(),
                               Q_RETURN_ARG(QVariant, q), Q_ARG(QVariant, useComparer));
     QVERIFY(q.toBool());
+}
+
+void tst_qqmlecmascript::sequenceConversionViaSequentialIterableFallback()
+{
+    QQmlEngine engine;
+    QSet<QString> mySet { {"test"}, {"test2"}, {"test3"} };
+    QJSManagedValue jsManagedVal(QVariant::fromValue(mySet), &engine);
+    QVERIFY(jsManagedVal.isArray());
+    // we can't rely on any order in the set
+    QSet<QString> result;
+    for (int i = 0, end = jsManagedVal.property("length").toInt(); i != end; ++i)
+        result.insert(jsManagedVal.property(i).toString());
+    QCOMPARE(result, mySet);
 }
 
 void tst_qqmlecmascript::dateParse()
@@ -10676,6 +10711,25 @@ void tst_qqmlecmascript::proxyMetaObject()
     QVERIFY(!MetaCallInterceptor::didGetObjectDestroyedCallback);
     o.reset(nullptr);
     QVERIFY(MetaCallInterceptor::didGetObjectDestroyedCallback);
+}
+
+void tst_qqmlecmascript::jittedJavaScriptExpressionDoesNotCrashOnExceptionBeingThrown()
+{
+    QQmlEngine engine;
+
+    engine.handle()->memoryManager->aggressiveGC = true;
+    engine.handle()->memoryManager->setGCTimeLimit(0);
+
+    QQmlComponent c(&engine, testFileUrl("jittedJavaScriptExpressionDoesNotCrashOnExceptionBeingThrown.qml"));
+    QVERIFY2(c.isReady(), qPrintable(c.errorString()));
+    QScopedPointer<QObject> o(c.create());
+    QVERIFY2(o, qPrintable(c.errorString()));
+
+    QQmlContext *context = qmlContext(o.data());
+    auto timer = qobject_cast<QQmlTimer*>(context->objectForName("timer"));
+    QVERIFY(timer);
+
+    QTRY_VERIFY(!timer->isRunning());
 }
 
 QTEST_MAIN(tst_qqmlecmascript)

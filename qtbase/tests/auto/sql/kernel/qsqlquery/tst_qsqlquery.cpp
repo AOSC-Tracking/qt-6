@@ -270,6 +270,13 @@ private slots:
     // invalidQuery() if run later; so put this one last !
     void prematureExec_data() { generic_data(); }
     void prematureExec();
+
+#if QT_REMOVAL_QT7_DEPRECATED_SINCE(6, 2)
+    // cleanup() is data-driven
+    void qmetatypeDeprecatedCopy_data() { generic_data(); }
+    void qmetatypeDeprecatedCopy();
+#endif
+
 private:
     // returns all database connections
     void generic_data(const QString &engine=QString());
@@ -2908,10 +2915,10 @@ void tst_QSqlQuery::queryOnInvalidDatabase()
             QSqlDatabase::removeDatabase("invalidConnection");
         });
         // Note: destruction of db needs to happen before we call removeDatabase.
-        QTest::ignoreMessage(QtWarningMsg, "QSqlDatabase: INVALID driver not loaded");
 #if QT_CONFIG(regularexpression)
         QTest::ignoreMessage(QtWarningMsg,
-                             QRegularExpression("QSqlDatabase: available drivers: "));
+                             QRegularExpression("QSqlDatabase: can not load requested driver "
+                                                "'INVALID', available drivers: "));
 #endif
         QSqlDatabase db = QSqlDatabase::addDatabase("INVALID", "invalidConnection");
         QVERIFY(db.lastError().isValid());
@@ -5238,6 +5245,18 @@ void tst_QSqlQuery::psqlJsonOperator()
     QCOMPARE(qry.value(1).toByteArray(), "{\"b\": [3, 4]}");
 }
 
+
+#if QT_REMOVAL_QT7_DEPRECATED_SINCE(6, 2)
+void tst_QSqlQuery::qmetatypeDeprecatedCopy()
+{
+    QMetaType mt = QMetaType::fromType<QSqlQuery>();
+    QSqlQuery query;
+
+    QTest::ignoreMessage(QtWarningMsg, "QMetaType: copy construction of type 'QSqlQuery' is deprecated");
+    void *copy = mt.create(&query);
+    mt.destroy(copy);
+}
+#endif
 
 QTEST_MAIN(tst_QSqlQuery)
 #include "tst_qsqlquery.moc"

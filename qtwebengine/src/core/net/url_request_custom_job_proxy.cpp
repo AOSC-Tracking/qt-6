@@ -6,6 +6,7 @@
 
 #include "content/public/browser/browser_thread.h"
 #include "net/base/net_errors.h"
+#include "net/http/http_util.h"
 #include "services/network/public/cpp/resource_request_body.h"
 
 #include "api/qwebengineurlrequestjob.h"
@@ -47,18 +48,8 @@ void URLRequestCustomJobProxy::reply(std::string contentType, QIODevice *device,
     if (!m_client)
         return;
     DCHECK (!m_ioTaskRunner || m_ioTaskRunner->RunsTasksInCurrentSequence());
-    QByteArray qcontentType = QByteArray::fromStdString(contentType).toLower();
-    const int sidx = qcontentType.indexOf(';');
-    if (sidx > 0) {
-        const int cidx = qcontentType.indexOf("charset=", sidx);
-        if (cidx > 0) {
-            m_client->m_charset = qcontentType.mid(cidx + 8).trimmed().toStdString();
-            qcontentType = qcontentType.first(sidx);
-        } else {
-            qWarning() << "QWebEngineUrlRequestJob::reply(): Unrecognized content-type format with ';'" << qcontentType;
-        }
-    }
-    m_client->m_mimeType = qcontentType.trimmed().toStdString();
+    bool hadCharset = false;
+    net::HttpUtil::ParseContentType(contentType, &m_client->m_mimeType, &m_client->m_charset, &hadCharset, nullptr);
     m_client->m_device = device;
     m_client->m_additionalResponseHeaders = std::move(additionalResponseHeaders);
     if (m_client->m_device && !m_client->m_device->isReadable())
@@ -131,7 +122,7 @@ void URLRequestCustomJobProxy::readyRead()
 }
 
 void URLRequestCustomJobProxy::initialize(GURL url, std::string method,
-                                          absl::optional<url::Origin> initiator,
+                                          std::optional<url::Origin> initiator,
                                           std::map<std::string, std::string> headers,
                                           scoped_refptr<network::ResourceRequestBody> requestBody)
 {

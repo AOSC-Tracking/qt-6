@@ -28,6 +28,7 @@ qt_internal_add_test(tst_qqmllanguage
         Qt::Gui
         Qt::GuiPrivate
         Qt::Network
+        Qt::Qml
         Qt::QmlPrivate
         Qt::QuickTestUtilsPrivate
     TESTDATA ${test_data}
@@ -73,3 +74,7 @@ qt6_add_qml_module(tst_qqmllanguage
     RESOURCE_PREFIX "/"
     NO_GENERATE_EXTRA_QMLDIRS
 )
+
+add_subdirectory(OtherModuleTest)
+target_link_libraries(tst_qqmllanguage PUBLIC other_module)
+target_link_libraries(tst_qqmllanguage PUBLIC other_moduleplugin)

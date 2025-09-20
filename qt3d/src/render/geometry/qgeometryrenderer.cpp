@@ -188,7 +188,7 @@ void QGeometryRendererPrivate::setView(QGeometryView *view)
     \sa Qt3DRender::QGeometryRenderer::PrimitiveType
  */
 /*!
-    \qmlproperty float GeometryRenderer::sortIndex
+    \qmlproperty real GeometryRenderer::sortIndex
     \since 6.0
 
     Overrides the sorting index when depth sorting is enabled.

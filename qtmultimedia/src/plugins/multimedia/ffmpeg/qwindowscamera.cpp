@@ -6,10 +6,12 @@
 #include "qmutex.h"
 
 #include <private/qmemoryvideobuffer_p.h>
-#include <private/qwindowsmfdefs_p.h>
 #include <private/qwindowsmultimediautils_p.h>
 #include <private/qvideoframe_p.h>
 #include <private/qcomobject_p.h>
+#include <private/qwmf_support_p.h>
+
+#include <QtCore/private/qsystemerror_p.h>
 
 #include <mfapi.h>
 #include <mfidl.h>
@@ -69,7 +71,8 @@ static ComPtr<IMFMediaSource> createCameraSource(const QString &deviceId)
     ComPtr<IMFAttributes> sourceAttributes;
     HRESULT hr = MFCreateAttributes(sourceAttributes.GetAddressOf(), 2);
     if (SUCCEEDED(hr)) {
-        hr = sourceAttributes->SetGUID(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE, QMM_MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID);
+        hr = sourceAttributes->SetGUID(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
+                                       MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID);
         if (SUCCEEDED(hr)) {
             hr = sourceAttributes->SetString(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK,
                                              reinterpret_cast<LPCWSTR>(deviceId.utf16()));
@@ -97,7 +100,7 @@ static int calculateVideoFrameStride(IMFMediaType *videoType, int width)
             return int(qAbs(stride));
     }
 
-    qWarning() << "Failed to calculate video stride" << errorString(hr);
+    qWarning() << "Failed to calculate video stride" << QSystemError::windowsComString(hr);
     return 0;
 }
 
@@ -109,7 +112,7 @@ static bool setCameraReaderFormat(IMFSourceReader *sourceReader, IMFMediaType *v
     HRESULT hr = sourceReader->SetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr,
                                                    videoType);
     if (FAILED(hr))
-        qWarning() << "Failed to set video format" << errorString(hr);
+        qWarning() << "Failed to set video format" << QSystemError::windowsComString(hr);
 
     return SUCCEEDED(hr);
 }
@@ -149,7 +152,7 @@ public:
     static std::unique_ptr<ActiveCamera> create(QWindowsCamera &wc, const QCameraDevice &device, const QCameraFormat &format)
     {
         auto ac = std::unique_ptr<ActiveCamera>(new ActiveCamera(wc));
-        ac->m_source = createCameraSource(device.id());
+        ac->m_source = createCameraSource(QString::fromUtf8(device.id()));
         if (!ac->m_source)
             return {};
 
@@ -195,10 +198,9 @@ public:
             ComPtr<IMFMediaBuffer> mediaBuffer;
             if (SUCCEEDED(sample->ConvertToContiguousBuffer(mediaBuffer.GetAddressOf()))) {
 
-                DWORD bufLen = 0;
-                BYTE *buffer = nullptr;
-                if (SUCCEEDED(mediaBuffer->Lock(&buffer, nullptr, &bufLen))) {
-                    QByteArray bytes(reinterpret_cast<char*>(buffer), qsizetype(bufLen));
+                auto result = QWMF::withLockedBuffer(mediaBuffer,
+                                                     [&](QSpan<BYTE> data, QSpan<BYTE> /*max*/) {
+                    QByteArray bytes(data);
                     auto buffer = std::make_unique<QMemoryVideoBuffer>(std::move(bytes),
                                                                        m_videoFrameStride);
                     QVideoFrame frame =
@@ -211,9 +213,11 @@ public:
                     if (SUCCEEDED(sample->GetSampleDuration(&duration)))
                         frame.setEndTime((timestamp + duration) / 10);
 
-                    emit m_windowsCamera.newVideoFrame(frame);
-                    mediaBuffer->Unlock();
-                }
+                    return frame;
+                });
+
+                if (result)
+                    emit m_windowsCamera.newVideoFrame(result.value());
             }
         }
 
@@ -229,7 +233,8 @@ public:
     ~ActiveCamera()
     {
         flush();
-        m_readerCallback->setActiveCamera(nullptr);
+        if (m_readerCallback)
+            m_readerCallback->setActiveCamera(nullptr);
     }
 
 private:
@@ -237,7 +242,7 @@ private:
 
     void flush()
     {
-        if (SUCCEEDED(m_reader->Flush(MF_SOURCE_READER_FIRST_VIDEO_STREAM))) {
+        if (m_reader && SUCCEEDED(m_reader->Flush(MF_SOURCE_READER_FIRST_VIDEO_STREAM))) {
             m_flushWait.acquire();
         }
     }

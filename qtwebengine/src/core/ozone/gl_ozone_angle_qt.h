@@ -4,7 +4,6 @@
 #ifndef GL_OZONE_ANGLE_QT_H
 #define GL_OZONE_ANGLE_QT_H
 
-#if defined(USE_OZONE)
 #include "ui/ozone/common/gl_ozone_egl.h"
 
 namespace ui {
@@ -18,7 +17,7 @@ public:
                                                      gfx::AcceleratedWidget window) override;
     scoped_refptr<gl::GLSurface> CreateOffscreenGLSurface(gl::GLDisplay *display,
                                                           const gfx::Size &size) override;
-    bool CanImportNativePixmap() override;
+    bool CanImportNativePixmap(gfx::BufferFormat format) override;
     std::unique_ptr<NativePixmapGLBinding>
     ImportNativePixmap(scoped_refptr<gfx::NativePixmap> pixmap, gfx::BufferFormat plane_format,
                        gfx::BufferPlane plane, gfx::Size plane_size,
@@ -35,7 +34,5 @@ protected:
 };
 
 } // namespace ui
-
-#endif // defined(USE_OZONE)
 
 #endif // GL_OZONE_ANGLE_QT_H

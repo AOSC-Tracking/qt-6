@@ -247,6 +247,7 @@ private slots:
     void taskQTBUG_4679_selectToStartEndOfBlock();
 #ifndef QT_NO_CONTEXTMENU
     void taskQTBUG_7902_contextMenuCrash();
+    void contextMenu();
 #endif
     void taskQTBUG_7395_readOnlyShortcut();
     void QTBUG697_paletteCurrentColorGroup();
@@ -4027,6 +4028,20 @@ void tst_QLineEdit::taskQTBUG_7902_contextMenuCrash()
     QTest::qWait(300);
     // No crash, it's allright.
 }
+
+void tst_QLineEdit::contextMenu() // QTBUG-132066
+{
+    QLineEdit le;
+    le.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&le));
+
+    // right-click: QLineEdit::mousePressEvent() should ignore the mouse press;
+    // QLineEdit::contextMenuEvent() should then be called to create and open a context menu
+    QTest::mouseClick(le.windowHandle(), Qt::RightButton, {}, le.rect().center());
+    QTRY_VERIFY(le.findChild<QMenu *>());
+
+    // This test could be extended to check and activate menu items.
+}
 #endif
 
 void tst_QLineEdit::taskQTBUG_7395_readOnlyShortcut()
@@ -4994,7 +5009,31 @@ void tst_QLineEdit::testQuickSelectionWithMouse()
 
     QLineEdit lineEdit;
     lineEdit.setText(text);
+#ifdef Q_OS_ANDROID
+    // Mouse selection does not work well with Android, especially when predictive text is enabled.
+    // That is why Mouse selection works when ImhNoPredictiveText is set
+    lineEdit.setInputMethodHints(Qt::ImhNoPredictiveText);
+#endif
+
+   auto mouseReleaseIfNeeded = [&lineEdit](QPoint p) {
+#ifdef Q_OS_ANDROID
+        // Android expects that mouse click will be released before next click.
+        // If it will not happen, the next selection will not work correctly
+        QTest::mouseRelease(lineEdit.windowHandle(), Qt::LeftButton, Qt::NoModifier, p);
+#else
+        Q_UNUSED(lineEdit);
+        Q_UNUSED(p);
+#endif
+    };
+
     lineEdit.show();
+
+    // Test sends mouse press events on center position of the lineEdit.
+    // We need to make sure that the text does not already ended before center position,
+    // We are adding adittional some extra pixels to make sure text that will not move when selecting
+    QFontMetrics metrics(lineEdit.font());
+    const int widthForWholeText =  metrics.horizontalAdvance(lineEdit.text());
+    lineEdit.setFixedWidth(widthForWholeText + 20);
 
     const QPoint center = lineEdit.contentsRect().center();
 
@@ -5004,6 +5043,7 @@ void tst_QLineEdit::testQuickSelectionWithMouse()
     qCDebug(lcTests) << "Selected text:" << lineEdit.selectedText();
     QVERIFY(!lineEdit.selectedText().isEmpty());
     QVERIFY(!lineEdit.selectedText().endsWith(suffix));
+    mouseReleaseIfNeeded(center + QPoint(20, 0));
 
     // Normal mouse selection from left to right, y change is below threshold.
     QTest::mousePress(lineEdit.windowHandle(), Qt::LeftButton, Qt::NoModifier, center);
@@ -5011,6 +5051,7 @@ void tst_QLineEdit::testQuickSelectionWithMouse()
     qCDebug(lcTests) << "Selected text:" << lineEdit.selectedText();
     QVERIFY(!lineEdit.selectedText().isEmpty());
     QVERIFY(!lineEdit.selectedText().endsWith(suffix));
+    mouseReleaseIfNeeded(center + QPoint(20, 5));
 
     // Normal mouse selection from right to left, y doesn't change.
     QTest::mousePress(lineEdit.windowHandle(), Qt::LeftButton, Qt::NoModifier, center);
@@ -5018,6 +5059,7 @@ void tst_QLineEdit::testQuickSelectionWithMouse()
     qCDebug(lcTests) << "Selected text:" << lineEdit.selectedText();
     QVERIFY(!lineEdit.selectedText().isEmpty());
     QVERIFY(!lineEdit.selectedText().startsWith(prefix));
+    mouseReleaseIfNeeded(center + QPoint(-20, 0));
 
     // Normal mouse selection from right to left, y change is below threshold.
     QTest::mousePress(lineEdit.windowHandle(), Qt::LeftButton, Qt::NoModifier, center);
@@ -5025,6 +5067,7 @@ void tst_QLineEdit::testQuickSelectionWithMouse()
     qCDebug(lcTests) << "Selected text:" << lineEdit.selectedText();
     QVERIFY(!lineEdit.selectedText().isEmpty());
     QVERIFY(!lineEdit.selectedText().startsWith(prefix));
+    mouseReleaseIfNeeded(center + QPoint(-20, -5));
 
     const int offset = QGuiApplication::styleHints()->mouseQuickSelectionThreshold() + 1;
 
@@ -5033,12 +5076,14 @@ void tst_QLineEdit::testQuickSelectionWithMouse()
     QTest::mouseMove(lineEdit.windowHandle(), center + QPoint(1, offset));
     qCDebug(lcTests) << "Selected text:" << lineEdit.selectedText();
     QVERIFY(lineEdit.selectedText().endsWith(suffix));
+    mouseReleaseIfNeeded(center + QPoint(1, offset));
 
     // Select the whole left half.
     QTest::mousePress(lineEdit.windowHandle(), Qt::LeftButton, Qt::NoModifier, center);
     QTest::mouseMove(lineEdit.windowHandle(), center + QPoint(1, -offset));
     qCDebug(lcTests) << "Selected text:" << lineEdit.selectedText();
     QVERIFY(lineEdit.selectedText().startsWith(prefix));
+    mouseReleaseIfNeeded(center + QPoint(1, -offset));
 
     // Normal selection -> quick selection -> back to normal selection.
     QTest::mousePress(lineEdit.windowHandle(), Qt::LeftButton, Qt::NoModifier, center);
@@ -5051,10 +5096,11 @@ void tst_QLineEdit::testQuickSelectionWithMouse()
     QVERIFY(lineEdit.selectedText().endsWith(suffix));
     QTest::mouseMove(lineEdit.windowHandle(), center + QPoint(20, 0));
     qCDebug(lcTests) << "Selected text:" << lineEdit.selectedText();
-#ifdef Q_PROCESSOR_ARM_32
+#if defined(Q_PROCESSOR_ARM_32) && !defined(Q_OS_VXWORKS)
     QEXPECT_FAIL("", "Currently fails on gcc-armv7, needs investigation.", Continue);
 #endif
     QCOMPARE(lineEdit.selectedText(), partialSelection);
+    mouseReleaseIfNeeded(center + QPoint(20, 0));
 
     lineEdit.setLayoutDirection(Qt::RightToLeft);
 
@@ -5062,11 +5108,13 @@ void tst_QLineEdit::testQuickSelectionWithMouse()
     QTest::mousePress(lineEdit.windowHandle(), Qt::LeftButton, Qt::NoModifier, center);
     QTest::mouseMove(lineEdit.windowHandle(), center + QPoint(1, offset));
     QVERIFY(lineEdit.selectedText().startsWith(prefix));
+    mouseReleaseIfNeeded(center + QPoint(1, offset));
 
     // Select the whole right half (RTL layout).
     QTest::mousePress(lineEdit.windowHandle(), Qt::LeftButton, Qt::NoModifier, center);
     QTest::mouseMove(lineEdit.windowHandle(), center + QPoint(1, -offset));
     QVERIFY(lineEdit.selectedText().endsWith(suffix));
+    mouseReleaseIfNeeded(center + QPoint(1, -offset));
 }
 
 void tst_QLineEdit::inputRejected()

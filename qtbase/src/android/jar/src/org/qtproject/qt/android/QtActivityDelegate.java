@@ -9,9 +9,11 @@ import android.app.Activity;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.content.res.TypedArray;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.Rect;
+import android.graphics.Color;
 import android.os.Build;
 import android.util.DisplayMetrics;
 import android.util.Log;
@@ -41,7 +43,6 @@ class QtActivityDelegate extends QtActivityDelegateBase
     private boolean m_splashScreenSticky = false;
     private boolean m_backendsRegistered = false;
 
-    private View m_dummyView = null;
     private final HashMap<Integer, View> m_nativeViews = new HashMap<>();
 
     QtActivityDelegate(Activity activity)
@@ -59,32 +60,30 @@ class QtActivityDelegate extends QtActivityDelegateBase
 
     void registerBackends()
     {
-        if (!m_backendsRegistered && !BackendRegister.isNull()) {
-            m_backendsRegistered = true;
-            BackendRegister.registerBackend(QtWindowInterface.class,
-                                            (QtWindowInterface)QtActivityDelegate.this);
-            BackendRegister.registerBackend(QtAccessibilityInterface.class,
-                                            (QtAccessibilityInterface)QtActivityDelegate.this);
-            BackendRegister.registerBackend(QtMenuInterface.class,
-                                            (QtMenuInterface)QtActivityDelegate.this);
-            BackendRegister.registerBackend(QtInputInterface.class,
-                                            (QtInputInterface)m_inputDelegate);
-        }
+        if (m_backendsRegistered || BackendRegister.isNull())
+            return;
+
+        m_backendsRegistered = true;
+        BackendRegister.registerBackend(QtWindowInterface.class, QtActivityDelegate.this);
+        BackendRegister.registerBackend(QtAccessibilityInterface.class, QtActivityDelegate.this);
+        BackendRegister.registerBackend(QtMenuInterface.class, QtActivityDelegate.this);
+        BackendRegister.registerBackend(QtInputInterface.class, m_inputDelegate);
     }
 
     void unregisterBackends()
     {
-        if (m_backendsRegistered) {
-            m_backendsRegistered = false;
+        if (!m_backendsRegistered)
+            return;
 
-            if (BackendRegister.isNull())
-                return;
+        m_backendsRegistered = false;
 
-            BackendRegister.unregisterBackend(QtWindowInterface.class);
-            BackendRegister.unregisterBackend(QtAccessibilityInterface.class);
-            BackendRegister.unregisterBackend(QtMenuInterface.class);
-            BackendRegister.unregisterBackend(QtInputInterface.class);
-        }
+        if (BackendRegister.isNull())
+            return;
+
+        BackendRegister.unregisterBackend(QtWindowInterface.class);
+        BackendRegister.unregisterBackend(QtAccessibilityInterface.class);
+        BackendRegister.unregisterBackend(QtMenuInterface.class);
+        BackendRegister.unregisterBackend(QtInputInterface.class);
     }
 
     @Override
@@ -97,7 +96,7 @@ class QtActivityDelegate extends QtActivityDelegateBase
             if (m_layout != null) {
                 m_displayManager.setSystemUiVisibility(isFullScreen, expandedToCutout);
                 m_layout.requestLayout();
-                QtNative.updateWindow();
+                QtWindow.updateWindows();
             }
         });
     }
@@ -206,6 +205,19 @@ class QtActivityDelegate extends QtActivityDelegateBase
                                                             ViewGroup.LayoutParams.MATCH_PARENT,
                                                             ViewGroup.LayoutParams.MATCH_PARENT));
                 m_layout.addView(m_splashScreen);
+
+                // Set DayNight theme as layout background so splash screen
+                // is not visible with opaque windows.
+                TypedArray typedArray = m_activity.getTheme().obtainStyledAttributes(
+                                        android.R.style.Theme_DeviceDefault_DayNight,
+                                        new int[]{ android.R.attr.colorBackground });
+                try {
+                    int backgroundColor = typedArray.getColor(0, Color.WHITE);
+                    Drawable background = new ColorDrawable(backgroundColor);
+                    m_layout.setBackground(background);
+                } finally {
+                    typedArray.recycle();
+                }
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -293,23 +305,29 @@ class QtActivityDelegate extends QtActivityDelegateBase
         });
     }
 
+    @Override
+    public void notifyAnnouncementEvent(int viewId, String message)
+    {
+        m_accessibilityDelegate.notifyAnnouncementEvent(viewId, message);
+    }
+
     // QtMenuInterface implementation begin
     @Override
     public void resetOptionsMenu()
     {
-        QtNative.runAction(() -> m_activity.invalidateOptionsMenu());
+        QtNative.runAction(m_activity::invalidateOptionsMenu);
     }
 
     @Override
     public void openOptionsMenu()
     {
-        QtNative.runAction(() -> m_activity.openOptionsMenu());
+        QtNative.runAction(m_activity::openOptionsMenu);
     }
 
     @Override
     public void closeContextMenu()
     {
-        QtNative.runAction(() -> m_activity.closeContextMenu());
+        QtNative.runAction(m_activity::closeContextMenu);
     }
 
     @Override
@@ -339,8 +357,7 @@ class QtActivityDelegate extends QtActivityDelegateBase
                         focusedEditText.getViewTreeObserver().removeOnGlobalLayoutListener(this);
                         PopupMenu popup = new PopupMenu(m_activity, focusedEditText);
                         QtActivityDelegate.this.onCreatePopupMenu(popup.getMenu());
-                        popup.setOnMenuItemClickListener(menuItem ->
-                                m_activity.onContextItemSelected(menuItem));
+                        popup.setOnMenuItemClickListener(m_activity::onContextItemSelected);
                         popup.setOnDismissListener(popupMenu ->
                                 m_activity.onContextMenuClosed(popupMenu.getMenu()));
                         popup.show();
@@ -378,15 +395,9 @@ class QtActivityDelegate extends QtActivityDelegateBase
             if (m_layout == null)
                 return;
 
-            if (m_topLevelWindows.size() == 0) {
-                if (m_dummyView != null) {
-                    m_layout.removeView(m_dummyView);
-                    m_dummyView = null;
-                }
-            }
-
             m_layout.addView(window, m_topLevelWindows.size());
             m_topLevelWindows.put(window.getId(), window);
+            window.setToDestroy(false);
             if (!m_splashScreenSticky)
                 hideSplashScreen();
         });
@@ -399,10 +410,11 @@ class QtActivityDelegate extends QtActivityDelegateBase
         QtNative.runAction(()-> {
             if (m_topLevelWindows.containsKey(id)) {
                 QtWindow window = m_topLevelWindows.remove(id);
-                if (m_topLevelWindows.isEmpty()) {
-                   // Keep last frame in stack until it is replaced to get correct
-                   // shutdown transition
-                   m_dummyView = window;
+                window.setOnApplyWindowInsetsListener(null); // Set in QtWindow for safe margins
+                if (window.isFrontmostVisibleWindow()) {
+                    window.setToDestroy(true);
+                    // Keep current shown window open during shutdown transition
+                    m_layout.postDelayed(() -> { window.destroySurface(); }, 500);
                } else if (m_layout != null) {
                    m_layout.removeView(window);
                }
@@ -461,11 +473,6 @@ class QtActivityDelegate extends QtActivityDelegateBase
             return;
 
         QtNative.runAction(()-> {
-            if (m_dummyView != null) {
-                m_layout.removeView(m_dummyView);
-                m_dummyView = null;
-            }
-
             if (m_nativeViews.containsKey(id))
                 m_layout.removeView(m_nativeViews.remove(id));
 

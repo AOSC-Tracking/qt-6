@@ -59,7 +59,7 @@ QT_BEGIN_NAMESPACE
     \compareswith strong char16_t QString QStringView QLatin1StringView QUtf8StringView
     \endcompareswith
     \compareswith strong {const char *} QByteArray QByteArrayView
-    The contents of the byte array is interpreted as utf-8.
+    The contents of the byte array is interpreted as UTF-8.
     \endcompareswith
 
     In Qt, Unicode characters are 16-bit entities without any markup
@@ -163,6 +163,7 @@ QT_BEGIN_NAMESPACE
     \value [since 6.3] Unicode_14_0 Version 14.0
     \value [since 6.5] Unicode_15_0 Version 15.0
     \value [since 6.8] Unicode_15_1 Version 15.1
+    \value [since 6.9] Unicode_16_0 Version 16.0
     \value Unicode_Unassigned  The value is not assigned to any character
                                in version 8.0 of Unicode.
 
@@ -300,6 +301,7 @@ QT_BEGIN_NAMESPACE
     \value [since 5.5] Script_Elbasan
     \value [since 5.15] Script_Elymaic
     \value Script_Ethiopic
+    \value [since 6.9] Script_Garay
     \value Script_Georgian
     \value Script_Glagolitic
     \value Script_Gothic
@@ -308,6 +310,7 @@ QT_BEGIN_NAMESPACE
     \value Script_Gujarati
     \value [since 5.15] Script_GunjalaGondi
     \value Script_Gurmukhi
+    \value [since 6.9] Script_GurungKhema
     \value Script_Han
     \value Script_Hangul
     \value [since 5.15] Script_HanifiRohingya
@@ -329,6 +332,7 @@ QT_BEGIN_NAMESPACE
     \value Script_Khmer
     \value [since 5.5] Script_Khojki
     \value [since 5.5] Script_Khudawadi
+    \value [since 6.9] Script_KiratRai
     \value Script_Lao
     \value Script_Latin
     \value Script_Lepcha
@@ -366,6 +370,7 @@ QT_BEGIN_NAMESPACE
     \value [since 5.15] Script_NyiakengPuachueHmong
     \value Script_Ogham
     \value Script_OlChiki
+    \value [since 6.9] Script_OlOnal
     \value [since 5.6] Script_OldHungarian
     \value Script_OldItalic
     \value [since 5.5] Script_OldNorthArabian
@@ -397,6 +402,7 @@ QT_BEGIN_NAMESPACE
     \value Script_SoraSompeng
     \value [since 5.11] Script_Soyombo
     \value Script_Sundanese
+    \value [since 6.9] Script_Sunuwar
     \value Script_SylotiNagri
     \value Script_Syriac
     \value Script_Tagalog
@@ -414,7 +420,9 @@ QT_BEGIN_NAMESPACE
     \value Script_Tibetan
     \value Script_Tifinagh
     \value [since 5.5] Script_Tirhuta
+    \value [since 6.9] Script_Todhri
     \value [since 6.3] Script_Toto
+    \value [since 6.9] Script_TuluTigalari
     \value Script_Ugaritic
     \value Script_Vai
     \value [since 6.3] Script_Vithkuqi
@@ -590,12 +598,21 @@ QT_BEGIN_NAMESPACE
     \fn QChar::QChar(QLatin1Char ch)
 
     Constructs a QChar corresponding to ASCII/Latin-1 character \a ch.
+
+//![qchar-implicit-conversions]
+    \note Since Qt 6.9, implicit conversions are disabled for this constructor.
+    That means it accepts only the constructor argument type and not everything
+    that implicitly converts to it. A backwards-compatible fix is to explicitly
+    cast to one of the supported argument types of QChar constructors.
+//![qchar-implicit-conversions]
 */
 
 /*!
     \fn QChar::QChar(SpecialCharacter ch)
 
     Constructs a QChar for the predefined character value \a ch.
+
+    \include qchar.cpp qchar-implicit-conversions
 */
 
 /*!
@@ -603,6 +620,8 @@ QT_BEGIN_NAMESPACE
     \since 5.10
 
     Constructs a QChar corresponding to the UTF-16 character \a ch.
+
+    \include qchar.cpp qchar-implicit-conversions
 */
 
 /*!
@@ -612,6 +631,8 @@ QT_BEGIN_NAMESPACE
     Constructs a QChar corresponding to the wide character \a ch.
 
     \note This constructor is only available on Windows.
+
+    \include qchar.cpp qchar-implicit-conversions
 */
 
 /*!
@@ -621,6 +642,8 @@ QT_BEGIN_NAMESPACE
 
     \note This constructor is not available when \c QT_NO_CAST_FROM_ASCII
     is defined.
+
+    \include qchar.cpp qchar-implicit-conversions
 
     \sa QT_NO_CAST_FROM_ASCII
 */
@@ -632,6 +655,8 @@ QT_BEGIN_NAMESPACE
 
     \note This constructor is not available when \c QT_NO_CAST_FROM_ASCII
     or \c QT_RESTRICTED_CAST_FROM_ASCII is defined.
+
+    \include qchar.cpp qchar-implicit-conversions
 
     \sa QT_NO_CAST_FROM_ASCII, QT_RESTRICTED_CAST_FROM_ASCII
 */
@@ -648,24 +673,40 @@ QT_BEGIN_NAMESPACE
     \fn QChar::QChar(ushort code)
 
     Constructs a QChar for the character with Unicode code point \a code.
+
+    \include qchar.cpp qchar-implicit-conversions
 */
 
 /*!
     \fn QChar::QChar(short code)
 
     Constructs a QChar for the character with Unicode code point \a code.
+
+    \include qchar.cpp qchar-implicit-conversions
+*/
+
+/*!
+    \fn QChar::QChar(char32_t code)
+
+    Constructs a QChar for the character with Unicode code point \a code.
+
+    \include qchar.cpp qchar-implicit-conversions
 */
 
 /*!
     \fn QChar::QChar(uint code)
 
     Constructs a QChar for the character with Unicode code point \a code.
+
+    \include qchar.cpp qchar-implicit-conversions
 */
 
 /*!
     \fn QChar::QChar(int code)
 
     Constructs a QChar for the character with Unicode code point \a code.
+
+    \include qchar.cpp qchar-implicit-conversions
 */
 
 /*!

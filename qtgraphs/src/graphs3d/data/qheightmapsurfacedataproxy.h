@@ -1,8 +1,8 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QHEIGHTMAPSURFACEDATAPROXY_H
-#define QHEIGHTMAPSURFACEDATAPROXY_H
+#ifndef QTGRAPHS_QHEIGHTMAPSURFACEDATAPROXY_H
+#define QTGRAPHS_QHEIGHTMAPSURFACEDATAPROXY_H
 
 #include <QtCore/qstring.h>
 #include <QtGraphs/qsurfacedataproxy.h>
@@ -26,6 +26,7 @@ class Q_GRAPHS_EXPORT QHeightMapSurfaceDataProxy : public QSurfaceDataProxy
     Q_PROPERTY(float minYValue READ minYValue WRITE setMinYValue NOTIFY minYValueChanged FINAL)
     Q_PROPERTY(float maxYValue READ maxYValue WRITE setMaxYValue NOTIFY maxYValueChanged FINAL)
     Q_PROPERTY(bool autoScaleY READ autoScaleY WRITE setAutoScaleY NOTIFY autoScaleYChanged FINAL)
+    QML_NAMED_ELEMENT(HeightMapSurfaceDataProxy)
 
 public:
     explicit QHeightMapSurfaceDataProxy(QObject *parent = nullptr);

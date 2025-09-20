@@ -2,9 +2,21 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 #include "qffmpegencoderoptions_p.h"
 
+#include "qffmpegmediaformatinfo_p.h"
+
+#include <QtMultimedia/qaudioformat.h>
+
 #if QT_CONFIG(vaapi)
 #include <va/va.h>
 #endif
+
+#ifdef Q_OS_ANDROID
+extern "C" {
+#include <libavcodec/avcodec.h>
+}
+#endif
+
+#include <libavutil/channel_layout.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -107,6 +119,42 @@ static void apply_libvpx(const QMediaEncoderSettings &settings, AVCodecContext *
         av_dict_set(opts, "b", nullptr, 0);
     }
     av_dict_set(opts, "row-mt", "1", 0); // better multithreading
+}
+
+static void apply_mpeg4(const QMediaEncoderSettings &settings, AVCodecContext *codec,
+                        AVDictionary **opts)
+{
+    // compare https://trac.ffmpeg.org/wiki/Encode/MPEG-4
+
+    QMediaRecorder::EncodingMode encodingMode = settings.encodingMode();
+    switch (encodingMode) {
+    case QMediaRecorder::ConstantBitRateEncoding:
+    case QMediaRecorder::QMediaRecorder::AverageBitRateEncoding: {
+        codec->bit_rate = settings.videoBitRate();
+        if (encodingMode == QMediaRecorder::ConstantBitRateEncoding)
+            codec->rc_min_rate = codec->rc_max_rate = settings.videoBitRate();
+
+        break;
+    }
+    case QMediaRecorder::ConstantQualityEncoding: {
+        constexpr auto scales = std::array{
+            31, // VeryLowQuality
+            23, // LowQuality
+            16, // NormalQuality
+            9, // HighQuality
+            1, // VeryHighQuality
+        };
+        av_dict_set_int(opts, "qscale", scales[settings.quality()], 0);
+        break;
+    }
+    case QMediaRecorder::TwoPassEncoding: {
+        qWarning("Two pass encoding is not supported for MPEG4");
+        break;
+    }
+    default: {
+        Q_UNREACHABLE_RETURN();
+    }
+    }
 }
 
 #ifdef Q_OS_DARWIN
@@ -270,8 +318,14 @@ static void apply_mediacodec(const QMediaEncoderSettings &settings, AVCodecConte
         break;
     }
     case QMediaFormat::VideoCodec::H265: {
-        const char *levels[] = { "h2.1", "h3.1", "h4.1", "h5.1", "h6.1" };
-        av_dict_set(opts, "level", levels[settings.quality()], 1);
+        // Set the level only for FFmpeg versions that correctly recognize level values.
+        // Affected revisions: from n7.1 https://github.com/FFmpeg/FFmpeg/commit/7753a9d62725d5bd8313e2d249acbe1c8af79ab1
+        // up to https://github.com/FFmpeg/FFmpeg/commit/020d9f2b4886aa620252da4db7a4936378d6eb3a
+        if (avcodec_version() < 4000612 || avcodec_version() > 4002660) {
+            const char *levels[] = { "h2.1", "h3.1", "h4.1", "h5.1", "h6.1" };
+            av_dict_set(opts, "level", levels[settings.quality()], 1);
+        }
+
         codec->profile = FF_PROFILE_HEVC_MAIN;
         break;
     }
@@ -296,6 +350,7 @@ const struct {
                               { "h264_nvenc", apply_nvenc },
                               { "hevc_nvenc", apply_nvenc },
                               { "av1_nvenc", apply_nvenc },
+                              { "mpeg4", apply_mpeg4 },
 #ifdef Q_OS_DARWIN
                               { "h264_videotoolbox", apply_videotoolbox },
                               { "hevc_videotoolbox", apply_videotoolbox },
@@ -347,6 +402,21 @@ void applyAudioEncoderOptions(const QMediaEncoderSettings &settings, const QByte
     codec->thread_count = -1; // we always want automatic threading
     if (settings.encodingMode() == QMediaRecorder::ConstantBitRateEncoding || settings.encodingMode() == QMediaRecorder::AverageBitRateEncoding)
         codec->bit_rate = settings.audioBitRate();
+
+    if (settings.audioSampleRate() != -1)
+        codec->sample_rate = settings.audioSampleRate();
+
+    if (settings.audioChannelCount() != -1) {
+        auto mask = QFFmpegMediaFormatInfo::avChannelLayout(
+                QAudioFormat::defaultChannelConfigForChannelCount(settings.audioChannelCount()));
+
+#if QT_FFMPEG_HAS_AV_CHANNEL_LAYOUT
+        av_channel_layout_from_mask(&codec->ch_layout, mask);
+#else
+        codec->channel_layout = mask;
+        codec->channels = qPopulationCount(codec->channel_layout);
+#endif
+    }
 
     auto *table = audioCodecOptionTable;
     while (table->name) {

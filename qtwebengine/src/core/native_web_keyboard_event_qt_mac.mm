@@ -33,8 +33,7 @@ base::apple::OwnedNSEvent ToNativeEvent(QKeyEvent *keyEvent)
         type = NSEventTypeKeyUp;
         break;
     default:
-        Q_UNREACHABLE();
-        return base::apple::OwnedNSEvent();
+        Q_UNREACHABLE_RETURN(base::apple::OwnedNSEvent());
     }
 
     NSString *text = keyEvent->text().toNSString();
@@ -72,8 +71,7 @@ QKeyEvent *ToKeyEvent(base::apple::OwnedNSEvent event)
         type = QEvent::KeyRelease;
         break;
     default:
-        Q_UNREACHABLE();
-        return nullptr;
+        Q_UNREACHABLE_RETURN(nullptr);
     }
 
     // Scan codes are hardware dependent codes for each key. There is no way to get these
@@ -103,7 +101,7 @@ QKeyEvent *ToKeyEvent(base::apple::OwnedNSEvent event)
         key = QAppleKeyMapper::fromCocoaKey(character);
     }
 
-    QString text = QString::fromNSString(characters);
+    const QString text = QString::fromNSString(characters);
     bool autorep = nsevent.ARepeat;
 
     return new QKeyEvent(type, key, modifiers, nativeScanCode, nativeVirtualKey, nativeModifiers,
@@ -112,7 +110,7 @@ QKeyEvent *ToKeyEvent(base::apple::OwnedNSEvent event)
 
 } // namespace QtWebEngineCore
 
-namespace content {
+namespace input {
 
 NativeWebKeyboardEvent::NativeWebKeyboardEvent(const blink::WebKeyboardEvent &web_event, gfx::NativeView)
     : blink::WebKeyboardEvent(web_event)
@@ -152,4 +150,4 @@ NativeWebKeyboardEvent &NativeWebKeyboardEvent::operator=(const NativeWebKeyboar
 
 NativeWebKeyboardEvent::~NativeWebKeyboardEvent() = default;
 
-}  // namespace content
+}  // namespace input

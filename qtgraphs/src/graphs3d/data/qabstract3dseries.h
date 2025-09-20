@@ -1,8 +1,8 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QABSTRACT3DSERIES_H
-#define QABSTRACT3DSERIES_H
+#ifndef QTGRAPHS_QABSTRACT3DSERIES_H
+#define QTGRAPHS_QABSTRACT3DSERIES_H
 
 #include <QtCore/qobject.h>
 #include <QtCore/qscopedpointer.h>
@@ -47,7 +47,8 @@ class Q_GRAPHS_EXPORT QAbstract3DSeries : public QObject
     Q_PROPERTY(QString itemLabel READ itemLabel NOTIFY itemLabelChanged)
     Q_PROPERTY(bool itemLabelVisible READ isItemLabelVisible WRITE setItemLabelVisible NOTIFY
                    itemLabelVisibleChanged)
-
+    QML_NAMED_ELEMENT(Abstract3DSeries)
+    QML_UNCREATABLE("Uncreatable base type")
 public:
     enum class SeriesType {
         None,

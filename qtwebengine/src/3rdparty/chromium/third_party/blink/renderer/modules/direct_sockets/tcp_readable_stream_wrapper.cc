@@ -82,7 +82,7 @@ void TCPReadableStreamWrapper::OnHandleReady(MojoResult result,
       break;
 
     default:
-      NOTREACHED();
+      NOTREACHED_IN_MIGRATION();
   }
 }
 
@@ -92,10 +92,9 @@ void TCPReadableStreamWrapper::Pull() {
 
   DCHECK(data_pipe_);
 
-  const void* data_buffer = nullptr;
-  uint32_t data_length = 0;
-  auto result = data_pipe_->BeginReadData(&data_buffer, &data_length,
-                                          MOJO_BEGIN_READ_DATA_FLAG_NONE);
+  base::span<const uint8_t> data_buffer;
+  auto result =
+      data_pipe_->BeginReadData(MOJO_BEGIN_READ_DATA_FLAG_NONE, data_buffer);
   switch (result) {
     case MOJO_RESULT_OK: {
       // respond() or enqueue() will only throw if their arguments are invalid
@@ -109,17 +108,16 @@ void TCPReadableStreamWrapper::Pull() {
 
       if (ReadableStreamBYOBRequest* request = Controller()->byobRequest()) {
         DOMArrayPiece view(request->view().Get());
-        data_length = std::min(
-            data_length, base::saturated_cast<uint32_t>(view.ByteLength()));
-        std::memcpy(view.Data(), data_buffer, data_length);
-        request->respond(script_state, data_length, exception_state);
+        data_buffer =
+            data_buffer.first(std::min(data_buffer.size(), view.ByteLength()));
+        view.ByteSpan().copy_prefix_from(data_buffer);
+        request->respond(script_state, data_buffer.size(), exception_state);
       } else {
-        auto buffer = NotShared(DOMUint8Array::Create(
-            static_cast<const uint8_t*>(data_buffer), data_length));
+        auto buffer = NotShared(DOMUint8Array::Create(data_buffer));
         Controller()->enqueue(script_state, buffer, exception_state);
       }
 
-      result = data_pipe_->EndReadData(data_length);
+      result = data_pipe_->EndReadData(data_buffer.size());
       DCHECK_EQ(result, MOJO_RESULT_OK);
 
       break;
@@ -134,7 +132,7 @@ void TCPReadableStreamWrapper::Pull() {
       return;
 
     default:
-      NOTREACHED() << "Unexpected result: " << result;
+      NOTREACHED_IN_MIGRATION() << "Unexpected result: " << result;
       return;
   }
 }
@@ -148,7 +146,7 @@ void TCPReadableStreamWrapper::CloseStream() {
   SetState(State::kClosed);
 
   ResetPipe();
-  std::move(on_close_).Run(ScriptValue());
+  std::move(on_close_).Run(v8::Local<v8::Value>());
   return;
 }
 
@@ -175,26 +173,25 @@ void TCPReadableStreamWrapper::ErrorStream(int32_t error_code) {
       DCHECK(ReadableStream::IsReadable(Readable()));
       NonThrowableExceptionState exception_state;
       Controller()->close(script_state, exception_state);
-      std::move(on_close_).Run(ScriptValue());
+      std::move(on_close_).Run(v8::Local<v8::Value>());
     }
     return;
   }
 
   SetState(State::kAborted);
 
-  auto exception = ScriptValue(
-      script_state->GetIsolate(),
-      V8ThrowDOMException::CreateOrDie(script_state->GetIsolate(),
-                                       DOMExceptionCode::kNetworkError,
-                                       String{"Stream aborted by the remote: " +
-                                              net::ErrorToString(error_code)}));
+  auto exception = V8ThrowDOMException::CreateOrDie(
+      script_state->GetIsolate(), DOMExceptionCode::kNetworkError,
+      String{"Stream aborted by the remote: " +
+             net::ErrorToString(error_code)});
 
   if (data_pipe_) {
-    pending_exception_ = exception;
+    pending_exception_.Reset(script_state->GetIsolate(), exception);
     return;
   }
 
-  Controller()->error(script_state, exception);
+  Controller()->error(script_state,
+                      ScriptValue(script_state->GetIsolate(), exception));
   std::move(on_close_).Run(exception);
 }
 
@@ -233,19 +230,22 @@ void TCPReadableStreamWrapper::OnHandleReset(MojoResult result,
 
   ScriptState::Scope scope(script_state);
   if (!pending_exception_.IsEmpty()) {
-    Controller()->error(script_state, pending_exception_);
+    auto* isolate = script_state->GetIsolate();
+    auto exception = pending_exception_.Get(isolate);
+    Controller()->error(script_state,
+                        ScriptValue(script_state->GetIsolate(), exception));
 
     SetState(State::kAborted);
-    std::move(on_close_).Run(pending_exception_);
+    std::move(on_close_).Run(exception);
 
-    pending_exception_.Clear();
+    pending_exception_.Reset();
   } else if (graceful_peer_shutdown_) {
     DCHECK(ReadableStream::IsReadable(Readable()));
     NonThrowableExceptionState exception_state;
     Controller()->close(script_state, exception_state);
 
     SetState(State::kClosed);
-    std::move(on_close_).Run(ScriptValue());
+    std::move(on_close_).Run(v8::Local<v8::Value>());
   }
 }
 

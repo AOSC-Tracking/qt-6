@@ -1,10 +1,9 @@
 Version: 2
 Include: [
     cmake_platforms.yaml: [
+        "documentation-warnings",
         "rhel-8.10",
         'windows-10_22h2-mingw13',
-        'ubuntu-22.04-documentation',
-        'ubuntu-22.04-documentation-x11-tests'
     ],
     macos.yaml: [
         'macos-universal-on-x86_64'
@@ -13,8 +12,9 @@ Include: [
         'android-arm64-on-macos',
         'android-armv7-on-windows',
         'android-9-x86-on-linux',
-        'android-14-x86_64-on-linux'
-    ]
+        'android-15-x86_64-on-linux'
+    ],
+    offline_documentation.yaml
 ]
 Configurations:
 -

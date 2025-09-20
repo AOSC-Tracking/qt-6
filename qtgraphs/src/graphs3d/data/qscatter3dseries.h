@@ -1,8 +1,8 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QSCATTER3DSERIES_H
-#define QSCATTER3DSERIES_H
+#ifndef QTGRAPHS_QSCATTER3DSERIES_H
+#define QTGRAPHS_QSCATTER3DSERIES_H
 
 #include <QtGraphs/qabstract3dseries.h>
 #include <QtGraphs/qscatterdataproxy.h>
@@ -20,6 +20,9 @@ class Q_GRAPHS_EXPORT QScatter3DSeries : public QAbstract3DSeries
         qsizetype selectedItem READ selectedItem WRITE setSelectedItem NOTIFY selectedItemChanged FINAL)
     Q_PROPERTY(float itemSize READ itemSize WRITE setItemSize NOTIFY itemSizeChanged FINAL)
     Q_PROPERTY(QScatterDataArray dataArray READ dataArray WRITE setDataArray NOTIFY dataArrayChanged FINAL)
+
+    QML_ELEMENT
+    QML_UNCREATABLE("Trying to create uncreatable: QScatter3DSeries, use Scatter3DSeries instead.")
 
 public:
     explicit QScatter3DSeries(QObject *parent = nullptr);

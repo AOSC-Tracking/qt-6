@@ -1,8 +1,8 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
-#ifndef QXYMODELMAPPER_H
-#define QXYMODELMAPPER_H
+#ifndef QTGRAPHS_QXYMODELMAPPER_H
+#define QTGRAPHS_QXYMODELMAPPER_H
 #include <QtCore/qobject.h>
 #include <QtGraphs/qgraphsglobal.h>
 #include <QtQmlIntegration/qqmlintegration.h>
@@ -70,4 +70,4 @@ protected:
 
 QT_END_NAMESPACE
 
-#endif // QXYMODELMAPPER_H
+#endif // QTGRAPHS_QXYMODELMAPPER_H

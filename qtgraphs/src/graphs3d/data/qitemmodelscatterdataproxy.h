@@ -1,8 +1,8 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QITEMMODELSCATTERDATAPROXY_H
-#define QITEMMODELSCATTERDATAPROXY_H
+#ifndef QTGRAPHS_QITEMMODELSCATTERDATAPROXY_H
+#define QTGRAPHS_QITEMMODELSCATTERDATAPROXY_H
 
 #include <QtCore/qabstractitemmodel.h>
 #include <QtCore/qregularexpression.h>
@@ -40,6 +40,7 @@ class Q_GRAPHS_EXPORT QItemModelScatterDataProxy : public QScatterDataProxy
                    zPosRoleReplaceChanged FINAL)
     Q_PROPERTY(QString rotationRoleReplace READ rotationRoleReplace WRITE setRotationRoleReplace
                    NOTIFY rotationRoleReplaceChanged FINAL)
+    QML_NAMED_ELEMENT(ItemModelScatterDataProxy)
 
 public:
     explicit QItemModelScatterDataProxy(QObject *parent = nullptr);

@@ -50,7 +50,7 @@ private:
 
 static GURL sourceUrlForCookie(const QNetworkCookie &cookie)
 {
-    QString urlFragment = QStringLiteral("%1%2").arg(cookie.domain()).arg(cookie.path());
+    const QString urlFragment = cookie.domain() % cookie.path();
     return net::cookie_util::CookieOriginToURL(urlFragment.toStdString(), /* is_https */ cookie.isSecure());
 }
 
@@ -98,7 +98,8 @@ void CookieMonsterDelegateQt::setCookie(const QNetworkCookie &cookie, const QUrl
 
     net::CookieInclusionStatus inclusion;
     auto canonCookie = net::CanonicalCookie::Create(gurl, cookie_line, base::Time::Now(),
-                                                    absl::nullopt, absl::nullopt, true, &inclusion);
+                                                    std::nullopt, std::nullopt,
+                                                    net::CookieSourceType::kOther, &inclusion);
     if (!canonCookie || !inclusion.IsInclude()) {
         LOG(WARNING) << "QWebEngineCookieStore::setCookie() - Tried to set invalid cookie";
         return;

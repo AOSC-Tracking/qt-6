@@ -5,30 +5,26 @@
 #include "qffmpegsurfacecapturegrabber_p.h"
 #include "qabstractvideobuffer.h"
 #include <private/qmultimediautils_p.h>
-#include <private/qwindowsmultimediautils_p.h>
 #include <private/qvideoframe_p.h>
-#include <qtgui/qscreen_platform.h>
+#include <QtGui/qscreen_platform.h>
 #include "qvideoframe.h"
 
 #include <qloggingcategory.h>
 #include <qwaitcondition.h>
 #include <qmutex.h>
+#include <QtCore/private/qsystemerror_p.h>
 
 #include "D3d11.h"
 #include "dxgi1_2.h"
 
 #include <system_error>
-#include <thread>
-#include <chrono>
 
 #include <mutex> // std::scoped_lock
 
 QT_BEGIN_NAMESPACE
 
-static Q_LOGGING_CATEGORY(qLcScreenCaptureDxgi, "qt.multimedia.ffmpeg.screencapturedxgi")
+Q_STATIC_LOGGING_CATEGORY(qLcScreenCaptureDxgi, "qt.multimedia.ffmpeg.screencapturedxgi");
 
-using namespace std::chrono;
-using namespace QWindowsMultimediaUtils;
 using namespace Qt::StringLiterals;
 
 namespace {
@@ -53,8 +49,8 @@ public:
     QString str() const
     {
         if (!m_msg)
-            return errorString(m_hr);
-        return *m_msg + " " + errorString(m_hr);
+            return QSystemError::windowsComString(m_hr);
+        return *m_msg + u" " + QSystemError::windowsComString(m_hr);
     }
 
 private:
@@ -274,7 +270,7 @@ public:
         const ComProduct<ID3D11Texture2D> texture = getNextFrame();
 
         if (!texture)
-            return texture.error();
+            return { unexpect, texture.error() };
 
         return std::make_unique<QD3D11TextureVideoBuffer>(m_device, m_ctxMutex, *texture);
     }
@@ -290,7 +286,7 @@ private:
             HRESULT hr = m_dup->ReleaseFrame();
 
             if (hr != S_OK)
-                return ComStatus{ hr, "Failed to release duplication frame."_L1 };
+                return { unexpect, ComStatus{ hr, "Failed to release duplication frame."_L1 } };
         }
 
         ComPtr<IDXGIResource> frame;
@@ -337,15 +333,15 @@ QMaybe<QVideoFrameFormat, ComStatus> getFrameFormat(const QScreen* screen)
 {
     const auto dxgiScreen = findDxgiScreen(screen);
     if (!dxgiScreen)
-        return dxgiScreen.error();
+        return { unexpect, dxgiScreen.error() };
 
     const auto screenSize = dxgiScreen->physicalSize();
     if (!screenSize)
-        return screenSize.error();
+        return { unexpect, screenSize.error() };
 
     const auto rotation = dxgiScreen->rotation();
     if (!rotation)
-        return rotation.error();
+        return { unexpect, rotation.error() };
 
     QVideoFrameFormat format = { *screenSize, QVideoFrameFormat::Format_BGRA8888 };
     format.setRotation(*rotation);

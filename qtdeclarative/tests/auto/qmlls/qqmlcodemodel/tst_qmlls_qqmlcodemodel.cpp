@@ -120,12 +120,11 @@ using namespace QQmlJS::Dom;
 void tst_qmlls_qqmlcodemodel::fileNamesToWatch()
 {
     DomItem qmlFile;
-    DomCreationOptions options;
-    options.setFlag(DomCreationOption::WithSemanticAnalysis);
 
     auto envPtr = DomEnvironment::create(QStringList(),
                                          DomEnvironment::Option::SingleThreaded
-                                                 | DomEnvironment::Option::NoDependencies, options);
+                                                 | DomEnvironment::Option::NoDependencies,
+                                         Extended);
 
     envPtr->loadFile(FileToLoad::fromFileSystem(envPtr, testFile("MyCppModule/Main.qml")),
                      [&qmlFile](Path, const DomItem &, const DomItem &newIt) {
@@ -200,6 +199,106 @@ void tst_qmlls_qqmlcodemodel::openFiles()
         QVERIFY(properties);
         QVERIFY(properties.key(u"helloProperty"_s));
     }
+}
+
+void tst_qmlls_qqmlcodemodel::importPathViaSettings()
+{
+    // prepare the qmlls.ini file
+    QFile settingsTemplate(testFile(u"importPathFromSettings/.qmlls.ini.template"_s));
+    QVERIFY(settingsTemplate.open(QFile::ReadOnly | QFile::Text));
+    const QString data = QString::fromUtf8(settingsTemplate.readAll())
+                                 .arg(QDir::cleanPath(testFile(u"."_s)), QDir::listSeparator(),
+                                      testFile(u"SomeFolder"_s));
+
+    QFile settingsFile(testFile(u"importPathFromSettings/.qmlls.ini"_s));
+    auto guard = qScopeGuard([&settingsFile]() { settingsFile.remove(); });
+
+    QVERIFY(settingsFile.open(QFile::WriteOnly | QFile::Truncate | QFile::Text));
+    settingsFile.write(data.toUtf8());
+    settingsFile.flush();
+
+    // actually test the qqmlcodemodel
+    QQmlToolingSettings settings(u"qmlls"_s);
+    settings.addOption(u"importPaths"_s);
+    QmlLsp::QQmlCodeModel model(nullptr, &settings);
+
+    const QString someFile = u"importPathFromSettings/SomeFile.qml"_s;
+    const QByteArray fileUrl = testFileUrl(someFile).toEncoded();
+    const QString filePath = testFile(someFile);
+
+    model.newOpenFile(fileUrl, 0, readFile(someFile));
+
+    QTRY_VERIFY_WITH_TIMEOUT(model.validEnv().field(Fields::qmlFileWithPath).key(filePath), 3000);
+
+    {
+        const DomItem fileAComponents = model.validEnv()
+                                                .field(Fields::qmlFileWithPath)
+                                                .key(filePath)
+                                                .field(Fields::currentItem)
+                                                .field(Fields::components);
+        // if there is no component then the import path was not used by qqmlcodemodel ?
+        QCOMPARE(fileAComponents.size(), 1);
+    }
+}
+
+static void reloadLotsOfFileMethod()
+{
+    QmlLsp::QQmlCodeModel model;
+
+    QTemporaryDir folder;
+    QVERIFY(folder.isValid());
+
+    const QByteArray content = "import QtQuick\n\nItem {}";
+    QStringList fileNames;
+    for (int i = 0; i < 5; ++i) {
+        const QString currentFileName = folder.filePath(QString::number(i).append(u".qml"));
+        fileNames.append(currentFileName);
+
+        QFile file(currentFileName);
+        QVERIFY(file.open(QFile::WriteOnly));
+        file.write(content);
+    }
+
+    // open all files
+    for (const QString &fileName : fileNames)
+        model.newOpenFile(QUrl::fromLocalFile(fileName).toEncoded(), 0, content);
+
+    // wait for them to load
+    QTRY_COMPARE_WITH_TIMEOUT(model.validEnv().field(Fields::qmlFileWithPath).keys().size(),
+                              fileNames.size(), 3000);
+
+    // populate all files
+    for (const QString &key : model.validEnv().field(Fields::qmlFileWithPath).keys()) {
+        QCOMPARE(model.validEnv()
+                         .field(Fields::qmlFileWithPath)
+                         .key(key)
+                         .field(Fields::currentItem)
+                         .field(Fields::components)
+                         .size(),
+                 1);
+    }
+
+    // modify all files on disk
+    for (const QString &fileName : fileNames) {
+        QFile file(fileName);
+        QVERIFY(file.open(QFile::WriteOnly | QFile::Append));
+        file.write("\n\n");
+    }
+
+    // update one file
+    model.newDocForOpenFile(QUrl::fromLocalFile(fileNames.front()).toEncoded(), 1,
+                            content + "\n\n");
+}
+
+void tst_qmlls_qqmlcodemodel::reloadLotsOfFiles()
+{
+    QThread *thread = QThread::create([]() { reloadLotsOfFileMethod(); });
+
+    // should not stack-overflow despite the small stack size to make sure QML files are loaded
+    // correctly and not recursively
+    thread->setStackSize(1 << 20);
+    thread->start();
+    thread->wait();
 }
 
 QTEST_MAIN(tst_qmlls_qqmlcodemodel)

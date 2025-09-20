@@ -25,7 +25,7 @@
 
 QT_BEGIN_NAMESPACE
 
-static Q_LOGGING_CATEGORY(qLcEvrD3DPresentEngine, "qt.multimedia.evrd3dpresentengine");
+Q_STATIC_LOGGING_CATEGORY(qLcEvrD3DPresentEngine, "qt.multimedia.evrd3dpresentengine");
 
 class IMFSampleVideoBuffer : public QHwVideoBuffer
 {
@@ -436,13 +436,13 @@ static bool readWglNvDxInteropProc(WglNvDxInterop &f)
 namespace {
 
 bool hwTextureRenderingEnabled() {
-    // add possibility for an user to opt-in to HW video rendering
+    // add possibility for an user to opt-out HW video rendering
     // using the same env. variable as for FFmpeg backend
     static bool isDisableConversionSet = false;
     static const int disableHwConversion = qEnvironmentVariableIntValue(
             "QT_DISABLE_HW_TEXTURES_CONVERSION", &isDisableConversionSet);
 
-    return isDisableConversionSet && !disableHwConversion;
+    return !isDisableConversionSet || !disableHwConversion;
 }
 
 }
@@ -654,7 +654,8 @@ HRESULT D3DPresentEngine::createVideoSamples(IMFMediaType *format,
     return hr;
 }
 
-QVideoFrame D3DPresentEngine::makeVideoFrame(const ComPtr<IMFSample> &sample)
+QVideoFrame D3DPresentEngine::makeVideoFrame(const ComPtr<IMFSample> &sample,
+                                             QtVideo::Rotation rotation)
 {
     if (!sample)
         return {};
@@ -680,7 +681,9 @@ QVideoFrame D3DPresentEngine::makeVideoFrame(const ComPtr<IMFSample> &sample)
     if (!vb)
         vb = std::make_unique<IMFSampleVideoBuffer>(m_device, sample, rhi);
 
-    QVideoFrame frame = QVideoFramePrivate::createFrame(std::move(vb), m_surfaceFormat);
+    auto format = m_surfaceFormat;
+    format.setRotation(rotation);
+    QVideoFrame frame = QVideoFramePrivate::createFrame(std::move(vb), format);
 
     // WMF uses 100-nanosecond units, Qt uses microseconds
     LONGLONG startTime = 0;

@@ -12,6 +12,7 @@
 #include <qguiapplication.h>
 #include <qpa/qwindowsysteminterface.h>
 #include <private/qhighdpiscaling_p.h>
+#include <private/qjnihelpers_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -21,6 +22,7 @@ Q_DECLARE_JNI_CLASS(QtWindowInterface, "org/qtproject/qt/android/QtWindowInterfa
 Q_DECLARE_JNI_CLASS(QtInputInterface, "org/qtproject/qt/android/QtInputInterface")
 Q_DECLARE_JNI_CLASS(QtInputConnectionListener,
                     "org/qtproject/qt/android/QtInputConnection$QtInputConnectionListener")
+Q_DECLARE_JNI_CLASS(QtDisplayManager, "org/qtproject/qt/android/QtWindowInterface")
 
 QAndroidPlatformWindow::QAndroidPlatformWindow(QWindow *window)
     : QPlatformWindow(window), m_nativeQtWindow(nullptr),
@@ -94,6 +96,11 @@ void QAndroidPlatformWindow::initialize()
     }
     qCDebug(lcQpaWindow) << "Window" << m_nativeViewId << "using surface container type"
                          << static_cast<int>(m_surfaceContainerType);
+
+    const bool isSameWindowAndScreenSize = geometry().size() == screen()->geometry().size();
+    m_nativeQtWindow.callMethod<void>("registerSafeAreaMarginsListner",
+                                window->isTopLevel(), isSameWindowAndScreenSize);
+
 }
 
 QAndroidPlatformWindow::~QAndroidPlatformWindow()
@@ -126,13 +133,12 @@ void QAndroidPlatformWindow::raise()
 
 QMargins QAndroidPlatformWindow::safeAreaMargins() const
 {
-    if ((m_windowState & Qt::WindowMaximized) && (window()->flags() & Qt::MaximizeUsingFullscreenGeometryHint)) {
-        QRect availableGeometry = platformScreen()->availableGeometry();
-        return QMargins(availableGeometry.left(), availableGeometry.top(),
-                        availableGeometry.right(), availableGeometry.bottom());
-    } else {
-        return QPlatformWindow::safeAreaMargins();
-    }
+    return m_safeAreaMargins;
+}
+
+void QAndroidPlatformWindow::setSafeAreaMargins(const QMargins safeMargins)
+{
+    m_safeAreaMargins = safeMargins;
 }
 
 void QAndroidPlatformWindow::setGeometry(const QRect &rect)
@@ -162,13 +168,24 @@ void QAndroidPlatformWindow::setVisible(bool visible)
 {
     if (isEmbeddingContainer())
         return;
+
+    if (!visible && window()->isTopLevel()) {
+        // Do not hide last Qt for Android window.
+        // We don't want the splash screen to be shown during the app's
+        // exit because it would be the foremost visible screen.
+        if (QtAndroid::isQtApplication()) {
+            visible = m_nativeQtWindow.callMethod<bool>("isLastVisibleTopLevelWindow");
+            m_nativeQtWindow.callMethod<void>("setToDestroy", !visible);
+        }
+    }
+
     m_nativeQtWindow.callMethod<void>("setVisible", visible);
 
     if (visible) {
         if (window()->isTopLevel()) {
             updateSystemUiVisibility();
             if ((m_windowState & Qt::WindowFullScreen)
-                || (window()->flags() & Qt::MaximizeUsingFullscreenGeometryHint)) {
+                || (window()->flags() & Qt::ExpandedClientAreaHint)) {
                 setGeometry(platformScreen()->geometry());
             } else if (m_windowState & Qt::WindowMaximized) {
                 setGeometry(platformScreen()->availableGeometry());
@@ -260,7 +277,7 @@ void QAndroidPlatformWindow::updateSystemUiVisibility()
     const bool isNonRegularWindow = flags & (Qt::Popup | Qt::Dialog | Qt::Sheet) & ~Qt::Window;
     if (!isNonRegularWindow) {
         const bool isFullScreen = (m_windowState & Qt::WindowFullScreen);
-        const bool expandedToCutout = (flags & Qt::MaximizeUsingFullscreenGeometryHint);
+        const bool expandedToCutout = (flags & Qt::ExpandedClientAreaHint);
         QtAndroid::backendRegister()->callInterface<QtJniTypes::QtWindowInterface, void>(
             "setSystemUiVisibility", isFullScreen, expandedToCutout);
     }
@@ -291,7 +308,7 @@ void QAndroidPlatformWindow::applicationStateChanged(Qt::ApplicationState)
 void QAndroidPlatformWindow::createSurface()
 {
     const bool windowStaysOnTop = bool(window()->flags() & Qt::WindowStaysOnTopHint);
-    const bool isOpaque = !format().hasAlpha() && qFuzzyCompare(window()->opacity(), 1.0);
+    const bool isOpaque = !format().hasAlpha() && qFuzzyCompare(window()->opacity(), qreal(1.0));
 
     m_nativeQtWindow.callMethod<void>("createSurface", windowStaysOnTop, 32, isOpaque,
                                       m_surfaceContainerType);
@@ -382,6 +399,67 @@ void QAndroidPlatformWindow::windowFocusChanged(JNIEnv *env, jobject object,
     }
 }
 
+void QAndroidPlatformWindow::safeAreaMarginsChanged(JNIEnv *env, jobject object,
+                                                    QtJniTypes::Insets insets, jint id)
+{
+    Q_UNUSED(env)
+    Q_UNUSED(object)
+
+    if (!qGuiApp)
+        return;
+
+    QMargins safeMargins;
+    if (insets.isValid()) {
+        safeMargins = QMargins(
+            insets.getField<int>("left"),
+            insets.getField<int>("top"),
+            insets.getField<int>("right"),
+            insets.getField<int>("bottom"));
+    }
+
+    for (QWindow *window : qGuiApp->allWindows()) {
+        if (!window->handle())
+            continue;
+        QAndroidPlatformWindow *pWindow = static_cast<QAndroidPlatformWindow *>(window->handle());
+        if (pWindow->nativeViewId() != id)
+            continue;
+
+        if (safeMargins != pWindow->safeAreaMargins()) {
+            pWindow->setSafeAreaMargins(safeMargins);
+            QWindowSystemInterface::handleSafeAreaMarginsChanged(window);
+            break;
+        }
+    }
+}
+
+static void updateWindows(JNIEnv *env, jobject object)
+{
+    Q_UNUSED(env)
+    Q_UNUSED(object)
+
+    if (QGuiApplication::instance() != nullptr) {
+        const auto tlw = QGuiApplication::topLevelWindows();
+        for (QWindow *w : tlw) {
+
+            // Skip non-platform windows, e.g., offscreen windows.
+            if (!w->handle())
+                continue;
+
+            const QRect availableGeometry = w->screen()->availableGeometry();
+            const QRect geometry = w->geometry();
+            const bool isPositiveGeometry = (geometry.width() > 0 && geometry.height() > 0);
+            const bool isPositiveAvailableGeometry =
+                (availableGeometry.width() > 0 && availableGeometry.height() > 0);
+
+            if (isPositiveGeometry && isPositiveAvailableGeometry) {
+                const QRegion region = QRegion(QRect(QPoint(), w->geometry().size()));
+                QWindowSystemInterface::handleExposeEvent(w, region);
+            }
+        }
+    }
+}
+Q_DECLARE_JNI_NATIVE_METHOD(updateWindows)
+
 /*
     Due to calls originating from Android, it is possible for native methods to
     try to manipulate any given instance of QAndroidPlatformWindow when it is
@@ -397,10 +475,12 @@ QMutexLocker<QMutex> QAndroidPlatformWindow::destructionGuard()
 bool QAndroidPlatformWindow::registerNatives(QJniEnvironment &env)
 {
     if (!env.registerNativeMethods(QtJniTypes::Traits<QtJniTypes::QtWindow>::className(),
-                                {
-                                    Q_JNI_NATIVE_SCOPED_METHOD(setSurface, QAndroidPlatformWindow),
-                                    Q_JNI_NATIVE_SCOPED_METHOD(windowFocusChanged, QAndroidPlatformWindow)
-                                })) {
+            {
+                Q_JNI_NATIVE_METHOD(updateWindows),
+                Q_JNI_NATIVE_SCOPED_METHOD(setSurface, QAndroidPlatformWindow),
+                Q_JNI_NATIVE_SCOPED_METHOD(windowFocusChanged, QAndroidPlatformWindow),
+                Q_JNI_NATIVE_SCOPED_METHOD(safeAreaMarginsChanged, QAndroidPlatformWindow)
+            })) {
         qCCritical(lcQpaWindow) << "RegisterNatives failed for"
                                 << QtJniTypes::Traits<QtJniTypes::QtWindow>::className();
         return false;

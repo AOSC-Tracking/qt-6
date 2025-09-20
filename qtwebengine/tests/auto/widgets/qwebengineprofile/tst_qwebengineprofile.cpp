@@ -26,6 +26,8 @@
 #include <map>
 #include <mutex>
 
+using namespace Qt::StringLiterals;
+
 class tst_QWebEngineProfile : public QObject
 {
     Q_OBJECT
@@ -173,7 +175,7 @@ private:
         }
 
         QFile file(resourceDir.filePath(path));
-        file.open(QIODevice::ReadOnly);
+        QVERIFY2(file.open(QIODevice::ReadOnly), qPrintable(file.errorString()));
         QByteArray data = file.readAll();
         rr->setResponseBody(data);
         QMimeDatabase db;
@@ -204,6 +206,12 @@ void tst_QWebEngineProfile::clearDataFromCache()
     QVERIFY(loadSync(&page, server.url("/hedgehog.html")));
     // Wait for GET /favicon.ico
     QTRY_COMPARE(serverSpy.size(), 3);
+
+#if defined(Q_OS_WIN)
+    // FIXME: A http cache entry might be still in use after all the wait above and this blocks
+    //        clearing the http cache. Find a better way to wait for cache entries.
+    QTest::qWait(500);
+#endif
 
     QVERIFY(cacheDir.exists("Cache"));
     qint64 sizeBeforeClear = totalSize(cacheDir);
@@ -665,7 +673,7 @@ public:
         QString path = job->requestUrl().path();
         if (path == "/") {
             QBuffer *buffer = new QBuffer(job);
-            buffer->open(QBuffer::ReadWrite);
+            QVERIFY2(buffer->open(QBuffer::ReadWrite), qPrintable(buffer->errorString()));
             buffer->write(QByteArrayLiteral(R"(
 <html>
   <body>
@@ -689,7 +697,7 @@ public:
             job->reply("text/html", buffer);
         } else if (path == "/qwebchannel.js") {
             QFile *file = new QFile(":/qtwebchannel/qwebchannel.js", job);
-            file->open(QFile::ReadOnly);
+            QVERIFY2(file->open(QFile::ReadOnly), qPrintable(file->errorString()));
             job->reply("application/javascript", file);
         } else if (path == "/ok") {
             QBuffer *buffer = new QBuffer(job);
@@ -841,6 +849,12 @@ void tst_QWebEngineProfile::httpAcceptLanguage()
     // Test changing an existing page and profile
     QWebEngineProfile::defaultProfile()->setHttpAcceptLanguage(testLang);
     QCOMPARE(evaluateJavaScriptSync(&page, QStringLiteral("navigator.languages")).toStringList(), QStringList(testLang));
+
+    // Test language list with quality values
+    QWebEngineProfile::defaultProfile()->setHttpAcceptLanguage(
+            u"en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7"_s);
+    QCOMPARE(evaluateJavaScriptSync(&page, u"navigator.languages"_s).toStringList(),
+             QStringList({u"en-US"_s, u"en"_s, u"zh-CN"_s, u"zh"_s}));
 }
 
 void tst_QWebEngineProfile::downloadItem()
@@ -848,7 +862,7 @@ void tst_QWebEngineProfile::downloadItem()
     qRegisterMetaType<QWebEngineDownloadRequest *>();
     QWebEngineProfile testProfile;
     QWebEnginePage page(&testProfile);
-    QSignalSpy downloadSpy(&testProfile, SIGNAL(downloadRequested(QWebEngineDownloadRequest *)));
+    QSignalSpy downloadSpy(&testProfile, SIGNAL(downloadRequested(QWebEngineDownloadRequest*)));
     page.load(QUrl::fromLocalFile(QCoreApplication::applicationFilePath()));
     QTRY_COMPARE(downloadSpy.size(), 1);
 }

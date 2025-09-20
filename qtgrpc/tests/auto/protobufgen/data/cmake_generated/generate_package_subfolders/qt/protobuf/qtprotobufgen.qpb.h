@@ -129,6 +129,7 @@ public:
         QProtobufMessage::swap(other);
         dptr.swap(other.dptr);
     }
+    QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT Q_IMPLICIT operator QVariant() const;
 
     QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT GlobalEnumGadget::GlobalEnum field1() const;
 
@@ -226,6 +227,7 @@ public:
         QProtobufMessage::swap(other);
         dptr.swap(other.dptr);
     }
+    QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT Q_IMPLICIT operator QVariant() const;
 
     QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT QtProtobuf::int32 field1() const;
 
@@ -343,6 +345,7 @@ public:
         QProtobufMessage::swap(other);
         dptr.swap(other.dptr);
     }
+    QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT Q_IMPLICIT operator QVariant() const;
 
     QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT const QtProtobuf::int32List &field1() const &;
 
@@ -472,6 +475,7 @@ public:
         QProtobufMessage::swap(other);
         dptr.swap(other.dptr);
     }
+    QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT Q_IMPLICIT operator QVariant() const;
 
     QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT const QtProtobuf::int32List &field1() const &;
 
@@ -616,6 +620,7 @@ public:
         QProtobufMessage::swap(other);
         dptr.swap(other.dptr);
     }
+    QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT Q_IMPLICIT operator QVariant() const;
 
     QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT bool hasField1() const;
     QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT QtProtobuf::int32 field1() const;
@@ -810,6 +815,7 @@ public:
         QProtobufMessage::swap(other);
         dptr.swap(other.dptr);
     }
+    QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT Q_IMPLICIT operator QVariant() const;
 
     QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT bool hasField1() const;
     QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT QtProtobuf::int32 field1() const;
@@ -991,6 +997,7 @@ public:
         QProtobufMessage::swap(other);
         dptr.swap(other.dptr);
     }
+    QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT Q_IMPLICIT operator QVariant() const;
 
     QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT const MapScalarTypes::Field1Entry &field1() const &;
 
@@ -1106,6 +1113,7 @@ public:
         QProtobufMessage::swap(other);
         dptr.swap(other.dptr);
     }
+    QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT Q_IMPLICIT operator QVariant() const;
 
     QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT bool hasField1() const;
     QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT const ScalarTypes &field1() const &;
@@ -1220,6 +1228,7 @@ public:
         QProtobufMessage::swap(other);
         dptr.swap(other.dptr);
     }
+    QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT Q_IMPLICIT operator QVariant() const;
 
     QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT bool hasField1() const;
     QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT const MessageNestedTypes_QtProtobufNested::NestedMessage &field1() const &;
@@ -1276,6 +1285,7 @@ public:
         QProtobufMessage::swap(other);
         dptr.swap(other.dptr);
     }
+    QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT Q_IMPLICIT operator QVariant() const;
 
     QPB_TST_QTPROTOBUFGEN_GENERATE_PACKAGE_SUBFOLDERS_EXPORT QtProtobuf::int32 field1() const;
 

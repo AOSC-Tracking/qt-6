@@ -15,7 +15,7 @@
 // We mean it.
 //
 
-#include "qandroidvideoframebuffer_p.h"
+#include <QtFFmpegMediaPluginImpl/private/qandroidvideoframebuffer_p.h>
 #include <memory>
 
 class QAndroidVideoFrameFactory : public QAndroidVideoFrameBuffer::FrameReleaseDelegate
@@ -27,7 +27,7 @@ public:
         return std::shared_ptr<QAndroidVideoFrameFactory>(
             new QAndroidVideoFrameFactory());
     };
-    QVideoFrame createVideoFrame(QtJniTypes::AndroidImage frame,
+    QVideoFrame createVideoFrame(QtJniTypes::Image frame,
                                  QtVideo::Rotation rotation = QtVideo::Rotation::None);
     void onFrameReleased() override;
 

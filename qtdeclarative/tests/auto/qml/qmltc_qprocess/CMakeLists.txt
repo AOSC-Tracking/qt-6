@@ -48,11 +48,13 @@ qt6_add_qml_module(tst_qmltc_qprocess
         data/componentDefinitionInnerRequiredProperty.qml
         data/componentDefinitionInnerRequiredPropertyFromOutside.qml
         data/innerLevelRequiredProperty.qml
+        data/customParsed.qml
     NO_GENERATE_EXTRA_QMLDIRS
 )
 
 set(common_libraries
     Qt::Core
+    Qt::Qml
     Qt::QmlPrivate
     Qt::QuickPrivate
     Qt::TestPrivate

@@ -123,10 +123,7 @@ function(qt_manual_moc result)
                     set(dep "${QT_CMAKE_EXPORT_NAMESPACE}::${dep}")
                 endif()
 
-                get_target_property(alias_dep ${dep} ALIASED_TARGET)
-                if(alias_dep)
-                    set(dep ${alias_dep})
-                endif()
+                _qt_internal_dealias_target(dep)
 
                 get_target_property(loc ${dep} IMPORTED_LOCATION)
                 string(REGEX REPLACE "(.*)/Qt[^/]+\\.framework.*" "\\1" loc "${loc}")
@@ -168,6 +165,9 @@ function(qt_manual_moc result)
             list(APPEND metatypes_json_list "${outfile}.json")
             set(metatypes_byproducts "${outfile}.json")
         endif()
+
+        _qt_internal_get_moc_compiler_flavor_flags(flavor_flags)
+        list(APPEND moc_parameters ${flavor_flags})
 
         if (TARGET Qt::Platform)
            get_target_property(_abi_tag Qt::Platform qt_libcpp_abi_tag)
@@ -214,3 +214,4 @@ function(qt_make_output_file infile prefix suffix source_dir binary_dir result)
     file(MAKE_DIRECTORY "${outpath}")
     set("${result}" "${outpath}/${prefix}${outfilename}${suffix}" PARENT_SCOPE)
 endfunction()
+

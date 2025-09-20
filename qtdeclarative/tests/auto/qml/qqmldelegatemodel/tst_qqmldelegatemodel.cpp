@@ -10,11 +10,13 @@
 #include <QtQml/qqmlcomponent.h>
 #include <QtQml/qqmlapplicationengine.h>
 #include <QtQmlModels/private/qqmldelegatemodel_p.h>
+#include <QtQmlModels/private/qqmldelegatemodel_p_p.h>
 #include <QtQmlModels/private/qqmllistmodel_p.h>
 #include <QtQuick/qquickview.h>
 #include <QtQuick/qquickitem.h>
 #include <QtQuick/private/qquickitemview_p_p.h>
 #include <QtQuick/private/qquicklistview_p.h>
+#include <QtQuick/private/qquickrectangle_p.h>
 #include <QtQuickTest/quicktest.h>
 #include <QtQuickTestUtils/private/qmlutils_p.h>
 #include <QtQuickTestUtils/private/visualtestutils_p.h>
@@ -45,6 +47,7 @@ private slots:
     void universalModelData();
     void typedModelData();
     void requiredModelData();
+    void nestedRequired();
     void overriddenModelData();
     void deleteRace();
     void persistedItemsStayInCache();
@@ -53,6 +56,7 @@ private slots:
     void clearCacheDuringInsertion();
     void viewUpdatedOnDelegateChoiceAffectingRoleChange();
     void proxyModelWithDelayedSourceModelInListView();
+    void delegateChooser();
 };
 
 class BaseAbstractItemModel : public QAbstractItemModel
@@ -593,6 +597,55 @@ void tst_QQmlDelegateModel::requiredModelData()
     }
 }
 
+void tst_QQmlDelegateModel::nestedRequired()
+{
+    QQmlEngine engine;
+
+    const QUrl url = testFileUrl("nestedRequired.qml");
+
+    QQmlComponent c(&engine, url);
+    QVERIFY2(c.isReady(), qPrintable(c.errorString()));
+    QScopedPointer<QObject> o(c.create());
+
+    QQmlDelegateModel *delegateModel = qvariant_cast<QQmlDelegateModel *>(o->property("m"));
+    QVERIFY(delegateModel);
+
+    QObject *delegate1 = delegateModel->object(0);
+    QVERIFY(delegate1);
+    QCOMPARE(delegate1->objectName(), QLatin1String("one"));
+
+    QObject *delegate2= delegateModel->object(1);
+    QVERIFY(delegate2);
+    QCOMPARE(delegate2->objectName(), QLatin1String("two"));
+
+    QQmlDelegateModel *delegateModel2 = qvariant_cast<QQmlDelegateModel *>(o->property("n"));
+    QVERIFY(delegateModel2);
+
+    QObject *delegate3 = delegateModel2->object(0);
+    QVERIFY(delegate3);
+    QCOMPARE(delegate3->objectName(), QLatin1String("three"));
+
+    QObject *delegate4 = delegateModel2->object(1);
+    QVERIFY(delegate4);
+    QCOMPARE(delegate4->objectName(), QLatin1String("four"));
+
+    QQmlDelegateModel *delegateModel3 = qvariant_cast<QQmlDelegateModel *>(o->property("o"));
+    QVERIFY(delegateModel3);
+
+    QTest::ignoreMessage(
+            QtInfoMsg,
+            qPrintable(url.toString()
+                       + QLatin1String(":50:9: QML Component: Cannot create delegate")));
+    QTest::ignoreMessage(
+            QtWarningMsg,
+            qPrintable(url.toString()
+                       + QLatin1String(":13:9: Required property control was not initialized")));
+    QObject *delegate5 = delegateModel3->object(0);
+
+    QEXPECT_FAIL("", "object should not be created with required property unset", Continue);
+    QVERIFY(!delegate5);
+}
+
 void tst_QQmlDelegateModel::overriddenModelData()
 {
     QTest::failOnWarning(QRegularExpression(
@@ -804,6 +857,33 @@ void tst_QQmlDelegateModel::proxyModelWithDelayedSourceModelInListView()
     QVERIFY(listView);
     const auto delegateModel = QQuickItemViewPrivate::get(listView)->model;
     QTRY_COMPARE(listView->count(), 1);
+}
+
+void tst_QQmlDelegateModel::delegateChooser()
+{
+    QQuickApplicationHelper helper(this, "delegatechooser.qml");
+    QVERIFY2(helper.ready, helper.failureMessage());
+
+    QQuickWindow *window = helper.window;
+    window->show();
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+
+    QQuickListView *lv = window->findChild<QQuickListView *>();
+    QVERIFY(lv);
+
+    QQmlDelegateModel *model = qobject_cast<QQmlDelegateModel *>(QQuickItemViewPrivate::get(lv)->model);
+    QVERIFY(model);
+    QQmlAdaptorModel *adaptorModel = &QQmlDelegateModelPrivate::get(model)->m_adaptorModel;
+    QVERIFY(adaptorModel);
+
+    const int lvCount = lv->count();
+    QCOMPARE(lvCount, model->count());
+
+    for (int i = 0; i < lvCount; ++i) {
+        QQuickRectangle *rectangle = qobject_cast<QQuickRectangle *>(QQuickVisualTestUtils::findViewDelegateItem(lv, i));
+        QVERIFY(rectangle);
+        QCOMPARE(rectangle->color(), QColor::fromString(adaptorModel->value(adaptorModel->indexAt(i, 0), "modelData").toString()));
+    }
 }
 
 QTEST_MAIN(tst_QQmlDelegateModel)

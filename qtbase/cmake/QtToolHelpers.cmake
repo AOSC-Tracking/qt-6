@@ -168,7 +168,10 @@ function(qt_internal_add_tool target_name)
                  APPEND PROPERTY
                  EXPORT_PROPERTIES "_qt_package_version")
 
-    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.19.0" AND QT_FEATURE_debug_and_release)
+    get_cmake_property(is_multi_config GENERATOR_IS_MULTI_CONFIG)
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.19.0"
+            AND QT_FEATURE_debug_and_release
+            AND is_multi_config)
         set_property(TARGET "${target_name}"
             PROPERTY EXCLUDE_FROM_ALL "$<NOT:$<CONFIG:${QT_MULTI_CONFIG_FIRST_CONFIG}>>")
     endif()
@@ -303,7 +306,7 @@ function(qt_internal_add_tool target_name)
                 ${__qt_internal_sbom_multi_args}
         )
 
-        _qt_internal_extend_sbom(${target_name} ${sbom_args})
+        qt_internal_extend_qt_entity_sbom(${target_name} ${sbom_args})
     endif()
 
     qt_add_list_file_finalizer(qt_internal_finalize_tool ${target_name})
@@ -709,14 +712,14 @@ function(qt_internal_find_tool out_var target_name tools_target)
         set(${tools_package_name}_BACKUP_CMAKE_FIND_ROOT_PATH "${CMAKE_FIND_ROOT_PATH}")
         if(QT_HOST_PATH_CMAKE_DIR)
             set(qt_host_path_cmake_dir_absolute "${QT_HOST_PATH_CMAKE_DIR}")
-        elseif(Qt${PROJECT_VERSION_MAJOR}HostInfo_DIR)
+        elseif(${INSTALL_CMAKE_NAMESPACE}HostInfo_DIR)
             get_filename_component(qt_host_path_cmake_dir_absolute
-                "${Qt${PROJECT_VERSION_MAJOR}HostInfo_DIR}/.." ABSOLUTE)
+                "${${INSTALL_CMAKE_NAMESPACE}HostInfo_DIR}/.." ABSOLUTE)
         else()
             # This should never happen, serves as an assert.
             message(FATAL_ERROR
                 "Neither QT_HOST_PATH_CMAKE_DIR nor "
-                "Qt${PROJECT_VERSION_MAJOR}HostInfo_DIR available.")
+                "${INSTALL_CMAKE_NAMESPACE}HostInfo_DIR available.")
         endif()
         set(CMAKE_PREFIX_PATH "${qt_host_path_cmake_dir_absolute}")
 

@@ -382,6 +382,12 @@
     \c %1 refers to the first parameter and \c %2 refers to the second parameter,
     so this code produces output like: \e {File 2 of 3}.
 
+
+    Avoid using template strings with arguments because
+    the resulting string is defined at runtime, rather than compile-time.
+    As a result, the translation tools cannot find the correct translation
+    for the template strings.
+
     \section2 C++: Use QString::arg()
 
     In C++, use the QString::arg() functions to substitute parameters:
@@ -534,7 +540,7 @@
 
     \section1 Mark Translatable Data Text Strings
 
-    Use \c _NoOp functions (in QML) and \c _NOOP macros (in C++) to mark
+    Use \c _NOOP functions (in QML) and \c _NOOP macros (in C++) to mark
     translatable string literals for extraction by the \c lupdate tool.
 
     \section2 QML: Use _NOOP Functions
@@ -657,6 +663,12 @@
     You can use the keyword \e TRANSLATOR for translator comments.
     Metadata appearing right in front of the TRANSLATOR keyword applies to
     the whole TS file.
+
+    \note When the TS file is opened in \QL, the comments
+    annotated by \c {//:} are presented in the message editor of \QL.
+    Whereas, the texts provided using the \c{//~} notations
+    are extra information and are generated in the TS file only. They are mainly
+    intended for conversions to other formats and are hidden in \QL.
 
     \section1 Disambiguate Identical Text
 
@@ -820,10 +832,42 @@
     In QML, use \l QQmlApplicationEngine to automatically load translation files
     from a subdirectory called \c i18n in the directory that contains the main
     QML file. The translation file names must have the prefix \c qml_.
-    For example, \c qml_en_US.qm.
+    For example, \c qml_en_US.qm. See the following CMake code snippets for how
+    to set up a multilingual app:
+
+    \badcode
+    ...
+    find_package(Qt6 6.5 REQUIRED COMPONENTS Quick LinguistTools)
+    qt_standard_project_setup(REQUIRES 6.5 I18N_TRANSLATED_LANGUAGES ja_JP)
+
+    qt_add_qml_module(appmultilingual_demo
+        URI multilingual_demo
+        QML_FILES
+            Main.qml
+    )
+
+    qt_add_translations(appmultilingual_demo
+        TS_FILE_BASE qml
+        TS_FILE_DIR i18n
+        RESOURCE_PREFIX /qt/qml/multilingual_demo/i18n
+    )
+    ...
+    \endcode
 
     Applications reload translations when the \l QJSEngine::uiLanguage or
-    \l {Qt::uiLanguage}{Qt.uiLanguage} property value changes.
+    \l {Qt::uiLanguage}{Qt.uiLanguage} property value changes. The following
+    code snippet changes the language dynamically when the user clicks
+    the button:
+
+    \qml
+    Button {
+        anchors.centerIn: parent
+        text: qsTr("Translate")
+        onClicked: {
+            Qt.uiLanguage = Qt.uiLanguage === "en" ? "ja" : "en"
+        }
+    }
+    \endqml
 
     \section2 C++: Use QTranslator
 

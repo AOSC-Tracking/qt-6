@@ -90,7 +90,7 @@ void UDPReadableStreamWrapper::CloseStream() {
 
   socket_listener_.reset();
 
-  std::move(on_close_).Run(/*exception=*/ScriptValue());
+  std::move(on_close_).Run(/*exception=*/v8::Local<v8::Value>());
 }
 
 void UDPReadableStreamWrapper::ErrorStream(int32_t error_code) {
@@ -106,14 +106,12 @@ void UDPReadableStreamWrapper::ErrorStream(int32_t error_code) {
   // ScriptValue.
   ScriptState::Scope scope{script_state};
 
-  auto exception = ScriptValue(
-      script_state->GetIsolate(),
-      V8ThrowDOMException::CreateOrDie(script_state->GetIsolate(),
-                                       DOMExceptionCode::kNetworkError,
-                                       String{"Stream aborted by the remote: " +
-                                              net::ErrorToString(error_code)}));
+  auto exception = V8ThrowDOMException::CreateOrDie(
+      script_state->GetIsolate(), DOMExceptionCode::kNetworkError,
+      String{"Stream aborted by the remote: " +
+             net::ErrorToString(error_code)});
 
-  Controller()->Error(exception.V8Value());
+  Controller()->Error(exception);
 
   std::move(on_close_).Run(exception);
 }
@@ -137,8 +135,8 @@ void UDPReadableStreamWrapper::ErrorStream(int32_t error_code) {
 // services/network/public/mojom/udp_socket.mojom file.
 void UDPReadableStreamWrapper::OnReceived(
     int32_t result,
-    const absl::optional<::net::IPEndPoint>& src_addr,
-    absl::optional<::base::span<const ::uint8_t>> data) {
+    const std::optional<::net::IPEndPoint>& src_addr,
+    std::optional<::base::span<const ::uint8_t>> data) {
   if (result != net::Error::OK) {
     ErrorStream(result);
     return;
@@ -148,8 +146,7 @@ void UDPReadableStreamWrapper::OnReceived(
   DCHECK_GT(pending_receive_requests_, 0);
   pending_receive_requests_--;
 
-  auto* buffer = DOMUint8Array::Create(data->data(), data->size_bytes());
-
+  auto* buffer = DOMUint8Array::Create(data.value());
   auto* message = UDPMessage::Create();
   message->setData(MakeGarbageCollected<V8UnionArrayBufferOrArrayBufferView>(
       NotShared<DOMUint8Array>(buffer)));

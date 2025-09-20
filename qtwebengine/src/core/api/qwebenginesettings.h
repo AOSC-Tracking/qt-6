@@ -62,6 +62,9 @@ public:
         NavigateOnDropEnabled,
         ReadingFromCanvasEnabled,
         ForceDarkMode,
+        PrintHeaderAndFooter,
+        PreferCSSMarginsForPrinting,
+        TouchEventsApiEnabled,
     };
 
     enum FontSize {

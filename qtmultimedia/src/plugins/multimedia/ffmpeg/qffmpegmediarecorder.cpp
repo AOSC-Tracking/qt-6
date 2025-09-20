@@ -2,22 +2,24 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qffmpegmediarecorder_p.h"
-#include "qaudiodevice.h"
-#include <private/qmediastoragelocation_p.h>
-#include <private/qplatformcamera_p.h>
-#include <private/qplatformsurfacecapture_p.h>
-#include "qaudiosource.h"
-#include "qffmpegaudioinput_p.h"
-#include "qaudiobuffer.h"
+
+#include <QtCore/qdebug.h>
+#include <QtCore/qloggingcategory.h>
+#include <QtMultimedia/qaudiobuffer.h>
+#include <QtMultimedia/qaudiodevice.h>
+#include <QtMultimedia/qaudiosource.h>
+#include <QtMultimedia/private/qmediastoragelocation_p.h>
+#include <QtMultimedia/private/qplatformcamera_p.h>
+#include <QtMultimedia/private/qplatformsurfacecapture_p.h>
+
 #include "recordingengine/qffmpegrecordingengine_p.h"
 #include "qffmpegmediacapturesession_p.h"
 
-#include <qdebug.h>
-#include <qloggingcategory.h>
-
-static Q_LOGGING_CATEGORY(qLcMediaEncoder, "qt.multimedia.ffmpeg.encoder");
+Q_STATIC_LOGGING_CATEGORY(qLcMediaEncoder, "qt.multimedia.ffmpeg.encoder");
 
 QT_BEGIN_NAMESPACE
+
+using namespace Qt::StringLiterals;
 
 QFFmpegMediaRecorder::QFFmpegMediaRecorder(QMediaRecorder *parent) : QPlatformMediaRecorder(parent)
 {
@@ -65,12 +67,15 @@ void QFFmpegMediaRecorder::record(QMediaEncoderSettings &settings)
         formatContext->openAVIO(outputDevice());
     } else {
         actualLocation = findActualLocation(settings);
-        qCDebug(qLcMediaEncoder) << "recording new media to" << actualLocation;
         formatContext->openAVIO(actualLocation);
     }
 
-    qCDebug(qLcMediaEncoder) << "requested format:" << settings.fileFormat()
-                             << settings.audioCodec();
+    qCInfo(qLcMediaEncoder).nospace()
+            << "Recording new media with muxer "
+            << formatContext->avFormatContext()->oformat->long_name << " to "
+            << (actualLocation.isNull() ? u"IO device"_s : actualLocation)
+            << " with format: " << settings.fileFormat() << ", " << settings.audioCodec() << ", "
+            << settings.videoCodec();
 
     if (!formatContext->isAVIOOpen()) {
         updateError(QMediaRecorder::LocationNotWritable,
@@ -101,9 +106,15 @@ void QFFmpegMediaRecorder::record(QMediaEncoderSettings &settings)
 
     durationChanged(0);
     actualLocationChanged(QUrl::fromLocalFile(actualLocation));
-    stateChanged(QMediaRecorder::RecordingState);
 
-    m_recordingEngine->initialize(audioInputs, videoSources);
+    qCDebug(qLcMediaEncoder) << "Starting recording engine";
+    if (m_recordingEngine->initialize(audioInputs, videoSources)) {
+        stateChanged(QMediaRecorder::RecordingState);
+        qCDebug(qLcMediaEncoder) << "Recording engine started";
+    } else {
+        // else an error has been already emitted
+        qCWarning(qLcMediaEncoder) << "Failed to start recording engine";
+    }
 }
 
 void QFFmpegMediaRecorder::pause()
@@ -132,10 +143,8 @@ void QFFmpegMediaRecorder::stop()
 {
     if (!m_session || state() == QMediaRecorder::StoppedState)
         return;
-    auto * input = m_session ? m_session->audioInput() : nullptr;
-    if (input)
-        static_cast<QFFmpegAudioInput *>(input)->setRunning(false);
-    qCDebug(qLcMediaEncoder) << "stop";
+
+    qCDebug(qLcMediaEncoder) << "Stopping media recorder";
 
     m_recordingEngine.reset();
 }

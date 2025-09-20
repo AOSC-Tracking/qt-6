@@ -101,8 +101,9 @@ static inline QMutexPrivate *dummyFutexValue()
 
     \warning Destroying a locked mutex may result in undefined behavior.
 */
-void QBasicMutex::destroyInternal(QMutexPrivate *d)
+void QBasicMutex::destroyInternal(void *ptr)
 {
+    auto d = static_cast<QMutexPrivate *>(ptr);
     if (!d)
         return;
     if (!futexAvailable()) {
@@ -119,8 +120,8 @@ void QBasicMutex::destroyInternal(QMutexPrivate *d)
     Locks the mutex. If another thread has locked the mutex then this
     call will block until that thread has unlocked it.
 
-    Calling this function multiple times on the same mutex from the
-    same thread will cause a \e dead-lock.
+    If the mutex was already locked by the current thread, this call will
+    never return, causing a \e dead-lock.
 
     \sa unlock()
 */
@@ -139,9 +140,6 @@ void QBasicMutex::destroyInternal(QMutexPrivate *d)
     If the lock was obtained, the mutex must be unlocked with unlock()
     before another thread can successfully lock it.
 
-    Calling this function multiple times on the same mutex from the
-    same thread will cause a \e dead-lock.
-
     \sa lock(), unlock()
 */
 
@@ -156,9 +154,6 @@ void QBasicMutex::destroyInternal(QMutexPrivate *d)
     If the lock was obtained, the mutex must be unlocked with unlock()
     before another thread can successfully lock it.
 
-    Calling this function multiple times on the same mutex from the
-    same thread will cause a \e dead-lock.
-
     \sa lock(), unlock()
 */
 
@@ -170,9 +165,6 @@ void QBasicMutex::destroyInternal(QMutexPrivate *d)
 
     If the lock was obtained, the mutex must be unlocked with unlock()
     before another thread can successfully lock it.
-
-    Calling this function multiple times on the same mutex from the
-    same thread will cause a \e dead-lock.
 
     \sa lock(), unlock()
 */
@@ -201,9 +193,6 @@ void QBasicMutex::destroyInternal(QMutexPrivate *d)
     If the lock was obtained, the mutex must be unlocked with unlock()
     before another thread can successfully lock it.
 
-    Calling this function multiple times on the same mutex from the
-    same thread will cause a \e dead-lock.
-
     \sa lock(), unlock()
 */
 
@@ -220,9 +209,6 @@ void QBasicMutex::destroyInternal(QMutexPrivate *d)
 
     If the lock was obtained, the mutex must be unlocked with unlock()
     before another thread can successfully lock it.
-
-    Calling this function multiple times on the same mutex from the
-    same thread will cause a \e dead-lock.
 
     \sa lock(), unlock()
 */
@@ -331,7 +317,7 @@ QRecursiveMutex::~QRecursiveMutex()
 
     \sa lock(), unlock()
 */
-bool QRecursiveMutex::tryLock(QDeadlineTimer timeout) QT_MUTEX_LOCK_NOEXCEPT
+bool QRecursiveMutex::tryLock(QDeadlineTimer timeout) noexcept(LockIsNoexcept)
 {
     unsigned tsanFlags = QtTsan::MutexWriteReentrant | QtTsan::TryLock;
     QtTsan::mutexPreLock(this, tsanFlags);
@@ -638,7 +624,7 @@ void QRecursiveMutex::unlock() noexcept
     \internal helper for lock()
  */
 Q_NEVER_INLINE
-void QBasicMutex::lockInternal() QT_MUTEX_LOCK_NOEXCEPT
+void QBasicMutex::lockInternal() noexcept(FutexAlwaysAvailable)
 {
     if (futexAvailable()) {
         // note we must set to dummyFutexValue because there could be other threads
@@ -651,7 +637,7 @@ void QBasicMutex::lockInternal() QT_MUTEX_LOCK_NOEXCEPT
         }
         Q_ASSERT(d_ptr.loadRelaxed());
     } else {
-        lockInternal(-1);
+        lockInternal(QDeadlineTimer::Forever);
     }
 }
 
@@ -659,7 +645,7 @@ void QBasicMutex::lockInternal() QT_MUTEX_LOCK_NOEXCEPT
     \internal helper for lock(int)
  */
 #if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
-bool QBasicMutex::lockInternal(int timeout) QT_MUTEX_LOCK_NOEXCEPT
+bool QBasicMutex::lockInternal(int timeout) noexcept(FutexAlwaysAvailable)
 {
     if (timeout == 0)
         return false;
@@ -672,7 +658,7 @@ bool QBasicMutex::lockInternal(int timeout) QT_MUTEX_LOCK_NOEXCEPT
     \internal helper for tryLock(QDeadlineTimer)
  */
 Q_NEVER_INLINE
-bool QBasicMutex::lockInternal(QDeadlineTimer deadlineTimer) QT_MUTEX_LOCK_NOEXCEPT
+bool QBasicMutex::lockInternal(QDeadlineTimer deadlineTimer) noexcept(FutexAlwaysAvailable)
 {
     if (deadlineTimer.hasExpired())
         return false;

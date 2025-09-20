@@ -158,23 +158,6 @@ QSet s_pixelFormats{ QVideoFrameFormat::Format_ARGB8888,
                      QVideoFrameFormat::Format_P016,
                      QVideoFrameFormat::Format_YUV420P10 };
 
-bool isSupportedPixelFormat(QVideoFrameFormat::PixelFormat pixelFormat)
-{
-    switch (pixelFormat) {
-#ifdef Q_OS_ANDROID
-    // TODO: QTBUG-125238
-    case QVideoFrameFormat::Format_Y16:
-    case QVideoFrameFormat::Format_P010:
-    case QVideoFrameFormat::Format_P016:
-    case QVideoFrameFormat::Format_YUV420P10:
-        return false;
-#endif
-    default:
-        break;
-    }
-    return true;
-}
-
 class tst_QVideoFrame : public QObject
 {
     Q_OBJECT
@@ -212,6 +195,11 @@ private slots:
 
     void qImageFromVideoFrame_doesNotCrash_whenCalledWithEvenAndOddSizedFrames_data();
     void qImageFromVideoFrame_doesNotCrash_whenCalledWithEvenAndOddSizedFrames();
+
+    void qImageFromVideoFrame_emptyJPEG();
+    void qImageFromVideoFrame_goodJPEG();
+    void qImageFromVideoFrame_goodJPEGWithExtraData();
+    void qImageFromVideoFrame_badJPEG();
 
     void isMapped();
     void isReadable();
@@ -1063,7 +1051,7 @@ void tst_QVideoFrame::qImageFromVideoFrame_doesNotCrash_whenCalledWithEvenAndOdd
                                .arg(forceCpu ? "_cpu" : "");
 
                 QTest::addRow("%s", name.toLatin1().data())
-                        << size << pixelFormat << forceCpu << isSupportedPixelFormat(pixelFormat);
+                        << size << pixelFormat << forceCpu;
             }
         }
     }
@@ -1073,16 +1061,83 @@ void tst_QVideoFrame::qImageFromVideoFrame_doesNotCrash_whenCalledWithEvenAndOdd
     QFETCH(const QSize, size);
     QFETCH(const QVideoFrameFormat::PixelFormat, pixelFormat);
     QFETCH(const bool, forceCpuConversion);
-    QFETCH(const bool, supportedOnPlatform);
 
     const QVideoFrameFormat format{ size, pixelFormat };
     const QVideoFrame frame{ format };
     const QImage actual = qImageFromVideoFrame(frame, forceCpuConversion);
 
-    if (supportedOnPlatform)
-        QCOMPARE_EQ(actual.isNull(), size.isEmpty());
-    // Otherwise, we don't expect an image being produced, although it might.
-    // TODO: Investigate why 16 bit formats fail on some Android flavors.
+    QCOMPARE_EQ(actual.isNull(), size.isEmpty());
+}
+
+void tst_QVideoFrame::qImageFromVideoFrame_emptyJPEG()
+{
+    QByteArray byteArray;
+    auto memoryBuffer = std::make_unique<QMemoryVideoBuffer>(byteArray, byteArray.size());
+
+    QVideoFrame frame = QVideoFramePrivate::createFrame(
+            std::move(memoryBuffer),
+            QVideoFrameFormat(QSize(144, 110), QVideoFrameFormat::Format_Jpeg));
+
+    QImage img = qImageFromVideoFrame(frame, false);
+    QCOMPARE(img.isNull(), true);
+}
+
+static QByteArray umbrellasJPEG()
+{
+    static const QByteArray cachedData = [] {
+        QString input = QFINDTESTDATA("umbrellas.jpg");
+        auto file = QFile(input);
+        if (!file.open(QFile::ReadOnly))
+            return QByteArray{};
+        return file.readAll();
+    }();
+    return cachedData;
+}
+
+void tst_QVideoFrame::qImageFromVideoFrame_goodJPEG()
+{
+    QByteArray byteArray = umbrellasJPEG();
+    auto memoryBuffer = std::make_unique<QMemoryVideoBuffer>(byteArray, byteArray.size());
+
+    QVideoFrame frame = QVideoFramePrivate::createFrame(
+            std::move(memoryBuffer),
+            QVideoFrameFormat(QSize(144, 110), QVideoFrameFormat::Format_Jpeg));
+
+    QImage img = qImageFromVideoFrame(frame, false);
+    QCOMPARE(img.size(), QSize(144, 110));
+}
+
+void tst_QVideoFrame::qImageFromVideoFrame_goodJPEGWithExtraData()
+{
+    QByteArray byteArray = umbrellasJPEG();
+    byteArray += "Yada";
+
+    auto memoryBuffer = std::make_unique<QMemoryVideoBuffer>(byteArray, byteArray.size());
+
+    QVideoFrame frame = QVideoFramePrivate::createFrame(
+            std::move(memoryBuffer),
+            QVideoFrameFormat(QSize(144, 110), QVideoFrameFormat::Format_Jpeg));
+
+    QImage img = qImageFromVideoFrame(frame, false);
+    QCOMPARE(img.size(), QSize(144, 110));
+}
+
+void tst_QVideoFrame::qImageFromVideoFrame_badJPEG()
+{
+    QByteArray byteArray = umbrellasJPEG();
+    byteArray = byteArray.first(10'000);
+
+    auto memoryBuffer = std::make_unique<QMemoryVideoBuffer>(byteArray, byteArray.size());
+
+    QVideoFrame frame = QVideoFramePrivate::createFrame(
+            std::move(memoryBuffer),
+            QVideoFrameFormat(QSize(144, 110), QVideoFrameFormat::Format_Jpeg));
+
+    QTest::ignoreMessage(QtMsgType::QtWarningMsg,
+                         QRegularExpression(u".*JPEG data does not contain EOI marker.*"_s));
+
+    QImage img = qImageFromVideoFrame(frame, false);
+    QCOMPARE(img.isNull(), true);
 }
 
 #define TEST_MAPPED(frame, mode) \

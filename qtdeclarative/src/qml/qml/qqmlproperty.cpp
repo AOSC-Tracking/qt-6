@@ -301,7 +301,7 @@ void QQmlPropertyPrivate::initProperty(QObject *obj, const QString &name,
                 for (auto idContext = context; idContext; idContext = idContext->parent()) {
                     const int objectId = idContext->propertyIndex(pathName.toString());
                     if (objectId != -1 && objectId < idContext->numIdValues()) {
-                        currentObject = context->idValue(objectId);
+                        currentObject = idContext->idValue(objectId);
                         break;
                     }
                 }
@@ -695,7 +695,7 @@ bool QQmlProperty::isBindable() const
     if (!d->object)
         return false;
     if (d->core.isValid())
-        return d->core.isBindable();
+        return d->core.notifiesViaBindable();
     return false;
 }
 
@@ -1145,10 +1145,22 @@ QVariant QQmlPropertyPrivate::readValueProperty()
         }
         return QVariant();
     } else if (core.isQList()) {
+        auto coreMetaType = core.propType();
 
-        QQmlListProperty<QObject> prop;
-        core.readProperty(object, &prop);
-        return QVariant::fromValue(QQmlListReferencePrivate::init(prop, core.propType()));
+        // IsQmlList is set for QQmlListPropery and list<ObjectType>
+        if (coreMetaType.flags() & QMetaType::IsQmlList) {
+            QQmlListProperty<QObject> prop;
+            core.readProperty(object, &prop);
+            return QVariant::fromValue(QQmlListReferencePrivate::init(prop, coreMetaType));
+        } else {
+            // but not for lists of value types
+            QVariant result(coreMetaType);
+            // TODO: ideally, we would not default construct and copy assign,
+            // but do a single copy-construct; we don't have API for that, though
+            coreMetaType.construct(result.data());
+            core.readProperty(object, result.data());
+            return result;
+        }
 
     } else if (core.isQObject()) {
 
@@ -1336,7 +1348,9 @@ struct BindingFixer
     BindingFixer(QObject *object, const QQmlPropertyData &property,
                  QQmlPropertyData::WriteFlags flags)
     {
-        if (!property.isBindable() || !(flags & QQmlPropertyData::DontRemoveBinding))
+        // Even if QML cannot install bindings on this property, there may be a C++-created binding.
+        // If the property can notify via a bindable, there is a bindable that can hold a binding.
+        if (!property.notifiesViaBindable() || !(flags & QQmlPropertyData::DontRemoveBinding))
             return;
 
         QUntypedBindable bindable;

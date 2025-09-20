@@ -1,8 +1,8 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QDATETIMEAXIS_H
-#define QDATETIMEAXIS_H
+#ifndef QTGRAPHS_QDATETIMEAXIS_H
+#define QTGRAPHS_QDATETIMEAXIS_H
 
 #include <QtGraphs/qabstractaxis.h>
 
@@ -62,4 +62,4 @@ private:
 
 QT_END_NAMESPACE
 
-#endif // QDATETIMEAXIS_H
+#endif // QTGRAPHS_QDATETIMEAXIS_H

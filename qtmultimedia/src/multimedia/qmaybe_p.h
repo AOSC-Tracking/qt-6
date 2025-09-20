@@ -23,11 +23,34 @@
 
 QT_BEGIN_NAMESPACE
 
+template <class Error = QString>
+struct QUnexpected
+{
+    constexpr QUnexpected(const QUnexpected &) = default;
+    constexpr QUnexpected(QUnexpected &&) = default;
+
+    template <class Err = Error,
+              class Enabler = std::enable_if_t<!std::is_same_v<std::decay_t<Err>, QUnexpected>>>
+    constexpr explicit QUnexpected(Err &&e) : e{ std::forward<Err>(e) }
+    {
+    }
+
+    Error e;
+
+    constexpr const Error &error() const & noexcept { return e; }
+    constexpr Error &error() & noexcept { return e; }
+    constexpr const Error &&error() const && noexcept { return std::move(e); };
+    constexpr Error &&error() && noexcept { return std::move(e); }
+};
+
+template <class E>
+QUnexpected(E) -> QUnexpected<E>;
+
 struct QUnexpect
 {
 };
 
-static constexpr QUnexpect unexpect{};
+inline constexpr QUnexpect unexpect{};
 
 template <typename Value, typename Error = QString>
 class QMaybe
@@ -55,8 +78,6 @@ public:
 
     QMaybe &operator=(const QMaybe &other) = default;
 
-    QMaybe(const Error &error) : m_error(error) { }
-
     template <class... Args>
     QMaybe(QUnexpect, Args &&...args) : m_error{ std::forward<Args>(args)... }
     {
@@ -64,6 +85,19 @@ public:
                       "Invalid arguments for creating an error type");
     }
 
+    template <class G>
+    constexpr QMaybe(const QUnexpected<G> &e) : m_error{ e.error() }
+    {
+    }
+
+    template <class G>
+    constexpr QMaybe(QUnexpected<G> &&e) : m_error{ std::move(e.error()) }
+    {
+    }
+
+    // NOTE: Returns false if holding a nullptr value, even if no error is set.
+    // This is different from std::expected, where a nullptr is a valid value, not
+    // an error.
     constexpr explicit operator bool() const noexcept { return m_value.has_value(); }
 
     constexpr Value &value()
@@ -87,8 +121,10 @@ public:
     constexpr const Error &error() const { return m_error; }
 
 private:
+    QMaybe(std::nullptr_t) { }
+
     std::optional<Value> m_value;
-    Error m_error;
+    Error m_error{};
 };
 
 QT_END_NAMESPACE

@@ -18,6 +18,8 @@ class FrameSinkId;
 
 namespace QtWebEngineCore {
 
+Q_DECLARE_LOGGING_CATEGORY(lcWebEngineCompositor);
+
 // Produces composited frames for display.
 //
 // Used by quick/widgets libraries for accessing the frames and
@@ -28,11 +30,7 @@ class Q_WEBENGINECORE_EXPORT Compositor
 
 public:
     // Identifies the implementation type.
-    enum class Type {
-        Software,
-        OpenGL, // TODO: Legacy, remove it with DisplaySkiaOutputDevice!
-        Native
-    };
+    enum class Type { Software, Native };
 
     // Identifies a compositor.
     //
@@ -103,8 +101,8 @@ public:
     void bind(Id id);
     void unbind();
 
-    // Observer if bound.
-    Handle<Observer> observer();
+    // Tell observer ready to swap
+    void readyToSwap();
 
     // Update to next frame if possible.
     virtual void swapFrame() = 0;
@@ -136,7 +134,7 @@ public:
     virtual void releaseResources();
 
 protected:
-    Compositor(Type type) : m_type(type) { }
+    Compositor(Type type);
     virtual ~Compositor();
 
 private:

@@ -14,41 +14,47 @@
 // We mean it.
 //
 
-#include <private/qplatformaudioinput_p.h>
-#include <private/qplatformaudiobufferinput_p.h>
-#include "qffmpegthread_p.h"
-#include <qaudioinput.h>
+#include <QtMultimedia/qaudioinput.h>
+#include <QtMultimedia/private/qplatformaudioinput_p.h>
+#include <QtMultimedia/private/qplatformaudiobufferinput_p.h>
+#include <QtFFmpegMediaPluginImpl/private/qffmpegthread_p.h>
 
 QT_BEGIN_NAMESPACE
 
-class QAudioSource;
-class QAudioBuffer;
 namespace QFFmpeg {
 class AudioSourceIO;
 } // namespace QFFmpeg
 
 constexpr int DefaultAudioInputBufferSize = 4096;
 
-class QFFmpegAudioInput : public QPlatformAudioBufferInputBase, public QPlatformAudioInput
+class QFFmpegAudioInput : public QAudioBufferSource, public QPlatformAudioInput
 {
     // for qobject_cast
     Q_OBJECT
 public:
-    QFFmpegAudioInput(QAudioInput *qq);
+    explicit QFFmpegAudioInput(QAudioInput *qq);
     ~QFFmpegAudioInput() override;
 
     void setAudioDevice(const QAudioDevice &/*device*/) override;
     void setMuted(bool /*muted*/) override;
     void setVolume(float /*volume*/) override;
 
-    void setFrameSize(int frameSize);
-    void setRunning(bool b);
+    void setBufferSize(int bufferSize);
 
     int bufferSize() const;
 
+protected:
+    // ensures the underlying audio source is run if
+    // the signal newAudioBuffer is connected
+    void connectNotify(const QMetaMethod &signal) override;
+
+    // postponly ensures that the underlying audio source is not run
+    // if the signal newAudioBuffer is not connacted to any slot.
+    void disconnectNotify(const QMetaMethod &signal) override;
+
 private:
-    QFFmpeg::AudioSourceIO *audioIO = nullptr;
-    std::unique_ptr<QThread> inputThread;
+    QFFmpeg::AudioSourceIO *m_audioIO = nullptr;
+    std::unique_ptr<QThread> m_inputThread;
 };
 
 QT_END_NAMESPACE

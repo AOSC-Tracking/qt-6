@@ -96,7 +96,7 @@ bool QAxisSetting::isSmoothEnabled() const
 */
 
 /*!
-  \qmlproperty float Qt3D.Input::AxisSetting::deadZoneRadius
+  \qmlproperty real Qt3D.Input::AxisSetting::deadZoneRadius
 
   The current deadZone radius of the AxisSetting
 */
@@ -129,7 +129,7 @@ void QAxisSetting::setDeadZoneRadius(float deadZoneRadius)
 */
 
 /*!
-  \qmlproperty QVariantList Qt3D.Input::AxisSetting::axis
+  \qmlproperty list<var> Qt3D.Input::AxisSetting::axis
 
   The current axis of the AxisSetting
 */

@@ -395,6 +395,29 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
+    \qmlsignal PieSeries::clicked(PieSlice slice)
+    This signal is emitted when the \a slice is clicked or tapped.
+*/
+
+/*!
+    \qmlsignal PieSeries::doubleClicked(PieSlice slice)
+    This signal is emitted when the \a slice is double-clicked or double-tapped.
+    This signal always occurs after \l clicked.
+*/
+
+/*!
+    \qmlsignal PieSeries::pressed(PieSlice slice)
+    This signal is emitted when the user clicks or taps the \a slice
+    and holds down the mouse button or gesture.
+*/
+
+/*!
+    \qmlsignal PieSeries::released(PieSlice slice)
+    This signal is emitted when the user releases a previously pressed mouse button
+    or gesture on the \a slice.
+*/
+
+/*!
     Constructs a series object that is a child of \a parent.
 */
 QPieSeries::QPieSeries(QObject *parent)
@@ -430,7 +453,8 @@ QPieSlice *QPieSeries::at(qsizetype index)
 */
 QPieSlice *QPieSeries::find(const QString &label)
 {
-    for (QPieSlice *slice : slices()) {
+    auto slicelist = slices();
+    for (QPieSlice *slice : std::as_const(slicelist)) {
         if (slice->label() == label)
             return slice;
     }

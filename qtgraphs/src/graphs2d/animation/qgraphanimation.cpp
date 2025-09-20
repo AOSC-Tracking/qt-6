@@ -9,7 +9,6 @@
     \qmlabstract
     \inqmlmodule QtGraphs
     \ingroup graphs_qml_2D
-    \inherits VariantAnimation
     \brief The GraphAnimation type is the base type for all animations for 2D Qt Graphs series.
 
     GraphAnimation is based on VariantAnimation and provides an interface for interpolation for child animations.

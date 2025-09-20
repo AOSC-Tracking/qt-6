@@ -45,15 +45,17 @@ QList<QAudioDevice> QAndroidAudioDevices::findAudioOutputs() const
 }
 
 QPlatformAudioSource *QAndroidAudioDevices::createAudioSource(const QAudioDevice &deviceInfo,
+                                                              const QAudioFormat &fmt,
                                                               QObject *parent)
 {
-    return new QAndroidAudioSource(deviceInfo.id(), parent);
+    return new QAndroidAudioSource(deviceInfo, fmt, parent);
 }
 
 QPlatformAudioSink *QAndroidAudioDevices::createAudioSink(const QAudioDevice &deviceInfo,
+                                                          const QAudioFormat &fmt,
                                                           QObject *parent)
 {
-    return new QAndroidAudioSink(deviceInfo.id(), parent);
+    return new QAndroidAudioSink(deviceInfo, fmt, parent);
 }
 
 static void onAudioInputDevicesUpdated(JNIEnv */*env*/, jobject /*thiz*/)

@@ -8,7 +8,7 @@
 #include <QtCore/QLoggingCategory>
 
 QT_BEGIN_NAMESPACE
-static Q_LOGGING_CATEGORY(qLCAndroidCameraFrame, "qt.multimedia.ffmpeg.android.camera.frame");
+Q_STATIC_LOGGING_CATEGORY(qLCAndroidCameraFrame, "qt.multimedia.ffmpeg.android.camera.frame");
 
 namespace {
 bool isWorkaroundForEmulatorNeeded() {
@@ -30,16 +30,18 @@ bool QAndroidVideoFrameBuffer::parse(const QJniObject &frame)
     if (!frame.isValid())
         return false;
 
-    const auto planes = frame.callMethod<QtJniTypes::AndroidImagePlane[]>("getPlanes");
+    const auto planes = frame.callMethod<QtJniTypes::ImagePlane[]>("getPlanes");
     if (!planes.isValid())
         return false;
 
     const int numberPlanes = planes.size();
+    Q_ASSERT(numberPlanes <= MAX_PLANES);
+
     // create and populate temporary array structure
-    int pixelStrides[numberPlanes];
-    int rowStrides[numberPlanes];
-    int bufferSize[numberPlanes];
-    char *buffer[numberPlanes];
+    int pixelStrides[MAX_PLANES];
+    int rowStrides[MAX_PLANES];
+    int bufferSize[MAX_PLANES];
+    char *buffer[MAX_PLANES];
 
     auto resetPlane = [&](int index) {
         if (index < 0 || index > numberPlanes)
@@ -51,7 +53,7 @@ bool QAndroidVideoFrameBuffer::parse(const QJniObject &frame)
         buffer[index] = nullptr;
     };
 
-    for (qsizetype index = 0; index < planes.size(); ++index) {
+    for (qsizetype index = 0; index < numberPlanes; ++index) {
         auto plane = planes.at(index);
         if (!plane.isValid()) {
             resetPlane(index);
@@ -61,7 +63,7 @@ bool QAndroidVideoFrameBuffer::parse(const QJniObject &frame)
         rowStrides[index] = plane.callMethod<jint>("getRowStride");
         pixelStrides[index] = plane.callMethod<jint>("getPixelStride");
 
-        auto byteBuffer = plane.callMethod<QtJniTypes::JavaByteBuffer>("getBuffer");
+        auto byteBuffer = plane.callMethod<QtJniTypes::ByteBuffer>("getBuffer");
         if (!byteBuffer.isValid()) {
             resetPlane(index);
             continue;

@@ -43,6 +43,14 @@
              \li iOS 17
              \li armv8 (arm64)
              \li Tablet
+         \row \li \l{iPad, 9th generation}
+             \li iOS 18
+             \li armv8 (arm64)
+             \li Tablet
+         \row \li \l{iPhone 16e}
+             \li iOS 18
+             \li armv8 (arm64)
+             \li Mobile
     \endtable
 
     \include apple-common.qdocinc {build-environment} {iOS}
@@ -192,6 +200,9 @@
     using \l {https://docs.brew.sh/Installation}{Homebrew}.
     Qt sources can be obtained either by cloning the repositories or
     downloading the source package(s).
+
+    To cross-build Qt, you need a host build of Qt first. See \l{Cross-compiling
+    Qt} for details.
 
     You can then configure and build Qt. This is done from the Qt top
     directory:
@@ -677,7 +688,8 @@
     QStandardPaths::standardLocations(QStandardPaths::PicturesLocation).last();
     \endcode
 
-    or alternatively the folder in a FileDialog in QML to:
+    or alternatively the \l [QtQuickDialogs] {FileDialog::} {currentFolder} in a
+    \l [QtQuickDialogs] {FileDialog} in QML to:
 
     \badcode
     shortcuts.pictures

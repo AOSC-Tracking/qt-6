@@ -82,7 +82,7 @@ void QAxis::addInput(QAbstractAxisInput *input)
 }
 
 /*!
-    \qmlproperty QVariantList Qt3D.Input::Axis::buttons
+    \qmlproperty list<var> Qt3D.Input::Axis::buttons
 
     The Buttons that can trigger this Action
 */

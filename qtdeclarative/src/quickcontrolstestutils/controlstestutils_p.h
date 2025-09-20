@@ -24,6 +24,7 @@ class QQmlComponent;
 class QQmlEngine;
 class QQuickApplicationWindow;
 class QQuickAbstractButton;
+class QQuickControl;
 
 namespace QQuickControlsTestUtils
 {
@@ -55,6 +56,7 @@ namespace QQuickControlsTestUtils
     [[nodiscard]] bool verifyButtonClickable(QQuickAbstractButton *button);
     [[nodiscard]] bool clickButton(QQuickAbstractButton *button);
     [[nodiscard]] bool doubleClickButton(QQuickAbstractButton *button);
+    [[nodiscard]] QString visualFocusFailureMessage(QQuickControl *control);
 
     class ComponentCreator : public QObject
     {
@@ -87,14 +89,31 @@ namespace QQuickControlsTestUtils
         void requestColorScheme(Qt::ColorScheme theme) override
         {
             m_colorScheme = theme;
-            QWindowSystemInterfacePrivate::ThemeChangeEvent tce{nullptr};
-            QGuiApplicationPrivate::processThemeChanged(&tce);
+            QWindowSystemInterface::handleThemeChange<QWindowSystemInterface::SynchronousDelivery>();
         }
 
     private:
-        Qt::ColorScheme m_colorScheme = Qt::ColorScheme::Unknown;
+        Qt::ColorScheme m_colorScheme = QGuiApplication::styleHints()->colorScheme();
     };
+
+    class SystemEnvironment : public QObject
+    {
+        Q_OBJECT
+        QML_ELEMENT
+        QML_SINGLETON
+
+    public:
+        Q_INVOKABLE QString value(const QString &name);
+        Q_INVOKABLE bool setValue(const QString &name, const QString &value);
+    };
+
+    [[nodiscard]] bool arePopupWindowsSupported();
 }
+
+#define VERIFY_VISUAL_FOCUS(control) \
+do { \
+    QVERIFY2(control->hasVisualFocus(), qUtf8Printable(visualFocusFailureMessage(control))); \
+} while (false)
 
 QT_END_NAMESPACE
 

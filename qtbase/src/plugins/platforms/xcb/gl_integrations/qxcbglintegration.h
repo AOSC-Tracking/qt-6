@@ -1,7 +1,7 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
-#ifndef QXCBGLINTEGRATION_H
+#pragma once
 
 #include "qxcbexport.h"
 #include "qxcbwindow.h"
@@ -14,7 +14,7 @@ class QPlatformOffscreenSurface;
 class QOffscreenSurface;
 class QXcbNativeInterfaceHandler;
 
-Q_DECLARE_EXPORTED_LOGGING_CATEGORY(lcQpaGl, Q_XCB_EXPORT)
+QT_DECLARE_EXPORTED_QT_LOGGING_CATEGORY(lcQpaGl, Q_XCB_EXPORT)
 
 class Q_XCB_EXPORT QXcbGlIntegration
 {
@@ -37,5 +37,3 @@ public:
 };
 
 QT_END_NAMESPACE
-
-#endif //QXCBGLINTEGRATION_H

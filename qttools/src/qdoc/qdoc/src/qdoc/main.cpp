@@ -74,6 +74,12 @@ static void parseSourceFiles(
         sources.end()
     );
 
+    sources.erase(std::remove_if(sources.begin(), sources.end(),
+        [](const QString &source) {
+            return Utilities::isGeneratedFile(source);
+        }),
+        sources.end());
+
     auto qml_sources =
         std::stable_partition(sources.begin(), sources.end(), [](const QString& source){
             return CodeParser::parserForSourceFile(source) == CodeParser::parserForLanguage("QML");
@@ -90,6 +96,7 @@ static void parseSourceFiles(
         for (auto untied : untied_documentation) {
             auto result = cpp_code_parser.processTopicArgs(untied);
             tied_documentation.insert(tied_documentation.end(), result.first.begin(), result.first.end());
+            errors.insert(errors.end(), result.second.begin(), result.second.end());
         };
 
         cpp_code_parser.processMetaCommands(tied_documentation);
@@ -538,14 +545,18 @@ static void processQdocconfFile(const QString &fileName)
         QStringList sourceList;
 
         qCDebug(lcQdoc, "Reading sourcedirs");
-        sourceList =
+
+        if (config.get(CONFIG_DOCUMENTATIONINHEADERS).asBool()) {
+            sourceList += config.getAllFiles(CONFIG_HEADERS, CONFIG_HEADERDIRS, excludedDirs,
+                                             excludedFiles);
+        }
+        sourceList +=
                 config.getAllFiles(CONFIG_SOURCES, CONFIG_SOURCEDIRS, excludedDirs, excludedFiles);
 
         std::vector<QString> sources{};
         for (const auto &source : sourceList) {
-            if (source.contains(QLatin1String("doc/snippets")))
-                continue;
-            sources.emplace_back(source);
+            if (!source.contains(QLatin1String("doc/snippets")))
+                sources.emplace_back(source);
         }
         /*
           Find all the qdoc files in the example dirs, and add
@@ -554,7 +565,8 @@ static void processQdocconfFile(const QString &fileName)
         qCDebug(lcQdoc, "Reading exampledirs");
         QStringList exampleQdocList = config.getExampleQdocFiles(excludedDirs, excludedFiles);
         for (const auto &example : exampleQdocList) {
-            sources.emplace_back(example);
+            if (!example.contains(QLatin1String("doc/snippets")))
+                sources.emplace_back(example);
         }
 
         /*

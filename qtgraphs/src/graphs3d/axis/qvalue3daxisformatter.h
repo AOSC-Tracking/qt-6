@@ -1,8 +1,8 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QVALUE3DAXISFORMATTER_H
-#define QVALUE3DAXISFORMATTER_H
+#ifndef QTGRAPHS_QVALUE3DAXISFORMATTER_H
+#define QTGRAPHS_QVALUE3DAXISFORMATTER_H
 
 #include <QtCore/qlist.h>
 #include <QtCore/qlocale.h>
@@ -10,6 +10,7 @@
 #include <QtCore/qscopedpointer.h>
 #include <QtCore/qstringlist.h>
 #include <QtGraphs/qgraphsglobal.h>
+#include <QtQmlIntegration/qqmlintegration.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -20,6 +21,7 @@ class Q_GRAPHS_EXPORT QValue3DAxisFormatter : public QObject
 {
     Q_OBJECT
     Q_DECLARE_PRIVATE(QValue3DAxisFormatter)
+    QML_NAMED_ELEMENT(Value3DAxisFormatter)
 
 protected:
     explicit QValue3DAxisFormatter(QValue3DAxisFormatterPrivate &d, QObject *parent = nullptr);

@@ -5,6 +5,8 @@
 #include <qset.h>
 #include <qdebug.h>
 
+#include <private/qcomparisontesthelper_p.h>
+
 int toNumber(const QString &str)
 {
     int res = 0;
@@ -18,6 +20,7 @@ class tst_QSet : public QObject
     Q_OBJECT
 
 private slots:
+    void comparisonCompiles();
     void operator_eq();
     void swap();
     void size();
@@ -29,6 +32,8 @@ private slots:
     void clear();
     void cpp17ctad();
     void remove();
+    void removeOnlyDetachesIfSomethingGetsRemoved();
+    void removeIfDoesNotAllowThePredicateToModifyTheElement();
     void contains();
     void containsSet();
     void begin();
@@ -47,6 +52,12 @@ private slots:
     void intersects();
     void find();
     void values();
+    void setOperationsPickEquivalentElementsFromLHSContainer_data();
+    void setOperationsPickEquivalentElementsFromLHSContainer();
+
+private:
+    template <bool RhsRValue>
+    void setOperationsPickEquivalentElementsFromLHSContainer_impl();
 };
 
 struct IdentityTracker {
@@ -56,50 +67,66 @@ struct IdentityTracker {
 inline size_t qHash(IdentityTracker key) { return qHash(key.value); }
 inline bool operator==(IdentityTracker lhs, IdentityTracker rhs) { return lhs.value == rhs.value; }
 
+void tst_QSet::comparisonCompiles()
+{
+    QTestPrivate::testEqualityOperatorsCompile<QSet<int>>();
+    QTestPrivate::testEqualityOperatorsCompile<QSet<QString>>();
+}
+
 void tst_QSet::operator_eq()
 {
     {
         QSet<int> set1, set2;
         QVERIFY(set1 == set2);
         QVERIFY(!(set1 != set2));
+        QT_TEST_EQUALITY_OPS(set1, set2, true);
 
         set1.insert(1);
         QVERIFY(set1 != set2);
         QVERIFY(!(set1 == set2));
+        QT_TEST_EQUALITY_OPS(set1, set2, false);
 
         set2.insert(1);
         QVERIFY(set1 == set2);
         QVERIFY(!(set1 != set2));
+        QT_TEST_EQUALITY_OPS(set1, set2, true);
 
         set2.insert(1);
         QVERIFY(set1 == set2);
         QVERIFY(!(set1 != set2));
+        QT_TEST_EQUALITY_OPS(set1, set2, true);
 
         set1.insert(2);
         QVERIFY(set1 != set2);
         QVERIFY(!(set1 == set2));
+        QT_TEST_EQUALITY_OPS(set1, set2, false);
     }
 
     {
         QSet<QString> set1, set2;
         QVERIFY(set1 == set2);
         QVERIFY(!(set1 != set2));
+        QT_TEST_EQUALITY_OPS(set1, set2, true);
 
         set1.insert("one");
         QVERIFY(set1 != set2);
         QVERIFY(!(set1 == set2));
+        QT_TEST_EQUALITY_OPS(set1, set2, false);
 
         set2.insert("one");
         QVERIFY(set1 == set2);
         QVERIFY(!(set1 != set2));
+        QT_TEST_EQUALITY_OPS(set1, set2, true);
 
         set2.insert("one");
         QVERIFY(set1 == set2);
         QVERIFY(!(set1 != set2));
+        QT_TEST_EQUALITY_OPS(set1, set2, true);
 
         set1.insert("two");
         QVERIFY(set1 != set2);
         QVERIFY(!(set1 == set2));
+        QT_TEST_EQUALITY_OPS(set1, set2, false);
     }
 
     {
@@ -111,6 +138,7 @@ void tst_QSet::operator_eq()
 
         QVERIFY(a != b);
         QVERIFY(!(a == b));
+        QT_TEST_EQUALITY_OPS(a, b, false);
     }
 
     {
@@ -118,9 +146,11 @@ void tst_QSet::operator_eq()
         s1.reserve(100);
         s2.reserve(4);
         QVERIFY(s1 == s2);
+        QT_TEST_EQUALITY_OPS(s1, s2, true);
         s1 << 100 << 200 << 300 << 400;
         s2 << 400 << 300 << 200 << 100;
         QVERIFY(s1 == s2);
+        QT_TEST_EQUALITY_OPS(s1, s2, true);
     }
 }
 
@@ -370,6 +400,40 @@ void tst_QSet::remove()
     }
 }
 
+void tst_QSet::removeOnlyDetachesIfSomethingGetsRemoved()
+{
+    const QSet<int> set = {0, 1, 2, 3, 4};
+
+    auto copy = set;
+    QVERIFY(!copy.isDetached());
+
+    QVERIFY(!copy.remove(42));
+    QVERIFY(!copy.isDetached());
+
+    QCOMPARE(copy.removeIf([] (auto) { return false; }), 0);
+    QVERIFY(!copy.isDetached());
+
+    QVERIFY(copy.remove(4));
+    QVERIFY(copy.isDetached());
+
+    copy = set;
+    QVERIFY(!copy.isDetached());
+
+    QCOMPARE(copy.removeIf([] (int e) { return e == 3; }), 1);
+    QVERIFY(copy.isDetached());
+}
+
+void tst_QSet::removeIfDoesNotAllowThePredicateToModifyTheElement()
+{
+    QSet<int> set = {0, 1, 2, 3};
+    set.removeIf([](auto &&e) {
+            if constexpr (!std::is_const_v<std::remove_reference_t<decltype(e)>>)
+                e *= 2;
+            return false;
+        });
+    QCOMPARE(set, QSet({0, 1, 2, 3}));
+}
+
 void tst_QSet::contains()
 {
     QSet<QString> set1;
@@ -485,7 +549,7 @@ void tst_QSet::begin()
         QVERIFY(i == j);
         QVERIFY(k == j);
         QVERIFY(!set3.isDetached());
-        QVERIFY(set4.isDetached());
+        QVERIFY(!set4.isDetached()); // d-ptr is null
     }
 
     set4.insert(1);
@@ -856,7 +920,7 @@ void tst_QSet::setOperationsOnEmptySet()
 
         empty.unite(nonEmpty);
         QCOMPARE(empty, nonEmpty);
-        QVERIFY(!empty.isDetached());
+        QVERIFY(empty.isDetached());
     }
 }
 
@@ -1157,6 +1221,135 @@ void tst_QSet::values()
     set.remove(5);
 
     QCOMPARE(sorted(set.values()), QList<int>({ 1, 2, 10 }));
+}
+
+void tst_QSet::setOperationsPickEquivalentElementsFromLHSContainer_data()
+{
+    QTest::addColumn<bool>("lhsShared");
+    QTest::addColumn<bool>("rhsShared");
+    QTest::addColumn<bool>("rhsRValue");
+
+    for (bool lhs : {true, false}) {
+        for (bool rhs : {true, false}) {
+            for (bool rv : {true, false}) {
+                QTest::addRow("lhs %sshared, rhs %sshared %cvalue",
+                              lhs ? "" : "not ", rhs ? "" : "not ", rv ? 'r' : 'l')
+                    << lhs << rhs << rv;
+            }
+        }
+    }
+}
+
+void tst_QSet::setOperationsPickEquivalentElementsFromLHSContainer()
+{
+    QFETCH(const bool, rhsRValue);
+
+    if (rhsRValue)
+        setOperationsPickEquivalentElementsFromLHSContainer_impl<true>();
+    else
+        setOperationsPickEquivalentElementsFromLHSContainer_impl<false>();
+}
+
+template <bool RhsRValue>
+void tst_QSet::setOperationsPickEquivalentElementsFromLHSContainer_impl()
+{
+    QFETCH(const bool, lhsShared);
+    QFETCH(const bool, rhsShared);
+
+    //
+    // GIVEN: Two equivalent QSets:
+    //
+    constexpr IdentityTracker OneL{1, 1}, TwoL{2, 1}, ThreeL{3, 1};
+    constexpr IdentityTracker OneR{1, 2}, TwoR{2, 2}, ThreeR{3, 2};
+
+    // by construction:
+    QCOMPARE(OneL, OneR);
+    QCOMPARE(qHash(OneL), qHash(OneR));
+
+    const QSet<IdentityTracker> lhs = {OneL, TwoL};
+    const QSet<IdentityTracker> rhs = {OneR, TwoR, ThreeR};
+
+    auto maybeDetach = [](auto set, bool shared) {
+        if (!shared)
+            set.detach();
+        return set;
+    };
+
+    {
+        //
+        // WHEN: intersect()ing the two
+        //
+        auto lhsCopy = maybeDetach(lhs, lhsShared);
+        auto rhsCopy = maybeDetach(rhs, rhsShared);
+
+        if constexpr (RhsRValue) {
+            lhsCopy.intersect(maybeDetach(rhs, rhsShared));
+            rhsCopy.intersect(maybeDetach(lhs, lhsShared));
+        } else {
+            lhsCopy.intersect(rhs);
+            rhsCopy.intersect(lhs);
+        }
+
+        //
+        // THEN: equivalent elements are picked from the LHS container:
+        //       (unlike other Qt containers, QSet's insertion behavior is STL-compliant):
+        //
+        QVERIFY(lhsCopy.contains(OneL));
+        QCOMPARE(lhsCopy.find(OneL)->id, OneL.id);
+
+        QVERIFY(lhsCopy.contains(TwoL));
+        QCOMPARE(lhsCopy.find(TwoL)->id, TwoL.id);
+
+        QVERIFY(!lhsCopy.contains(ThreeR));
+
+
+        QVERIFY(rhsCopy.contains(OneR));
+        QCOMPARE(rhsCopy.find(OneR)->id, OneR.id);
+
+        QVERIFY(rhsCopy.contains(TwoR));
+        QCOMPARE(rhsCopy.find(TwoR)->id, TwoR.id);
+
+        QVERIFY(!rhsCopy.contains(ThreeR));
+    }
+
+    {
+        //
+        // WHEN: unite()ing the two
+        //
+        auto lhsCopy = maybeDetach(lhs, lhsShared);
+        auto rhsCopy = maybeDetach(rhs, rhsShared);
+
+        if constexpr (RhsRValue) {
+            lhsCopy.unite(maybeDetach(rhs, rhsShared));
+            rhsCopy.unite(maybeDetach(lhs, lhsShared));
+        } else {
+            lhsCopy.unite(rhs);
+            rhsCopy.unite(lhs);
+        }
+
+        //
+        // THEN: equivalent elements are picked from the LHS container:
+        //       (unlike other Qt containers, QSet's insertion behavior is STL-compliant):
+        //
+        QVERIFY(lhsCopy.contains(OneL));
+        QCOMPARE(lhsCopy.find(OneL)->id, OneL.id);
+
+        QVERIFY(lhsCopy.contains(TwoL));
+        QCOMPARE(lhsCopy.find(TwoL)->id, TwoL.id);
+
+        QVERIFY(lhsCopy.contains(ThreeL));
+        QCOMPARE(lhsCopy.find(ThreeL)->id, ThreeR.id); // element was not contained in lhs
+
+
+        QVERIFY(rhsCopy.contains(OneR));
+        QCOMPARE(rhsCopy.find(OneR)->id, OneR.id);
+
+        QVERIFY(rhsCopy.contains(TwoR));
+        QCOMPARE(rhsCopy.find(TwoR)->id, TwoR.id);
+
+        QVERIFY(rhsCopy.contains(ThreeR));
+        QCOMPARE(rhsCopy.find(ThreeR)->id, ThreeR.id);
+    }
 }
 
 QTEST_APPLESS_MAIN(tst_QSet)

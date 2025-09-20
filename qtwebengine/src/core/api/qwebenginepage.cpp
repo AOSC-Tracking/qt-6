@@ -57,6 +57,7 @@
 
 QT_BEGIN_NAMESPACE
 
+using namespace Qt::StringLiterals;
 using namespace QtWebEngineCore;
 
 static QWebEnginePage::WebWindowType toWindowType(WebContentsAdapterClient::WindowOpenDisposition disposition)
@@ -286,7 +287,7 @@ void QWebEnginePagePrivate::printToPdf(std::function<void(QSharedPointer<QByteAr
                                        quint64 frameId)
 {
     adapter->printToPDFCallbackResult(std::move(callback), layout, ranges, /*colorMode*/ true,
-                                      /*useCustomMargins*/ true, frameId);
+                                      frameId);
 }
 
 void QWebEnginePagePrivate::didPrintPageToPdf(const QString &filePath, bool success)
@@ -661,8 +662,7 @@ static QWebEnginePage::Feature toDeprecatedFeature(QWebEnginePermission::Permiss
         break;
     }
 
-    Q_UNREACHABLE();
-    return QWebEnginePage::Feature(-1);
+    Q_UNREACHABLE_RETURN(QWebEnginePage::Feature(-1));
 }
 QT_WARNING_POP
 #endif // QT_DEPRECATED_SINCE(6, 8)
@@ -1336,16 +1336,16 @@ void QWebEnginePage::triggerAction(WebAction action, bool)
         break;
     case CopyLinkToClipboard:
         if (d->view && d->view->lastContextMenuRequest() && !d->view->lastContextMenuRequest()->linkUrl().isEmpty()) {
-            QString urlString = d->view->lastContextMenuRequest()->linkUrl().toString(
-                    QUrl::FullyEncoded);
-            QString linkText = d->view->lastContextMenuRequest()->linkText().toHtmlEscaped();
+            const QString urlString =
+                    d->view->lastContextMenuRequest()->linkUrl().toString(QUrl::FullyEncoded);
+            const QString linkText = d->view->lastContextMenuRequest()->linkText().toHtmlEscaped();
             QString title = d->view->lastContextMenuRequest()->titleText();
             if (!title.isEmpty())
-                title = QStringLiteral(" title=\"%1\"").arg(title.toHtmlEscaped());
+                title = " title=\""_L1 + title.toHtmlEscaped() + u'"';
             QMimeData *data = new QMimeData();
             data->setText(urlString);
-            QString html = QStringLiteral("<a href=\"") + urlString + QStringLiteral("\"") + title + QStringLiteral(">")
-                         + linkText + QStringLiteral("</a>");
+            const QString html =
+                    "<a href=\""_L1 + urlString + u'"' + title + u'>' + linkText + "</a>"_L1;
             data->setHtml(html);
             data->setUrls(QList<QUrl>() << d->view->lastContextMenuRequest()->linkUrl());
             QGuiApplication::clipboard()->setMimeData(data);
@@ -1372,17 +1372,17 @@ void QWebEnginePage::triggerAction(WebAction action, bool)
         if (d->view && d->view->lastContextMenuRequest() && d->view->lastContextMenuRequest()->mediaUrl().isValid()
             && d->view->lastContextMenuRequest()->mediaType()
                     == QWebEngineContextMenuRequest::MediaTypeImage) {
-            QString urlString =
+            const QString urlString =
                     d->view->lastContextMenuRequest()->mediaUrl().toString(QUrl::FullyEncoded);
             QString alt = d->view->lastContextMenuRequest()->altText();
             if (!alt.isEmpty())
-                alt = QStringLiteral(" alt=\"%1\"").arg(alt.toHtmlEscaped());
+                alt = " alt=\""_L1 + alt.toHtmlEscaped() + u'"';
             QString title = d->view->lastContextMenuRequest()->titleText();
             if (!title.isEmpty())
-                title = QStringLiteral(" title=\"%1\"").arg(title.toHtmlEscaped());
+                title = " title=\""_L1 + title.toHtmlEscaped() + u'"';
             QMimeData *data = new QMimeData();
             data->setText(urlString);
-            QString html = QStringLiteral("<img src=\"") + urlString + QStringLiteral("\"") + title + alt + QStringLiteral("></img>");
+            const QString html = "<img src=\""_L1 + urlString + u'"' + title + alt + "></img>"_L1;
             data->setHtml(html);
             data->setUrls(QList<QUrl>() << d->view->lastContextMenuRequest()->mediaUrl());
             QGuiApplication::clipboard()->setMimeData(data);
@@ -1402,20 +1402,19 @@ void QWebEnginePage::triggerAction(WebAction action, bool)
                         == QWebEngineContextMenuRequest::MediaTypeAudio
                 || d->view->lastContextMenuRequest()->mediaType()
                         == QWebEngineContextMenuRequest::MediaTypeVideo)) {
-            QString urlString =
+            const QString urlString =
                     d->view->lastContextMenuRequest()->mediaUrl().toString(QUrl::FullyEncoded);
             QString title = d->view->lastContextMenuRequest()->titleText();
             if (!title.isEmpty())
-                title = QStringLiteral(" title=\"%1\"").arg(title.toHtmlEscaped());
+                title = " title=\""_L1 + title.toHtmlEscaped() + u'"';
             QMimeData *data = new QMimeData();
             data->setText(urlString);
-            if (d->view->lastContextMenuRequest()->mediaType()
-                == QWebEngineContextMenuRequest::MediaTypeAudio)
-                data->setHtml(QStringLiteral("<audio src=\"") + urlString + QStringLiteral("\"") + title +
-                              QStringLiteral("></audio>"));
-            else
-                data->setHtml(QStringLiteral("<video src=\"") + urlString + QStringLiteral("\"") + title +
-                              QStringLiteral("></video>"));
+            const bool isAudio = d->view->lastContextMenuRequest()->mediaType()
+                    == QWebEngineContextMenuRequest::MediaTypeAudio;
+            const auto avTagName = isAudio ? "audio"_L1 : "video"_L1;
+            const QString html = u'<' + avTagName + "src=\""_L1 + urlString + u'"' + title
+                    + "></"_L1 + avTagName + u'>';
+            data->setHtml(html);
             data->setUrls(QList<QUrl>() << d->view->lastContextMenuRequest()->mediaUrl());
             QGuiApplication::clipboard()->setMimeData(data);
         }
@@ -1491,40 +1490,47 @@ void QWebEnginePage::triggerAction(WebAction action, bool)
         QTimer::singleShot(0, this, [d](){ d->adapter->viewSource(); });
         break;
     case ToggleBold:
-        runJavaScript(QStringLiteral("document.execCommand('bold');"), QWebEngineScript::ApplicationWorld);
+        runJavaScript(u"document.execCommand('bold');"_s, QWebEngineScript::ApplicationWorld);
         break;
     case ToggleItalic:
-        runJavaScript(QStringLiteral("document.execCommand('italic');"), QWebEngineScript::ApplicationWorld);
+        runJavaScript(u"document.execCommand('italic');"_s, QWebEngineScript::ApplicationWorld);
         break;
     case ToggleUnderline:
-        runJavaScript(QStringLiteral("document.execCommand('underline');"), QWebEngineScript::ApplicationWorld);
+        runJavaScript(u"document.execCommand('underline');"_s, QWebEngineScript::ApplicationWorld);
         break;
     case ToggleStrikethrough:
-        runJavaScript(QStringLiteral("document.execCommand('strikethrough');"), QWebEngineScript::ApplicationWorld);
+        runJavaScript(u"document.execCommand('strikethrough');"_s,
+                      QWebEngineScript::ApplicationWorld);
         break;
     case AlignLeft:
-        runJavaScript(QStringLiteral("document.execCommand('justifyLeft');"), QWebEngineScript::ApplicationWorld);
+        runJavaScript(u"document.execCommand('justifyLeft');"_s,
+                      QWebEngineScript::ApplicationWorld);
         break;
     case AlignCenter:
-        runJavaScript(QStringLiteral("document.execCommand('justifyCenter');"), QWebEngineScript::ApplicationWorld);
+        runJavaScript(u"document.execCommand('justifyCenter');"_s,
+                      QWebEngineScript::ApplicationWorld);
         break;
     case AlignRight:
-        runJavaScript(QStringLiteral("document.execCommand('justifyRight');"), QWebEngineScript::ApplicationWorld);
+        runJavaScript(u"document.execCommand('justifyRight');"_s,
+                      QWebEngineScript::ApplicationWorld);
         break;
     case AlignJustified:
-        runJavaScript(QStringLiteral("document.execCommand('justifyFull');"), QWebEngineScript::ApplicationWorld);
+        runJavaScript(u"document.execCommand('justifyFull');"_s,
+                      QWebEngineScript::ApplicationWorld);
         break;
     case Indent:
-        runJavaScript(QStringLiteral("document.execCommand('indent');"), QWebEngineScript::ApplicationWorld);
+        runJavaScript(u"document.execCommand('indent');"_s, QWebEngineScript::ApplicationWorld);
         break;
     case Outdent:
-        runJavaScript(QStringLiteral("document.execCommand('outdent');"), QWebEngineScript::ApplicationWorld);
+        runJavaScript(u"document.execCommand('outdent');"_s, QWebEngineScript::ApplicationWorld);
         break;
     case InsertOrderedList:
-        runJavaScript(QStringLiteral("document.execCommand('insertOrderedList');"), QWebEngineScript::ApplicationWorld);
+        runJavaScript(u"document.execCommand('insertOrderedList');"_s,
+                      QWebEngineScript::ApplicationWorld);
         break;
     case InsertUnorderedList:
-        runJavaScript(QStringLiteral("document.execCommand('insertUnorderedList');"), QWebEngineScript::ApplicationWorld);
+        runJavaScript(u"document.execCommand('insertUnorderedList');"_s,
+                      QWebEngineScript::ApplicationWorld);
         break;
     case ChangeTextDirectionLTR:
         d->adapter->changeTextDirection(true /*left to right*/);
@@ -1748,7 +1754,7 @@ void QWebEnginePagePrivate::setToolTip(const QString &toolTipText)
     \since 5.12
 
     This signal is emitted when the JavaScript \c{window.print()} method is called on the main
-    frame, or the user pressed the print button of PDF viewer plugin.
+    frame, or the user pressed the print button of the PDF viewer plugin.
     Typically, the signal handler can simply call printToPdf().
 
     Since 6.8, this signal is only emitted for the main frame, instead of being emitted for any
@@ -2015,7 +2021,7 @@ void QWebEnginePage::toPlainText(const std::function<void(const QString &)> &res
 
 void QWebEnginePage::setHtml(const QString &html, const QUrl &baseUrl)
 {
-    setContent(html.toUtf8(), QStringLiteral("text/html;charset=UTF-8"), baseUrl);
+    setContent(html.toUtf8(), u"text/html;charset=UTF-8"_s, baseUrl);
 }
 
 void QWebEnginePage::setContent(const QByteArray &data, const QString &mimeType, const QUrl &baseUrl)
@@ -2073,7 +2079,7 @@ QUrl QWebEnginePage::iconUrl() const
 
     By default, this property contains a null icon. If touch icons are disabled
     (see \c QWebEngineSettings::TouchIconsEnabled), the favicon is provided in two sizes
-    (16x16 and 32x32 pixels) encapsulated in \c{QIcon}. Otherwise, single icon is provided
+    (16x16 and 32x32 pixels) encapsulated in \c{QIcon}. Otherwise, a single icon is provided
     with the largest available size.
 
     \sa iconChanged(), iconUrl(), iconUrlChanged(), QWebEngineSettings::TouchIconsEnabled
@@ -2235,7 +2241,7 @@ void QWebEnginePage::setDevToolsPage(QWebEnginePage *devToolsPage)
 
     If remote debugging is enabled (see \l{Qt WebEngine Developer Tools}), the id can be used to
    build the URL to connect to the developer tool websocket:
-   \c{ws://localhost:<debugggin-port>/devtools/page/<id>)}. The websocket can be used to to interact
+   \c{ws://localhost:<debugging-port>/devtools/page/<id>)}. The websocket can be used to to interact
    with the page using the \l{https://chromedevtools.github.io/devtools-protocol/}{DevTools
    Protocol}.
 */
@@ -2284,7 +2290,7 @@ bool QWebEnginePage::javaScriptPrompt(const QUrl &securityOrigin, const QString 
 void QWebEnginePage::javaScriptConsoleMessage(JavaScriptConsoleMessageLevel level, const QString &message, int lineNumber, const QString &sourceID)
 {
     static QLoggingCategory loggingCategory("js", QtWarningMsg);
-    static QByteArray file = sourceID.toUtf8();
+    const QByteArray file = sourceID.toUtf8();
     QMessageLogger logger(file.constData(), lineNumber, nullptr, loggingCategory.categoryName());
 
     switch (level) {
@@ -2526,7 +2532,7 @@ QWebEnginePage::LifecycleState QWebEnginePage::recommendedState() const
   user.
 
   If the page is connected to a \e {view} then this property will be managed
-  automatically by the view according to it's own visibility.
+  automatically by the view according to its own visibility.
 
   \sa lifecycleState
 */

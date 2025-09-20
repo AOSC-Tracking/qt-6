@@ -73,8 +73,7 @@ void DisplaySoftwareOutputSurface::Device::OnSwapBuffers(SwapBuffersCallback swa
         m_swapCompletionCallback = std::move(swap_ack_callback);
     }
 
-    if (auto obs = observer())
-        obs->readyToSwap();
+    readyToSwap();
 }
 
 inline QImage::Format imageFormat(SkColorType colorType)
@@ -85,8 +84,7 @@ inline QImage::Format imageFormat(SkColorType colorType)
     case kRGBA_8888_SkColorType:
         return QImage::Format_RGBA8888_Premultiplied;
     default:
-        Q_UNREACHABLE();
-        return QImage::Format_ARGB32_Premultiplied;
+        Q_UNREACHABLE_RETURN(QImage::Format_ARGB32_Premultiplied);
     }
 }
 

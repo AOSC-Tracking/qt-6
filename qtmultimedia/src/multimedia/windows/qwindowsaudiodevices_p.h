@@ -16,13 +16,14 @@
 //
 
 #include <private/qplatformaudiodevices_p.h>
-#include <private/qcomptr_p.h>
+#include <QtCore/private/qcomptr_p.h>
 #include <private/qcominitializer_p.h>
 #include <private/qwindowsmediafoundation_p.h>
 
 #include <qaudiodevice.h>
 
 struct IAudioClient3;
+struct IMMDevice;
 struct IMMDeviceEnumerator;
 
 QT_BEGIN_NAMESPACE
@@ -36,15 +37,15 @@ public:
     QWindowsAudioDevices();
     virtual ~QWindowsAudioDevices();
 
-    QPlatformAudioSource *createAudioSource(const QAudioDevice &deviceInfo,
+    QPlatformAudioSource *createAudioSource(const QAudioDevice &, const QAudioFormat &,
                                             QObject *parent) override;
-    QPlatformAudioSink *createAudioSink(const QAudioDevice &deviceInfo,
+    QPlatformAudioSink *createAudioSink(const QAudioDevice &, const QAudioFormat &,
                                         QObject *parent) override;
-
-    void prepareAudio() override;
 
     using QPlatformAudioDevices::onAudioInputsChanged;
     using QPlatformAudioDevices::onAudioOutputsChanged;
+
+    QLatin1String backendName() const override { return QLatin1String{ "WASAPI" }; }
 
 protected:
     QList<QAudioDevice> findAudioInputs() const override;
@@ -57,10 +58,6 @@ private:
 
     ComPtr<IMMDeviceEnumerator> m_deviceEnumerator;
     ComPtr<CMMNotificationClient> m_notificationClient;
-    // The "warm-up" audio client is required to run in the background in order to keep audio engine
-    // ready for audio output immediately after creating any other subsequent audio client.
-    ComPtr<IAudioClient3> m_warmUpAudioClient;
-    std::atomic_bool m_isAudioClientWarmedUp = false;
 
     friend CMMNotificationClient;
 };

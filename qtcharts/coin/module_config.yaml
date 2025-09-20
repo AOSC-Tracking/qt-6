@@ -6,12 +6,16 @@ accept_configuration:
 
 instructions:
   Build:
+    - type: EnvironmentVariable
+      variableName: VERIFY_SOURCE_SBOM
+      variableValue: "ON"
     - !include "{{qt/qtbase}}/coin_module_build_template_v2.yaml"
 
   Test:
     - type: Group
       instructions:
         - !include "{{qt/qtbase}}/coin_module_test_template_v3.yaml"
+        - !include "{{qt/qtbase}}/coin_module_test_docs.yaml"
       disable_if:
         condition: or
         conditions:

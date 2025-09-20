@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.16)
 set(proto_files "${CMAKE_CURRENT_LIST_DIR}/../proto/clientguide.proto")
 
 find_package(Qt6 COMPONENTS Protobuf Grpc)
-qt_standard_project_setup(REQUIRES 6.8)
+qt_standard_project_setup(REQUIRES 6.9)
 
 qt_add_executable(clientguide_client main.cpp)
 
@@ -20,6 +20,9 @@ qt_add_grpc(clientguide_client CLIENT
 
 target_link_libraries(clientguide_client PRIVATE Qt6::Protobuf Qt6::Grpc)
 #! [0]
+
+target_compile_definitions(clientguide_client PRIVATE
+        SERVER_PATH="$<TARGET_FILE:clientguide_server>")
 
 install(TARGETS clientguide_client
     RUNTIME DESTINATION "${INSTALL_EXAMPLEDIR}"

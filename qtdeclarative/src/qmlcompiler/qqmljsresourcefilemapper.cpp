@@ -20,7 +20,7 @@ QQmlJSResourceFileMapper::Filter QQmlJSResourceFileMapper::allQmlJSFilter() {
 QQmlJSResourceFileMapper::Filter QQmlJSResourceFileMapper::localFileFilter(const QString &file)
 {
     return Filter {
-        QFileInfo(file).canonicalFilePath(),
+        QDir::cleanPath(QFileInfo(file).absoluteFilePath()),
         QStringList(),
         File
     };
@@ -60,7 +60,7 @@ bool QQmlJSResourceFileMapper::isEmpty() const
     return qrcPathToFileSystemPath.isEmpty();
 }
 
-bool QQmlJSResourceFileMapper::isFile(const QString &resourcePath) const
+bool QQmlJSResourceFileMapper::isFile(QStringView resourcePath) const
 {
     for (const auto &entry : qrcPathToFileSystemPath) {
         if (entry.resourcePath == resourcePath)

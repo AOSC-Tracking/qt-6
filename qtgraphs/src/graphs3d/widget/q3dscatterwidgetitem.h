@@ -1,8 +1,8 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef Q3DSCATTERWIDGETITEM_H
-#define Q3DSCATTERWIDGETITEM_H
+#ifndef QTGRAPHS_Q3DSCATTERWIDGETITEM_H
+#define QTGRAPHS_Q3DSCATTERWIDGETITEM_H
 
 #include <QtGraphs/qscatter3dseries.h>
 #include <QtGraphs/qvalue3daxis.h>

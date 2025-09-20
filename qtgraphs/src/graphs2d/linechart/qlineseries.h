@@ -1,8 +1,8 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QLINESERIES_H
-#define QLINESERIES_H
+#ifndef QTGRAPHS_QLINESERIES_H
+#define QTGRAPHS_QLINESERIES_H
 
 #include <QtGraphs/qxyseries.h>
 #include <QtGraphs/qgraphsglobal.h>
@@ -46,4 +46,4 @@ private:
 
 QT_END_NAMESPACE
 
-#endif // QLINESERIES_H
+#endif // QTGRAPHS_QLINESERIES_H

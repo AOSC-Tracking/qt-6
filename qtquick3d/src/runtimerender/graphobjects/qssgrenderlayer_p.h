@@ -49,6 +49,12 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderLayer : public QSSGRenderNode
         ProgressiveAA
     };
 
+    enum class TAAMode : quint8
+    {
+        Off,
+        On
+    };
+
     enum class AAQuality : quint8
     {
         Normal = 2,
@@ -121,6 +127,12 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderLayer : public QSSGRenderNode
         F0
     };
 
+    enum class OITMethod : quint8
+    {
+        None = 0,
+        WeightedBlended
+    };
+
     // First effect in a list of effects.
     QSSGRenderEffect *firstEffect;
     QSSGLayerRenderData *renderData = nullptr;
@@ -157,11 +169,12 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderLayer : public QSSGRenderNode
 
     QSSGRenderImage *skyBoxCubeMap = nullptr;
 
-    bool temporalAAEnabled;
+    TAAMode temporalAAMode { TAAMode::Off };
     float temporalAAStrength;
-    bool ssaaEnabled;
     float ssaaMultiplier;
     bool specularAAEnabled;
+    OITMethod oitMethod;
+    bool oitMethodDirty;
 
     //TODO: move render state somewhere more suitable
     bool temporalAAIsActive;
@@ -225,6 +238,7 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderLayer : public QSSGRenderNode
 
     bool wireframeMode = false;
     bool drawDirectionalLightShadowBoxes = false;
+    bool drawPointLightShadowBoxes = false;
     bool drawShadowCastingBounds = false;
     bool drawShadowReceivingBounds = false;
     bool drawCascades = false;
@@ -245,6 +259,25 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderLayer : public QSSGRenderNode
     void setImportScene(QSSGRenderNode &rootNode);
     void removeImportScene(QSSGRenderNode &rootNode);
 
+    [[nodiscard]] bool isMsaaEnabled() const { return antialiasingMode == AAMode::MSAA; }
+    [[nodiscard]] bool isSsaaEnabled() const { return antialiasingMode == AAMode::SSAA; }
+    [[nodiscard]] bool isProgressiveAAEnabled() const { return antialiasingMode == AAMode::ProgressiveAA; }
+    // NOTE: Temporal AA is not enabled when MSAA is enabled.
+    [[nodiscard]] bool isTemporalAAEnabled() const { return (temporalAAMode == TAAMode::On) && !isMsaaEnabled(); }
+
+    static constexpr float ssaaMultiplierForQuality(QSSGRenderLayer::AAQuality quality)
+    {
+        switch (quality) {
+        case QSSGRenderLayer::AAQuality::Normal:
+            return 1.2f;
+        case QSSGRenderLayer::AAQuality::High:
+            return 1.5f;
+        case QSSGRenderLayer::AAQuality::VeryHigh:
+            return 2.0f;
+        }
+
+        return 1.5f; // QSSGRenderLayer::AAQuality::High
+    }
 };
 QT_END_NAMESPACE
 

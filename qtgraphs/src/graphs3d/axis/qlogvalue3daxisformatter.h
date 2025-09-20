@@ -1,8 +1,8 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QLOGVALUE3DAXISFORMATTER_H
-#define QLOGVALUE3DAXISFORMATTER_H
+#ifndef QTGRAPHS_QLOGVALUE3DAXISFORMATTER_H
+#define QTGRAPHS_QLOGVALUE3DAXISFORMATTER_H
 
 #include <QtGraphs/qvalue3daxisformatter.h>
 
@@ -18,6 +18,7 @@ class Q_GRAPHS_EXPORT QLogValue3DAxisFormatter : public QValue3DAxisFormatter
     Q_PROPERTY(bool autoSubGrid READ autoSubGrid WRITE setAutoSubGrid NOTIFY autoSubGridChanged FINAL)
     Q_PROPERTY(bool edgeLabelsVisible READ edgeLabelsVisible WRITE setEdgeLabelsVisible NOTIFY
                    edgeLabelsVisibleChanged FINAL)
+    QML_NAMED_ELEMENT(LogValue3DAxisFormatter)
 
 protected:
     explicit QLogValue3DAxisFormatter(QLogValue3DAxisFormatterPrivate &d, QObject *parent = nullptr);

@@ -49,7 +49,7 @@ public:
 
     QNetworkAccessManager *networkAccessManager();
     void setStatus(QAbstractOAuth::Status status);
-    static QByteArray generateRandomString(quint8 length);
+    static QByteArray generateRandomBase64String(quint8 length);
     void setExtraTokens(const QVariantMap &tokens);
 
     const QLoggingCategory loggingCategory;
@@ -60,7 +60,6 @@ public:
     QUrl authorizationUrl;
     QVariantMap extraTokens;
     QAbstractOAuth::Status status = QAbstractOAuth::Status::NotAuthenticated;
-    QNetworkAccessManager::Operation operation;
     QPointer<QAbstractOAuthReplyHandler> replyHandler;
     QScopedPointer<QOAuthOobReplyHandler> defaultReplyHandler;
     QPointer<QNetworkAccessManager> networkAccessManagerPointer;

@@ -12,6 +12,8 @@
 #include <cerrno>
 
 #include "base/compiler_specific.h"
+#include "base/containers/span.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "media/base/audio_codecs.h"
@@ -78,6 +80,24 @@ inline void ScopedPtrAVFreeFrame::operator()(void* x) const {
   AVFrame* frame = static_cast<AVFrame*>(x);
   av_frame_free(&frame);
 }
+
+// Returns the data from `packet` as a `base::span`. `packet` must be a valid
+// `AVPacket` returned from ffmpeg.
+inline base::span<const uint8_t> AVPacketData(const AVPacket& packet) {
+  // SAFETY: Once initialized by ffmpeg, an `AVPacket` will describe a valid
+  // buffer. We assume that callers do not create uninitialized `AVPacket`s on
+  // the stack, as ffmpeg's documentation says to only create `AVPacket`s with
+  // `av_packet_alloc`, or `ScopedAVPacket` in Chromium. This is not enforced
+  // due to limitations from ffmpeg being a C API.
+  return UNSAFE_BUFFERS(
+      base::span(packet.data, base::checked_cast<size_t>(packet.size)));
+}
+
+#if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(USE_SYSTEM_FFMPEG)
+// Systemlib friendly version of avcodec_find_decoder that respects the
+// whitelisted codecs.
+MEDIA_EXPORT const AVCodec* FindDecoder(AVCodecID id, const char* whitelist);
+#endif
 
 // Converts an int64_t timestamp in |time_base| units to a base::TimeDelta.
 // For example if |timestamp| equals 11025 and |time_base| equals {1, 44100}
@@ -150,6 +170,9 @@ std::string AVErrorToString(int errnum);
 // Returns a 32-bit hash for the given codec name.  See the VerifyUmaCodecHashes
 // unit test for more information and code for generating the histogram XML.
 MEDIA_EXPORT int32_t HashCodecName(const char* codec_name);
+
+// Returns the list of allowed decoders for audio.
+MEDIA_EXPORT const char* GetAllowedAudioDecoders();
 
 }  // namespace media
 

@@ -2,22 +2,24 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
 #include <QtTest/QtTest>
-#include <QtCore/qlocale.h>
-#include <QtCore/QTemporaryDir>
-#include <QtCore/QSharedPointer>
-#include <QtCore/QScopedPointer>
+#include <QtCore/qtemporarydir.h>
+
+#include <QtMultimedia/qaudio.h>
+#include <QtMultimedia/qaudiodevice.h>
+#include <QtMultimedia/qaudioformat.h>
+#include <QtMultimedia/qaudiosink.h>
+#include <QtMultimedia/qmediadevices.h>
+#include <QtMultimedia/qwavedecoder.h>
+#include <QtMultimedia/private/qaudiosystem_p.h>
+#include <QtMultimedia/private/qplatformmediaintegration_p.h>
 
 #include <private/audiogenerationutils_p.h>
-#include <qaudiosink.h>
-#include <qaudiodevice.h>
-#include <qaudioformat.h>
-#include <qaudio.h>
-#include <qmediadevices.h>
-#include <qwavedecoder.h>
-
+#include <private/mediabackendutils_p.h>
+#include <private/multimedia_debug_support_p.h>
+#include <private/osdetection_p.h>
 #include <private/qmockiodevice_p.h>
 
-#define AUDIO_BUFFER 192000
+#include <memory>
 
 using AudioSinkInitializer = bool (*)(QAudioSink &);
 
@@ -41,6 +43,20 @@ public:
     bool signalEnd = false;
 };
 
+static bool isPulseAudioBackend()
+{
+    return QPlatformMediaIntegration::audioBackendName() == "PulseAudio";
+}
+
+static bool underrunIsAnError()
+{
+#ifdef Q_OS_APPLE
+    return false;
+#endif
+
+    return !(isPulseAudioBackend());
+}
+
 class tst_QAudioSink : public QObject
 {
     Q_OBJECT
@@ -57,6 +73,9 @@ private slots:
 
     void bufferSize_data();
     void bufferSize();
+    void bufferSize_getValidDefault();
+    void bufferSize_setAfterStart();
+    void bufferSize_updatedAfterStart();
 
     void stopWhileStopped();
     void suspendWhileStopped();
@@ -86,8 +105,13 @@ private slots:
     void stop_stopsAudioSink_whenInvokedUponFirstStateChange_data();
     void stop_stopsAudioSink_whenInvokedUponFirstStateChange();
 
+    void stateChanged_stringBasedConnect();
+
+    void callbackAPI();
+    void callbackAPI_startFailsWithWrongType();
+
 private:
-    using FilePtr = QSharedPointer<QFile>;
+    using FilePtr = std::shared_ptr<QFile>;
 
     static QString formatToFileName(const QAudioFormat &format);
     static QString dumpStateSignalSpy(const QSignalSpy &stateSignalSpy);
@@ -104,7 +128,7 @@ private:
     QAudioDevice audioDevice;
     QList<QAudioFormat> testFormats;
     QList<FilePtr> audioFiles;
-    QScopedPointer<QTemporaryDir> m_temporaryDir;
+    std::unique_ptr<QTemporaryDir> m_temporaryDir;
 };
 
 QString tst_QAudioSink::formatToFileName(const QAudioFormat &format)
@@ -122,7 +146,7 @@ QString tst_QAudioSink::dumpStateSignalSpy(const QSignalSpy& stateSignalSpy) {
     {
         if (!std::exchange(first, false))
             result += ',';
-        result += QString::number(params.front().value<QAudio::State>());
+        result += qAsQString(params.front().value<QAudio::State>());
     }
     result.append(']');
     return result;
@@ -186,8 +210,8 @@ void tst_QAudioSink::initTestCase()
     // Only perform tests if audio output device exists
     const QList<QAudioDevice> devices = QMediaDevices::audioOutputs();
 
-    if (devices.size() <= 0)
-        QSKIP("No audio backend");
+    if (devices.isEmpty())
+        QSKIP("No audio outputs found");
 
     audioDevice = QMediaDevices::defaultAudioOutput();
 
@@ -199,39 +223,27 @@ void tst_QAudioSink::initTestCase()
             testFormats.append(audioDevice.preferredFormat());
     }
 
-    // PCM 11025 mono S16LE
-    format.setChannelCount(1);
-    format.setSampleRate(11025);
     format.setSampleFormat(QAudioFormat::Int16);
-    if (audioDevice.isFormatSupported(format))
-        testFormats.append(format);
+    for (int channels : { 1, 2 }) {
+        format.setChannelCount(channels);
+        for (int rate : { 44100, 48000 }) {
+            format.setSampleRate(rate);
 
-    // PCM 22050 mono S16LE
-    format.setSampleRate(22050);
-    if (audioDevice.isFormatSupported(format))
-        testFormats.append(format);
+            if (audioDevice.isFormatSupported(format))
+                testFormats.append(format);
+        }
+    }
 
-    // PCM 22050 stereo S16LE
-    format.setChannelCount(2);
-    if (audioDevice.isFormatSupported(format))
-        testFormats.append(format);
-
-    // PCM 44100 stereo S16LE
-    format.setSampleRate(44100);
-    if (audioDevice.isFormatSupported(format))
 #ifdef Q_OS_ANDROID
-        // Testset crash on emulator x86 with API 23 (Android 6) for 44,1 MHz.
-        // It is not happen on x86 with API 24. What is more, there is no crash when
-        // tested sample rate is 44,999 or any other value. Seems like problem on
-        // emulator side. Let's turn off this frequency for API 23
-        if (QNativeInterface::QAndroidApplication::sdkVersion() > __ANDROID_API_M__)
+    // Testset crash on emulator x86 with API 23 (Android 6) for 44,1 MHz.
+    // It is not happen on x86 with API 24. What is more, there is no crash when
+    // tested sample rate is 44,999 or any other value. Seems like problem on
+    // emulator side. Let's turn off this frequency for API 23
+    if (QNativeInterface::QAndroidApplication::sdkVersion() <= __ANDROID_API_M__)
+        testFormats.removeIf([](const QAudioFormat &fmt) {
+            return fmt.sampleRate() == 44100;
+        });
 #endif
-        testFormats.append(format);
-
-    // PCM 48000 stereo S16LE
-    format.setSampleRate(48000);
-    if (audioDevice.isFormatSupported(format))
-        testFormats.append(format);
 
     QVERIFY(testFormats.size());
 
@@ -252,7 +264,7 @@ void tst_QAudioSink::initTestCase()
                                  + formatToFileName(format) + QStringLiteral(".wav");
         FilePtr file(new QFile(fileName));
         QVERIFY2(file->open(QIODevice::WriteOnly), qPrintable(file->errorString()));
-        QWaveDecoder waveDecoder(file.data(), format);
+        QWaveDecoder waveDecoder(file.get(), format);
         if (waveDecoder.open(QIODevice::WriteOnly)) {
             waveDecoder.write(data);
             waveDecoder.close();
@@ -336,6 +348,8 @@ void tst_QAudioSink::invalidFormat()
     QVERIFY2((audioSink.error() == QAudio::NoError),
              "error() was not set to QAudio::NoError before start()");
 
+    QTest::ignoreMessage(QtWarningMsg, "QAudioSink::start: QAudioFormat not valid");
+
     audioSink.start();
     // Check that error is raised
     QTRY_VERIFY2((audioSink.error() == QAudio::OpenError),
@@ -370,6 +384,40 @@ void tst_QAudioSink::bufferSize()
                      .arg(audioSink.bufferSize())
                      .toUtf8()
                      .constData());
+}
+
+void tst_QAudioSink::bufferSize_getValidDefault()
+{
+#if !(defined(Q_OS_MACOS) || defined(Q_OS_WIN))
+    QSKIP("bufferSize validation only fully implemented on Mac and Windows");
+#endif
+
+    QAudioSink audioSink(audioDevice.preferredFormat(), this);
+    QCOMPARE_GE(audioSink.bufferSize(),
+                audioDevice.preferredFormat().bytesForDuration(250'000)); // 250ms
+}
+
+void tst_QAudioSink::bufferSize_setAfterStart()
+{
+#if !(defined(Q_OS_MACOS) || defined(Q_OS_WIN))
+    QSKIP("bufferSize validation only fully implemented on Mac and Windows");
+#endif
+
+    QAudioSink audioSink(audioDevice.preferredFormat(), this);
+    audioSink.start();
+    QCOMPARE_GE(audioSink.bufferSize(), audioDevice.preferredFormat().bytesForFrames(32));
+}
+
+void tst_QAudioSink::bufferSize_updatedAfterStart()
+{
+#if !(defined(Q_OS_MACOS) || defined(Q_OS_WIN))
+    QSKIP("bufferSize validation only fully implemented on Mac and Windows");
+#endif
+
+    QAudioSink audioSink(audioDevice.preferredFormat(), this);
+    audioSink.setBufferSize(1); // small enough force a size increase
+    audioSink.start();
+    QCOMPARE_GE(audioSink.bufferSize(), audioDevice.preferredFormat().bytesForFrames(32));
 }
 
 void tst_QAudioSink::stopWhileStopped()
@@ -463,7 +511,7 @@ void tst_QAudioSink::pull()
     audioFile->open(QIODevice::ReadOnly);
     audioFile->seek(QWaveDecoder::headerLength());
 
-    audioSink.start(audioFile.data());
+    audioSink.start(audioFile.get());
 
     // Check that QAudioSink immediately transitions to ActiveState
     QTRY_VERIFY2((stateSignal.size() == 1),
@@ -529,7 +577,7 @@ void tst_QAudioSink::pullSuspendResume()
     audioFile->open(QIODevice::ReadOnly);
     audioFile->seek(QWaveDecoder::headerLength());
 
-    audioSink.start(audioFile.data());
+    audioSink.start(audioFile.get());
     // Check that QAudioSink immediately transitions to ActiveState
     QTRY_VERIFY2((stateSignal.size() == 1),
                  QStringLiteral("didn't emit signal on start(), got %1 signals instead")
@@ -566,7 +614,11 @@ void tst_QAudioSink::pullSuspendResume()
     qint64 processedUs = audioSink.processedUSecs();
     QTest::qWait(100);
     QVERIFY(audioSink.elapsedUSecs() > elapsedUs);
-    QVERIFY(audioSink.processedUSecs() == processedUs);
+    if (isPulseAudioBackend())
+        // suspend is asynchronous on pulseaudio, so we give it 50ms to stop
+        QCOMPARE_LE(audioSink.processedUSecs(), processedUs + 50'000);
+    else
+        QCOMPARE(audioSink.processedUSecs(), processedUs);
 
     audioSink.resume();
 
@@ -613,10 +665,11 @@ void tst_QAudioSink::pullResumeFromUnderrun()
 {
     constexpr int chunkSize = 128;
 
-    QAudioFormat format;
-    format.setChannelCount(1);
-    format.setSampleFormat(QAudioFormat::UInt8);
-    format.setSampleRate(8000);
+    QAudioDevice output = QMediaDevices::defaultAudioOutput();
+    if (output.isNull())
+        QSKIP("no audio output detected");
+
+    QAudioFormat format = output.preferredFormat();
 
     AudioPullSource audioSource;
     QAudioSink audioSink(format, this);
@@ -634,7 +687,9 @@ void tst_QAudioSink::pullResumeFromUnderrun()
 
     QTRY_COMPARE(stateSignal.size(), 1);
     QCOMPARE(audioSink.state(), QAudio::IdleState);
-    QCOMPARE(audioSink.error(), QAudio::UnderrunError);
+    if (underrunIsAnError())
+        QCOMPARE(audioSink.error(), QAudio::UnderrunError);
+
     stateSignal.clear();
 
     QTest::qWait(300);
@@ -652,8 +707,9 @@ void tst_QAudioSink::pullResumeFromUnderrun()
     QCOMPARE(audioSink.state(), QAudio::IdleState);
 
     // we played two chunks, sample rate is per second
-    const int expectedUSecs = (double(chunkSize) / double(format.sampleRate()))
-                            * 2 * 1000 * 1000;
+    const int expectedUSecs =
+            (double(chunkSize) / double(format.sampleRate()) / format.bytesPerFrame()) * 2 * 1000
+            * 1000;
     QTRY_COMPARE(audioSink.processedUSecs(), expectedUSecs);
 }
 
@@ -680,6 +736,7 @@ void tst_QAudioSink::push()
     audioFile->seek(QWaveDecoder::headerLength());
 
     QIODevice *feed = audioSink.start();
+    QSignalSpy dataWrittenToDeviceSpy(feed, &QIODevice::bytesWritten);
 
     // Check that QAudioSink immediately transitions to IdleState
     QTRY_VERIFY2((stateSignal.size() == 1),
@@ -743,7 +800,18 @@ void tst_QAudioSink::push()
     QVERIFY2((audioSink.elapsedUSecs() == (qint64)0),
              "elapsedUSecs() not equal to zero in StoppedState");
 
-    audioFile->close();
+    if (isWindows || isMacOS || isPulseAudioBackend()) {
+        QVERIFY(!dataWrittenToDeviceSpy.empty());
+        auto allBytesWritten = [&] {
+            qint64 total = 0;
+            for (const auto &params : dataWrittenToDeviceSpy) {
+                total += params.at(0).toLongLong();
+            }
+            return total;
+        }();
+
+        QCOMPARE_EQ(allBytesWritten, audioFile->pos() - QWaveDecoder::headerLength());
+    }
 }
 
 void tst_QAudioSink::pushSuspendResume()
@@ -827,8 +895,12 @@ void tst_QAudioSink::pushSuspendResume()
     const qint64 elapsedUs = audioSink.elapsedUSecs();
     const qint64 processedUs = audioSink.processedUSecs();
     QTest::qWait(100);
-    QVERIFY(audioSink.elapsedUSecs() > elapsedUs);
-    QVERIFY(audioSink.processedUSecs() == processedUs);
+    QCOMPARE_GT(audioSink.elapsedUSecs(), elapsedUs);
+    if (isPulseAudioBackend())
+        // suspend is asynchronous on pulseaudio, so we give it 50ms to stop
+        QCOMPARE_LE(audioSink.processedUSecs(), processedUs + 50'000);
+    else
+        QCOMPARE(audioSink.processedUSecs(), processedUs);
 
     audioSink.resume();
 
@@ -964,9 +1036,8 @@ void tst_QAudioSink::pushUnderrun()
 
     // Check that 'elapsed' increases
     QTest::qWait(40);
-    QVERIFY2((audioSink.elapsedUSecs() > 0), "elapsedUSecs() is still zero after start()");
-    QVERIFY2((audioSink.processedUSecs() == qint64(0)),
-             "processedUSecs() is not zero after start()");
+    QCOMPARE_GT(audioSink.elapsedUSecs(), 0);
+    QCOMPARE(audioSink.processedUSecs(), qint64(0));
 
     qint64 written = 0;
 
@@ -998,8 +1069,10 @@ void tst_QAudioSink::pushUnderrun()
                      .toUtf8()
                      .constData());
     QVERIFY2((audioSink.state() == QAudio::IdleState), "didn't transition to IdleState, no data");
-    QVERIFY2((audioSink.error() == QAudio::UnderrunError),
-             "error state is not equal to QAudio::UnderrunError, no data");
+    if (underrunIsAnError())
+        QVERIFY2((audioSink.error() == QAudio::UnderrunError),
+                 "error state is not equal to QAudio::UnderrunError, no data");
+
     stateSignal.clear();
 
     // Play rest of the clip
@@ -1042,8 +1115,7 @@ void tst_QAudioSink::pushUnderrun()
              "didn't transitions to StoppedState after stop()");
 
     QVERIFY2((audioSink.error() == QAudio::NoError), "error() is not QAudio::NoError after stop()");
-    QVERIFY2((audioSink.elapsedUSecs() == (qint64)0),
-             "elapsedUSecs() not equal to zero in StoppedState");
+    QCOMPARE(audioSink.elapsedUSecs(), 0);
 
     audioFile->close();
 }
@@ -1108,6 +1180,61 @@ void tst_QAudioSink::stop_stopsAudioSink_whenInvokedUponFirstStateChange()
                                               // TODO: replace with QVERIFY
 
     QTRY_COMPARE(audioSink.state(), QtAudio::State::StoppedState);
+}
+
+void tst_QAudioSink::stateChanged_stringBasedConnect()
+{
+    const QAudioDevice defaultAudioOutputDevice = QMediaDevices::defaultAudioOutput();
+
+    QAudioSink audiosink(defaultAudioOutputDevice, defaultAudioOutputDevice.preferredFormat());
+
+    QSignalSpy stateSignal(&audiosink, SIGNAL(stateChanged(QAudio::State)));
+
+    audiosink.start();
+    QTRY_VERIFY(!stateSignal.empty());
+}
+
+void tst_QAudioSink::callbackAPI()
+{
+#if QT_CONFIG(thread)
+    using namespace std::chrono_literals;
+
+    QAudioFormat format = audioDevice.preferredFormat();
+    format.setSampleFormat(QAudioFormat::SampleFormat::Float);
+
+    QAudioSink audioSink(audioDevice, format);
+    QPlatformAudioSink *platformSink = QPlatformAudioSink::get(audioSink);
+    if (!platformSink->hasCallbackAPI())
+        QSKIP("Callback API not supported by this backend");
+
+    QSemaphore sync;
+
+    platformSink->start([&](QSpan<float> outputBuffer) {
+        QCOMPARE_GT(outputBuffer.size(), 0);
+        sync.release();
+    });
+    QCOMPARE(audioSink.error(), QAudio::Error::NoError);
+
+    bool callbackExecuted = sync.try_acquire_for(1s);
+    QVERIFY(callbackExecuted);
+#endif
+}
+
+void tst_QAudioSink::callbackAPI_startFailsWithWrongType()
+{
+    using namespace std::chrono_literals;
+
+    QAudioFormat format = audioDevice.preferredFormat();
+    format.setSampleFormat(QAudioFormat::SampleFormat::Float);
+
+    QAudioSink audioSink(audioDevice, format);
+    QPlatformAudioSink *platformSink = QPlatformAudioSink::get(audioSink);
+    if (!platformSink->hasCallbackAPI())
+        QSKIP("Callback API not supported by this backend");
+
+    platformSink->start([&](QSpan<int32_t>) {
+    });
+    QCOMPARE(audioSink.error(), QAudio::Error::OpenError);
 }
 
 QTEST_MAIN(tst_QAudioSink)

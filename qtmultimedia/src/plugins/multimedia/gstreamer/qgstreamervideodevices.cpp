@@ -20,7 +20,7 @@
 
 QT_BEGIN_NAMESPACE
 
-static Q_LOGGING_CATEGORY(ltVideoDevices, "qt.multimedia.gstreamer.videodevices");
+Q_STATIC_LOGGING_CATEGORY(ltVideoDevices, "qt.multimedia.gstreamer.videodevices");
 
 QGstreamerVideoDevices::QGstreamerVideoDevices(QPlatformMediaIntegration *integration)
     : QPlatformVideoDevices(integration),
@@ -57,7 +57,7 @@ QGstreamerVideoDevices::~QGstreamerVideoDevices()
     gst_device_monitor_stop(m_deviceMonitor.get());
 }
 
-QList<QCameraDevice> QGstreamerVideoDevices::videoInputs() const
+QList<QCameraDevice> QGstreamerVideoDevices::findVideoInputs() const
 {
     QList<QCameraDevice> devices;
 
@@ -157,8 +157,13 @@ void QGstreamerVideoDevices::addDevice(QGstDeviceHandle device)
             qCDebug(ltVideoDevices) << "V4L2_CAP_META_CAPTURE device detected" << p;
             return;
         }
-        if (!(cap.capabilities & V4L2_CAP_VIDEO_CAPTURE)) {
-            qCDebug(ltVideoDevices) << "not a V4L2_CAP_VIDEO_CAPTURE device" << p;
+
+        constexpr uint32_t videoCaptureCapabilities =
+                V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_VIDEO_CAPTURE_MPLANE;
+
+        if (!(cap.capabilities & videoCaptureCapabilities)) {
+            qCDebug(ltVideoDevices)
+                    << "not a V4L2_CAP_VIDEO_CAPTURE or V4L2_CAP_VIDEO_CAPTURE_MPLANE device" << p;
             return;
         }
         if (!(cap.capabilities & V4L2_CAP_STREAMING)) {
@@ -194,8 +199,10 @@ void QGstreamerVideoDevices::addDevice(QGstDeviceHandle device)
             std::move(device),
             QByteArray::number(m_idGenerator),
     });
-    emit videoInputsChanged();
+
     m_idGenerator++;
+
+    onVideoInputsChanged();
 }
 
 void QGstreamerVideoDevices::removeDevice(QGstDeviceHandle device)
@@ -205,7 +212,7 @@ void QGstreamerVideoDevices::removeDevice(QGstDeviceHandle device)
 
     if (it != m_videoSources.end()) {
         m_videoSources.erase(it);
-        emit videoInputsChanged();
+        onVideoInputsChanged();
     }
 }
 

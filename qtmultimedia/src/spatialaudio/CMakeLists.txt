@@ -10,6 +10,12 @@ qt_internal_add_module(SpatialAudio
         qspatialsound.cpp qspatialsound.h qspatialsound_p.h
         qambientsound.cpp qambientsound.h qambientsound_p.h
         qtspatialaudioglobal.h qtspatialaudioglobal_p.h
+    DEFINES
+        QT_NO_CAST_FROM_ASCII
+        QT_NO_CAST_TO_ASCII
+        QT_NO_CONTEXTLESS_CONNECT
+        QT_NO_QPAIR
+        QT_USE_NODISCARD_FILE_OPEN
     INCLUDE_DIRECTORIES
         "../3rdparty/resonance-audio/resonance_audio"
         "../3rdparty/resonance-audio"

@@ -1,8 +1,8 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
-#ifndef QDARWINMEDIADEVICES_H
-#define QDARWINMEDIADEVICES_H
+#ifndef QDARWINAUDIODEVICES_H
+#define QDARWINAUDIODEVICES_H
 
 //
 //  W A R N I N G
@@ -29,13 +29,15 @@ public:
     QDarwinAudioDevices();
     ~QDarwinAudioDevices() override;
 
-    QPlatformAudioSource *createAudioSource(const QAudioDevice &info,
+    QPlatformAudioSource *createAudioSource(const QAudioDevice &, const QAudioFormat &,
                                             QObject *parent) override;
-    QPlatformAudioSink *createAudioSink(const QAudioDevice &info,
+    QPlatformAudioSink *createAudioSink(const QAudioDevice &, const QAudioFormat &,
                                         QObject *parent) override;
 
     using QPlatformAudioDevices::updateAudioInputsCache;
     using QPlatformAudioDevices::updateAudioOutputsCache;
+
+    QLatin1String backendName() const override { return QLatin1String{ "CoreAudio" }; }
 
 protected:
     QList<QAudioDevice> findAudioInputs() const override;
@@ -44,4 +46,4 @@ protected:
 
 QT_END_NAMESPACE
 
-#endif
+#endif // QDARWINAUDIODEVICES_H

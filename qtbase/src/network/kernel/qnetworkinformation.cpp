@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 // #define DEBUG_LOADING
 
@@ -418,6 +419,12 @@ QNetworkInformationBackendFactory::~QNetworkInformationBackendFactory()
     successful load() until destruction of the QCoreApplication object.
     If you destroy and re-create the QCoreApplication object you must call
     load() again.
+
+    \note Because the class is a singleton while also relying on
+    QCoreApplication, QNetworkInformation should always first be loaded
+    in the same thread as the QCoreApplication object. This is because the
+    object will also be destroyed in this thread, and various backend-specific
+    components may rely on being destroyed in the same thread as it is created.
 
     \sa QNetworkInformation::Feature
 */

@@ -39,9 +39,8 @@
 
 QT_BEGIN_NAMESPACE
 
-Q_LOGGING_CATEGORY(lcEv, "qt.quick3d.event")
-Q_LOGGING_CATEGORY(lcPick, "qt.quick3d.pick")
-Q_LOGGING_CATEGORY(lcHover, "qt.quick3d.hover")
+Q_STATIC_LOGGING_CATEGORY(lcEv, "qt.quick3d.event")
+Q_STATIC_LOGGING_CATEGORY(lcPick, "qt.quick3d.pick")
 
 static bool isforceInputHandlingSet()
 {
@@ -189,7 +188,7 @@ public:
 
 /*!
     \qmltype View3D
-    \inherits QQuickItem
+    \inherits Item
     \inqmlmodule QtQuick3D
     \brief Provides a viewport on which to render a 3D scene.
 
@@ -292,6 +291,8 @@ QQuick3DViewport::~QQuick3DViewport()
     delete m_sceneRoot;
     m_sceneRoot = nullptr;
 
+    delete m_builtInEnvironment;
+
     // m_renderStats is tightly coupled with the render thread, so can't delete while we
     // might still be rendering.
     m_renderStats->deleteLater();
@@ -377,7 +378,12 @@ QQuick3DSceneEnvironment *QQuick3DViewport::environment() const
 {
     if (!m_environment) {
         if (!m_builtInEnvironment) {
-            m_builtInEnvironment = new QQuick3DSceneEnvironment(m_sceneRoot);
+            m_builtInEnvironment = new QQuick3DSceneEnvironment;
+            // Check that we are on the "correct" thread, and move the environment to the
+            // correct thread if not. This can happen when environment() is called from the
+            // sync and no scene environment has been set.
+            if (QThread::currentThread() != m_sceneRoot->thread())
+                m_builtInEnvironment->moveToThread(m_sceneRoot->thread());
             m_builtInEnvironment->setParentItem(m_sceneRoot);
         }
 
@@ -1867,7 +1873,7 @@ bool QQuick3DViewport::singlePointPick(QSinglePointEvent *event, const QVector3D
     for (const auto &pickResult : pickResults) {
         auto [item, position] = getItemAndPosition(pickResult);
         if (!item)
-            continue;
+            break;
         if (item == m_prevMouseItem && (position - m_prevMousePos).manhattanLength() < jitterLimit && !event->button()) {
             withinJitterLimit = true;
             break;
@@ -2098,6 +2104,17 @@ QQuick3DViewport::QQuick3DViewport(PrivateInstanceType type, QQuickItem *parent)
     : QQuick3DViewport(parent)
 {
     m_isXrViewInstance = type == PrivateInstanceType::XrViewInstance;
+}
+
+void QQuick3DViewport::updateCameraForLayer(const QQuick3DViewport &view3D, QSSGRenderLayer &layerNode)
+{
+    layerNode.explicitCameras.clear();
+    if (!view3D.m_multiViewCameras.isEmpty()) {
+        for (QQuick3DCamera *camera : std::as_const(view3D.m_multiViewCameras))
+            layerNode.explicitCameras.append(static_cast<QSSGRenderCamera *>(QQuick3DObjectPrivate::get(camera)->spatialNode));
+    } else if (view3D.camera()) {
+        layerNode.explicitCameras.append(static_cast<QSSGRenderCamera *>(QQuick3DObjectPrivate::get(view3D.camera())->spatialNode));
+    }
 }
 
 QT_END_NAMESPACE

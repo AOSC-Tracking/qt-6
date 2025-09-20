@@ -123,7 +123,7 @@ QT_BEGIN_NAMESPACE
  */
 
 /*!
- * \qmlproperty float Scatter3DSeries::itemSize
+ * \qmlproperty real Scatter3DSeries::itemSize
  *
  * Sets the item size for the series. The size must be between \c 0.0 and
  * \c 1.0. Setting the size to \c 0.0 causes the item size to be automatically
@@ -428,7 +428,7 @@ void QScatter3DSeriesPrivate::createItemLabel()
     static const QString seriesNameTag(QStringLiteral("@seriesName"));
 
     if (m_selectedItem == QScatter3DSeries::invalidSelectionIndex()) {
-        m_itemLabel = hiddenLabelTag;
+        m_itemLabel = QString(hiddenLabelTag);
         return;
     }
 

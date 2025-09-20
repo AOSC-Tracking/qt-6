@@ -37,15 +37,18 @@ public:
     inline void swap(QSet<T> &other) noexcept { q_hash.swap(other.q_hash); }
 
 #ifndef Q_QDOC
-    template <typename U = T>
-    QTypeTraits::compare_eq_result_container<QSet, U> operator==(const QSet<T> &other) const
-    { return q_hash == other.q_hash; }
-    template <typename U = T>
-    QTypeTraits::compare_eq_result_container<QSet, U> operator!=(const QSet<T> &other) const
-    { return q_hash != other.q_hash; }
+private:
+    template <typename U = T, QTypeTraits::compare_eq_result_container<QSet, U> = true>
+    friend bool comparesEqual(const QSet &lhs, const QSet &rhs) noexcept
+    {
+        return lhs.q_hash == rhs.q_hash;
+    }
+    QT_DECLARE_EQUALITY_OPERATORS_HELPER(QSet, QSet, /* non-constexpr */, noexcept,
+            template <typename U = T, QTypeTraits::compare_eq_result_container<QSet, U> = true>)
+public:
 #else
-    bool operator==(const QSet &other) const;
-    bool operator!=(const QSet &other) const;
+    friend bool operator==(const QSet &lhs, const QSet &rhs) noexcept;
+    friend bool operator!=(const QSet &lhs, const QSet &rhs) noexcept;
 #endif
 
     inline qsizetype size() const { return q_hash.size(); }
@@ -203,9 +206,11 @@ public:
     friend QSet operator-(const QSet &lhs, const QSet &rhs) { return QSet(lhs) -= rhs; }
     friend QSet operator-(QSet &&lhs, const QSet &rhs) { lhs -= rhs; return std::move(lhs); }
 
-    QList<T> values() const;
+    inline QList<T> values() const;
 
 private:
+    static inline QSet intersected_helper(const QSet &lhs, const QSet &rhs);
+
     Hash q_hash;
 };
 
@@ -229,34 +234,59 @@ Q_INLINE_TEMPLATE void QSet<T>::reserve(qsizetype asize) { q_hash.reserve(asize)
 template <class T>
 Q_INLINE_TEMPLATE QSet<T> &QSet<T>::unite(const QSet<T> &other)
 {
-    if (q_hash.isSharedWith(other.q_hash))
-        return *this;
-    QSet<T> tmp = other;
-    if (size() < other.size())
-        swap(tmp);
-    for (const auto &e : std::as_const(tmp))
-        insert(e);
+    if (!q_hash.isSharedWith(other.q_hash)) {
+        for (const T &e : other)
+            insert(e);
+    }
     return *this;
 }
 
 template <class T>
 Q_INLINE_TEMPLATE QSet<T> &QSet<T>::intersect(const QSet<T> &other)
 {
-    QSet<T> copy1;
-    QSet<T> copy2;
-    if (size() <= other.size()) {
-        copy1 = *this;
-        copy2 = other;
+    if (q_hash.isSharedWith(other.q_hash)) {
+        // nothing to do
+    } else if (isEmpty() || other.isEmpty()) {
+        // any set intersected with the empty set is the empty set
+        clear();
+    } else if (q_hash.isDetached()) {
+        // do it in-place:
+        removeIf([&other] (const T &e) { return !other.contains(e); });
     } else {
-        copy1 = other;
-        copy2 = *this;
-        *this = copy1;
-    }
-    for (const auto &e : std::as_const(copy1)) {
-        if (!copy2.contains(e))
-            remove(e);
+        // don't detach *this just to remove some items; create a new set
+        *this = intersected_helper(*this, other);
     }
     return *this;
+}
+
+template <class T>
+// static
+auto QSet<T>::intersected_helper(const QSet &lhs, const QSet &rhs) -> QSet
+{
+    QSet r;
+
+    const auto l_size = lhs.size();
+    const auto r_size = rhs.size();
+    r.reserve((std::min)(l_size, r_size));
+
+    // Iterate the smaller of the two sets, but always take from lhs, for
+    // consistency with insert():
+
+    if (l_size <= r_size) {
+        // lhs is not larger
+        for (const auto &e : lhs) {
+            if (rhs.contains(e))
+                r.insert(e);
+        }
+    } else {
+        // rhs is smaller
+        for (const auto &e : rhs) {
+            if (const auto it = lhs.find(e); it != lhs.end())
+                r.insert(*it);
+        }
+    }
+
+    return r;
 }
 
 template <class T>
@@ -302,7 +332,7 @@ Q_INLINE_TEMPLATE bool QSet<T>::contains(const QSet<T> &other) const
 }
 
 template <typename T>
-Q_OUTOFLINE_TEMPLATE QList<T> QSet<T>::values() const
+QList<T> QSet<T>::values() const
 {
     QList<T> result;
     result.reserve(size());

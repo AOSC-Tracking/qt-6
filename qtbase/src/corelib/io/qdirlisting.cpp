@@ -1,6 +1,7 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // Copyright (C) 2024 Ahmad Samir <a.samirh78@gmail.com>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 /*!
     \since 6.8
@@ -76,12 +77,14 @@
         links to directories will be excluded too.
 
     \value ExcludeSpecial
-        Don't list special system files:
+        Don't list file system entries that are \e not directories, regular files,
+        nor symbolic links.
         \list
-            \li On Unix: an entry that is not a directory, regular file or
-                symbolic link (including broken symlinks). That is, FIFO,
-                socket, character device, or block device.
-            \li On Windows: \c {.lnk}.
+            \li On Unix, an example of a special file system entry is a FIFO, socket,
+                character device, or block device. For more details on Linux, see the
+                \l{https://www.man7.org/linux/man-pages/man2/mknod.2.html}{mknod manual page}.
+            \li On Windows (for historical reasons) \c .lnk files are considered special
+                file system entries.
         \endlist
 
     \value ResolveSymlinks
@@ -506,16 +509,14 @@ bool QDirListingPrivate::matchesFilters(QDirEntryInfo &entryInfo) const
     if (!iteratorFlags.testAnyFlag(F::IncludeHidden) && entryInfo.isHidden())
         return false;
 
-    if (entryInfo.isSymLink()) {
-        // With ResolveSymlinks, we look at the type of the link's target,
-        // and exclude broken symlinks (where the target doesn't exist).
-        if (iteratorFlags.testAnyFlag(F::ResolveSymlinks)) {
-            if (!entryInfo.exists())
-                return false;
-        } else if (iteratorFlags.testAnyFlags(F::FilesOnly)
-                   || iteratorFlags.testAnyFlags(F::DirsOnly)) {
-            return false; // symlink is not a file or dir
-        }
+    // With ResolveSymlinks, we look at the type of the link's target,
+    // and exclude broken symlinks (where the target doesn't exist).
+    if (iteratorFlags.testAnyFlag(F::ResolveSymlinks)) {
+        if (entryInfo.isSymLink() && !entryInfo.exists())
+            return false;
+    } else if ((iteratorFlags.testAnyFlags(F::FilesOnly)
+               || iteratorFlags.testAnyFlags(F::DirsOnly)) && entryInfo.isSymLink()) {
+        return false; // symlink is not a file or dir
     }
 
     if (iteratorFlags.testAnyFlag(F::ExcludeSpecial)

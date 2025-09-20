@@ -7,8 +7,8 @@
 #include "avfcamerasession_p.h"
 #include "avfcamera_p.h"
 #include "avfcameraservice_p.h"
-#include "avfcameradebug_p.h"
-#include "avfcamerautility_p.h"
+#include <QtMultimedia/private/qavfcameradebug_p.h>
+#include <QtMultimedia/private/qavfcamerautility_p.h>
 #include "qaudiodevice.h"
 
 #include "qmediadevices.h"
@@ -52,7 +52,7 @@ bool qt_file_exists(NSURL *fileURL)
     return false;
 }
 
-}
+} // namespace
 
 AVFMediaEncoder::AVFMediaEncoder(QMediaRecorder *parent)
     : QObject(parent)
@@ -231,7 +231,9 @@ static NSDictionary *avfAudioSettings(const QMediaEncoderSettings &encoderSettin
     return settings;
 }
 
-NSDictionary *avfVideoSettings(QMediaEncoderSettings &encoderSettings, AVCaptureDevice *device, AVCaptureConnection *connection, QSize nativeSize)
+static NSDictionary *avfVideoSettings(QMediaEncoderSettings &encoderSettings,
+                                      AVCaptureDevice *device, AVCaptureConnection *connection,
+                                      QSize nativeSize)
 {
     if (!device)
         return nil;
@@ -484,6 +486,11 @@ void AVFMediaEncoder::record(QMediaEncoderSettings &settings)
         return;
     }
 
+    // This is necessary to explicitly recreate m_audioInput inside AVFCameraSession.
+    // Which in turn is necessary for the case when the microphone was disconnected
+    // after stopping recording and reconnected.
+    m_service->session()->updateAudioInput();
+
     m_service->session()->setActive(true);
     const bool audioOnly = settings.videoCodec() == QMediaFormat::VideoCodec::Unspecified;
     AVCaptureSession *session = m_service->session()->captureSession();
@@ -542,8 +549,8 @@ void AVFMediaEncoder::record(QMediaEncoderSettings &settings)
 
         m_state = QMediaRecorder::RecordingState;
 
-        Q_EMIT actualLocationChanged(fileURL);
-        Q_EMIT stateChanged(m_state);
+        actualLocationChanged(fileURL);
+        stateChanged(m_state);
 
         // Apple recommends to call startRunning and do all
         // setup on a special queue, and that's what we had
@@ -627,7 +634,7 @@ void AVFMediaEncoder::assetWriterFinished()
 
     m_state = QMediaRecorder::StoppedState;
     if (m_state != lastState)
-        Q_EMIT stateChanged(m_state);
+        stateChanged(m_state);
 }
 
 void AVFMediaEncoder::assetWriterError(QString err)

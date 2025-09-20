@@ -3,10 +3,11 @@
 
 #include "content_client_qt.h"
 
+#include "compositor/compositor.h"
+
 #include "base/command_line.h"
 #include "base/files/file_util.h"
 #include "base/json/json_string_value_serializer.h"
-#include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
@@ -29,7 +30,12 @@
 #include <QFile>
 #include <QLibraryInfo>
 #include <QString>
+#include <QSysInfo>
+#include <QThread>
 
+#if BUILDFLAG(IS_WIN)
+#include "ui/gl/gl_utils.h"
+#endif
 
 #if BUILDFLAG(ENABLE_LIBRARY_CDMS)
 #include "media/cdm/cdm_paths.h"  // nogncheck
@@ -52,18 +58,20 @@ const char kWidevineCdmFileName[] =
 #endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
 
 #if QT_CONFIG(webengine_printing_and_pdf)
-#include "components/pdf/common/internal_plugin_helpers.h"
+#include "components/pdf/common/constants.h"
 #include "pdf/pdf.h"
 const char kPdfPluginPath[] = "internal-pdf-viewer";
 #endif // QT_CONFIG(webengine_printing_and_pdf)
 
+using namespace Qt::StringLiterals;
 using Robustness = content::CdmInfo::Robustness;
 
 static QString webenginePluginsPath()
 {
     // Look for plugins in /plugins/webengine or application dir.
     static bool initialized = false;
-    static QString potentialPluginsPath = QLibraryInfo::path(QLibraryInfo::PluginsPath) % QLatin1String("/webengine");
+    static QString potentialPluginsPath =
+            QLibraryInfo::path(QLibraryInfo::PluginsPath) % "/webengine"_L1;
     if (!initialized) {
         initialized = true;
         if (!QFileInfo::exists(potentialPluginsPath))
@@ -77,18 +85,33 @@ static QString webenginePluginsPath()
 static QString getLocalAppDataDir()
 {
     QString result;
-    wchar_t path[MAX_PATH];
-    if (SHGetSpecialFolderPath(0, path, CSIDL_LOCAL_APPDATA, FALSE))
+    PWSTR path;
+    HRESULT hr = SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, NULL, &path);
+    if (SUCCEEDED(hr))
         result = QDir::fromNativeSeparators(QString::fromWCharArray(path));
+    CoTaskMemFree(path);
     return result;
 }
 
 static QString getProgramFilesDir(bool x86Dir = false)
 {
     QString result;
-    wchar_t path[MAX_PATH];
-    if (SHGetSpecialFolderPath(0, path, x86Dir ? CSIDL_PROGRAM_FILESX86 : CSIDL_PROGRAM_FILES, FALSE))
+    PWSTR path;
+    HRESULT hr = SHGetKnownFolderPath(x86Dir ? FOLDERID_ProgramFilesX86 : FOLDERID_ProgramFilesX64, 0, NULL, &path);
+    if (SUCCEEDED(hr))
         result = QDir::fromNativeSeparators(QString::fromWCharArray(path));
+    CoTaskMemFree(path);
+    return result;
+}
+
+static QString getSystem32Dir()
+{
+    QString result;
+    PWSTR path;
+    HRESULT hr = SHGetKnownFolderPath(FOLDERID_System, 0, NULL, &path);
+    if (SUCCEEDED(hr))
+        result = QDir::fromNativeSeparators(QString::fromWCharArray(path));
+    CoTaskMemFree(path);
     return result;
 }
 #endif
@@ -107,7 +130,8 @@ static QString ppapiPluginsPath()
 {
     // Look for plugins in /plugins/ppapi or application dir.
     static bool initialized = false;
-    static QString potentialPluginsPath = QLibraryInfo::path(QLibraryInfo::PluginsPath) % QLatin1String("/ppapi");
+    static QString potentialPluginsPath =
+            QLibraryInfo::path(QLibraryInfo::PluginsPath) % "/ppapi"_L1;
     if (!initialized) {
         initialized = true;
         if (!QFileInfo::exists(potentialPluginsPath))
@@ -151,7 +175,7 @@ namespace QtWebEngineCore {
 static const QDir widevineCdmDirHint(const QDir &widevineDir)
 {
     const QString hintFilePath = widevineDir.absolutePath() % QDir::separator()
-            % QLatin1String("latest-component-updated-widevine-cdm");
+            % "latest-component-updated-widevine-cdm"_L1;
     if (!QFileInfo::exists(hintFilePath)) {
         // CDM hint file does not exist.
         return widevineDir;
@@ -189,63 +213,93 @@ static bool IsWidevineAvailable(base::FilePath *cdm_path,
     if (!widevine_argument.empty())
         pluginPaths << QtWebEngineCore::toQt(widevine_argument);
     else {
-        pluginPaths << webenginePluginsPath() + QStringLiteral("/") + QString::fromLatin1(kWidevineCdmFileName);
+        pluginPaths << webenginePluginsPath() + u'/' + QLatin1StringView(kWidevineCdmFileName);
 #if QT_CONFIG(webengine_pepper_plugins)
-        pluginPaths << ppapiPluginsPath() + QStringLiteral("/") + QString::fromLatin1(kWidevineCdmFileName);
+        pluginPaths << ppapiPluginsPath() + u'/' + QLatin1StringView(kWidevineCdmFileName);
 #endif
 #if defined(Q_OS_OSX)
-    QDir potentialWidevineDir("/Applications/Google Chrome.app/Contents/Frameworks");
+    QDir potentialWidevineDir(u"/Applications/Google Chrome.app/Contents/Frameworks"_s);
+    const auto archDir = QSysInfo::currentCpuArchitecture() == "x86_64"_L1
+                       ? "mac_x64/"_L1
+                       : "mac_arm64/"_L1;
     if (potentialWidevineDir.exists()) {
         QFileInfoList widevineVersionDirs = potentialWidevineDir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot,
                                                                                QDir::Name | QDir::Reversed);
-        const QString library = QLatin1String("/Versions/Current/Libraries/"
-                                              "WidevineCdm/_platform_specific/mac_x64/libwidevinecdm.dylib");
+        const auto libraryBase = "/Versions/Current/Libraries/WidevineCdm/_platform_specific/"_L1;
+        const auto libraryFilename = "libwidevinecdm.dylib"_L1;
         for (const QFileInfo &info : widevineVersionDirs)
-            pluginPaths << info.absoluteFilePath() + library;
+            pluginPaths << info.absoluteFilePath() + libraryBase + archDir + libraryFilename;
     }
 
-    QDir oldPotentialWidevineDir(QDir::homePath() + "/Library/Application Support/Google/Chrome/WidevineCDM");
+    QDir oldPotentialWidevineDir(QDir::homePath() + "/Library/Application Support/Google/Chrome/WidevineCDM"_L1);
     if (oldPotentialWidevineDir.exists()) {
         QFileInfoList widevineVersionDirs = oldPotentialWidevineDir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name | QDir::Reversed);
         for (int i = 0; i < widevineVersionDirs.size(); ++i) {
-            QString versionDirPath(widevineVersionDirs.at(i).absoluteFilePath());
-            QString potentialWidevinePluginPath = versionDirPath + "/_platform_specific/mac_x64/" + QString::fromLatin1(kWidevineCdmFileName);
-            pluginPaths << potentialWidevinePluginPath;
+            const QString versionDirPath = widevineVersionDirs.at(i).absoluteFilePath();
+            QString potentialWidevinePluginPath = versionDirPath + "/_platform_specific/"_L1 + archDir
+                    + QLatin1StringView(kWidevineCdmFileName);
+            pluginPaths.append(std::move(potentialWidevinePluginPath));
         }
     }
 #elif defined(Q_OS_WIN)
-    const QString googleChromeDir = QLatin1String("/Google/Chrome/Application");
-    const QStringList programFileDirs{getProgramFilesDir() + googleChromeDir,
-                                      getProgramFilesDir(true) + googleChromeDir};
+    const auto arch = QSysInfo::currentCpuArchitecture();
+    auto appendArchitectureAndFilename = [&arch](QString &inString) {
+        if (arch == "x86_64"_L1) {
+            inString += "/win_x64/"_L1;
+        } else if (arch == "i386"_L1) {
+            inString += "/win_x86/"_L1;
+        } else if (arch == "arm64"_L1) {
+            inString += "/win_arm64/"_L1;
+        } else {
+            Q_UNREACHABLE();
+        }
+
+        inString += QLatin1StringView(kWidevineCdmFileName);
+    };
+
+    // Look inside Program Files; first for Microsoft Edge, then for Google Chrome
+    const auto microsoftEdgeDir = "/Microsoft/Edge/Application"_L1;
+    const auto googleChromeDir = "/Google/Chrome/Application"_L1;
+    const QStringList programFileDirs {
+        getProgramFilesDir() + microsoftEdgeDir,
+        getProgramFilesDir(true) + microsoftEdgeDir,
+        getProgramFilesDir() + googleChromeDir,
+        getProgramFilesDir(true) + googleChromeDir
+    };
+
     for (const QString &dir : programFileDirs) {
         QDir d(dir);
         if (d.exists()) {
             QFileInfoList widevineVersionDirs = d.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name | QDir::Reversed);
             for (int i = 0; i < widevineVersionDirs.size(); ++i) {
-                QString versionDirPath(widevineVersionDirs.at(i).absoluteFilePath());
-#ifdef WIN64
-                QString potentialWidevinePluginPath = versionDirPath +
-                                                        "/WidevineCdm/_platform_specific/win_x64/" +
-                                                        QString::fromLatin1(kWidevineCdmFileName);
-#else
-                QString potentialWidevinePluginPath = versionDirPath +
-                                                        "/WidevineCdm/_platform_specific/win_x86/" +
-                                                        QString::fromLatin1(kWidevineCdmFileName);
-#endif
+                QString potentialWidevinePluginPath
+                    = widevineVersionDirs.at(i).absoluteFilePath()
+                    + "/WidevineCdm/_platform_specific"_L1;
+
+                appendArchitectureAndFilename(potentialWidevinePluginPath);
                 pluginPaths << potentialWidevinePluginPath;
             }
         }
     }
-    QDir potentialWidevineDir(getLocalAppDataDir() + "/Google/Chrome/User Data/WidevineCDM");
-    if (potentialWidevineDir.exists()) {
-        QFileInfoList widevineVersionDirs = potentialWidevineDir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name | QDir::Reversed);
+
+    // Look inside WebView data that lives in system32
+    QDir potentialEdgeWebViewDir(getSystem32Dir() + "/Microsoft-Edge-WebView"_L1);
+    if (potentialEdgeWebViewDir.exists()) {
+        QString potentialWidevinePluginPath = potentialEdgeWebViewDir.absolutePath() + "/WidevineCdm/_platform_specific"_L1;
+        appendArchitectureAndFilename(potentialWidevinePluginPath);
+        pluginPaths << potentialWidevinePluginPath;
+    }
+
+    // As a last resort, look for Google Chrome data inside %APPDATA%. This may be obsolete
+    QDir potentialChromeUserDataDir(getLocalAppDataDir() + "/Google/Chrome/User Data/WidevineCDM"_L1);
+    if (potentialChromeUserDataDir.exists()) {
+        QFileInfoList widevineVersionDirs = potentialChromeUserDataDir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name | QDir::Reversed);
         for (int i = 0; i < widevineVersionDirs.size(); ++i) {
-            QString versionDirPath(widevineVersionDirs.at(i).absoluteFilePath());
-#ifdef WIN64
-            QString potentialWidevinePluginPath = versionDirPath + "/_platform_specific/win_x64/" + QString::fromLatin1(kWidevineCdmFileName);
-#else
-            QString potentialWidevinePluginPath = versionDirPath + "/_platform_specific/win_x86/" + QString::fromLatin1(kWidevineCdmFileName);
-#endif
+            QString potentialWidevinePluginPath
+                = widevineVersionDirs.at(i).absoluteFilePath()
+                + "/_platform_specific"_L1;
+
+            appendArchitectureAndFilename(potentialWidevinePluginPath);
             pluginPaths << potentialWidevinePluginPath;
         }
     }
@@ -253,23 +307,23 @@ static bool IsWidevineAvailable(base::FilePath *cdm_path,
         QList<QDir> potentialWidevineVersionDirs;
 
         // Google Chrome widevine modules
-        QDir chromeWidevineDir(QDir::homePath() + "/.config/google-chrome/WidevineCdm");
+        QDir chromeWidevineDir(QDir::homePath() + "/.config/google-chrome/WidevineCdm"_L1);
         if (chromeWidevineDir.exists())
             potentialWidevineVersionDirs << widevineCdmDirHint(chromeWidevineDir);
 
         // Firefox widevine modules
-        QDir firefoxPotentialProfilesDir(QDir::homePath() + "/.mozilla/firefox");
+        QDir firefoxPotentialProfilesDir(QDir::homePath() + "/.mozilla/firefox"_L1);
         if (firefoxPotentialProfilesDir.exists()) {
             QFileInfoList firefoxProfileDirs = firefoxPotentialProfilesDir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name | QDir::Reversed);
             for (const QFileInfo &info : firefoxProfileDirs) {
-                QDir widevinePluginsDir(info.absoluteFilePath() + "/gmp-widevinecdm");
+                QDir widevinePluginsDir(info.absoluteFilePath() + "/gmp-widevinecdm"_L1);
                 if (widevinePluginsDir.exists())
                     potentialWidevineVersionDirs << widevinePluginsDir;
             }
         }
 
         // Chromium widevine modules (might not work with proprietary codecs)
-        QDir chromiumWidevineDir(QDir::homePath() + "/.config/chromium/WidevineCdm");
+        QDir chromiumWidevineDir(QDir::homePath() + "/.config/chromium/WidevineCdm"_L1);
         if (chromiumWidevineDir.exists())
             potentialWidevineVersionDirs << widevineCdmDirHint(chromiumWidevineDir);
 
@@ -279,28 +333,29 @@ static bool IsWidevineAvailable(base::FilePath *cdm_path,
             widevineVersionDirs.prepend(QFileInfo(dir.absolutePath()));
             // ### alternatively look up in the manifest.json and take the path from there.
 #if Q_PROCESSOR_WORDSIZE == 8
-            const QString library = QLatin1String("/_platform_specific/linux_x64/libwidevinecdm.so");
+            const auto library = "/_platform_specific/linux_x64/libwidevinecdm.so"_L1;
 #else
-            const QString library = QLatin1String("/_platform_specific/linux_x86/libwidevinecdm.so");
+            const auto library = "/_platform_specific/linux_x86/libwidevinecdm.so"_L1;
 #endif
             for (const QFileInfo &info : widevineVersionDirs) {
-                pluginPaths << info.absoluteFilePath() + "/libwidevinecdm.so";
+                pluginPaths << info.absoluteFilePath() + "/libwidevinecdm.so"_L1;
                 pluginPaths << info.absoluteFilePath() + library;
             }
         }
 
         // Fixed paths:
-        pluginPaths << QStringLiteral("/usr/lib/chromium/libwidevinecdm.so") // Arch
-                    << QStringLiteral("/usr/lib/chromium-browser/libwidevinecdm.so") // Ubuntu/neon
-                    << QStringLiteral("/usr/lib64/chromium/libwidevinecdm.so") // OpenSUSE style
+        pluginPaths
+                << u"/usr/lib/chromium/libwidevinecdm.so"_s // Arch
+                << u"/usr/lib/chromium-browser/libwidevinecdm.so"_s // Ubuntu/neon
+                << u"/usr/lib64/chromium/libwidevinecdm.so"_s // OpenSUSE style
 #if Q_PROCESSOR_WORDSIZE == 8
-                    << QStringLiteral("/usr/lib64/chromium-browser/WidevineCdm/_platform_specific/linux_x64/libwidevinecdm.so") // Gentoo
-                    << QStringLiteral("/opt/google/chrome/WidevineCdm/_platform_specific/linux_x64/libwidevinecdm.so") // Old Google Chrome
+                << u"/usr/lib64/chromium-browser/WidevineCdm/_platform_specific/linux_x64/libwidevinecdm.so"_s // Gentoo
+                << u"/opt/google/chrome/WidevineCdm/_platform_specific/linux_x64/libwidevinecdm.so"_s // Old Google Chrome
 #else
-                    << QStringLiteral("/usr/lib/chromium-browser/WidevineCdm/_platform_specific/linux_x86/libwidevinecdm.so") // Gentoo
-                    << QStringLiteral("/opt/google/chrome/WidevineCdm/_platform_specific/linux_x86/libwidevinecdm.so") // Old Google Chrome
+                << u"/usr/lib/chromium-browser/WidevineCdm/_platform_specific/linux_x86/libwidevinecdm.so"_s // Gentoo
+                << u"/opt/google/chrome/WidevineCdm/_platform_specific/linux_x86/libwidevinecdm.so"_s // Old Google Chrome
 #endif
-                    << QStringLiteral("/opt/google/chrome/libwidevinecdm.so"); // Older Google Chrome
+                << u"/opt/google/chrome/libwidevinecdm.so"_s; // Older Google Chrome
 #endif
     }
 
@@ -400,7 +455,8 @@ void ContentClientQt::AddAdditionalSchemes(Schemes* schemes)
 #endif
 }
 
-base::StringPiece ContentClientQt::GetDataResource(int resource_id, ui::ResourceScaleFactor scale_factor)
+std::string_view ContentClientQt::GetDataResource(int resource_id,
+                                                  ui::ResourceScaleFactor scale_factor)
 {
     return ui::ResourceBundle::GetSharedInstance().GetRawDataResourceForScale(resource_id, scale_factor);
 }
@@ -433,6 +489,123 @@ blink::OriginTrialPolicy *ContentClientQt::GetOriginTrialPolicy()
     if (!origin_trial_policy_)
         origin_trial_policy_ = std::make_unique<embedder_support::OriginTrialPolicyImpl>();
     return origin_trial_policy_.get();
+}
+
+void ContentClientQt::SetGpuInfo(const gpu::GPUInfo &gpu_info)
+{
+    if (Q_LIKELY(!lcWebEngineCompositor().isDebugEnabled()))
+        return;
+
+    base::CommandLine *commandLine = base::CommandLine::ForCurrentProcess();
+    const bool isBrowserProcess = !commandLine->HasSwitch(switches::kProcessType);
+    const bool isMainThread = QThread::currentThread() == qApp->thread();
+
+    // Limit this to the main thread of the browser process for now.
+    if (!isBrowserProcess || !isMainThread)
+        return;
+
+    if (!gpu_info.IsInitialized()) {
+        // This is probably not an issue but suspicious.
+        qCDebug(lcWebEngineCompositor, "Failed to initialize GPUInfo.");
+        return;
+    }
+
+    const gpu::GPUInfo::GPUDevice &primary = gpu_info.gpu;
+
+    // Do not print the info again if the device hasn't been changed.
+    // Change of the device is unexpected: we don't support or implement fallback yet.
+    // It is suspicious if the info is logged twice.
+    if (m_gpuInfo && m_gpuInfo->gpu.device_string == primary.device_string)
+        return;
+    m_gpuInfo = gpu_info;
+
+    auto deviceToString = [](const gpu::GPUInfo::GPUDevice &device) -> QString {
+        if (device.vendor_id == 0x0)
+            return "Disabled"_L1;
+
+        QString log;
+
+        // TODO: Factor vendor translation out from QtWebEngineCore::GPUInfo.
+        // Only name the most commmon desktop GPU hardware vendors for now.
+        switch (device.vendor_id) {
+        case 0x1002:
+            log += "AMD"_L1;
+            break;
+        case 0x10DE:
+            log += "Nvidia"_L1;
+            break;
+        case 0x8086:
+            log += "Intel"_L1;
+            break;
+        default:
+            log += "vendor id: 0x"_L1 + QString::number(device.vendor_id, 16);
+        }
+
+        log += ", device id: 0x"_L1 + QString::number(device.device_id, 16);
+
+        if (!device.driver_vendor.empty()) {
+            log += ", driver: "_L1 + QLatin1StringView(device.driver_vendor) + u' '
+                    + QLatin1StringView(device.driver_version);
+        }
+        log += ", system device id: 0x"_L1 + QString::number(device.system_device_id, 16);
+
+        log += ", preference: "_L1;
+        switch (device.gpu_preference) {
+        case gl::GpuPreference::kNone:
+            log += "None"_L1;
+            break;
+        case gl::GpuPreference::kDefault:
+            log += "Default"_L1;
+            break;
+        case gl::GpuPreference::kLowPower:
+            log += "LowPower"_L1;
+            break;
+        case gl::GpuPreference::kHighPerformance:
+            log += "HighPerformance"_L1;
+            break;
+        }
+
+        log += ", active: "_L1 + (device.active ? "yes"_L1 : "no"_L1);
+        return log;
+    };
+
+    QString log;
+    if (gpu_info.gl_vendor.empty() || gpu_info.gl_vendor == "Disabled") {
+        log += "ANGLE is disabled:\n"_L1;
+        log += "  GL Renderer: "_L1 + QLatin1StringView(gpu_info.gl_renderer) + u'\n';
+        log += "  Software Renderer: "_L1 + (primary.IsSoftwareRenderer() ? "yes"_L1 : "no"_L1)
+                + u'\n';
+        log += "  Primary GPU: "_L1 + deviceToString(primary) + u'\n';
+    } else {
+        log += QLatin1StringView(gpu_info.display_type) + " display is initialized:\n"_L1;
+        log += "  GL Renderer: "_L1 + QLatin1StringView(gpu_info.gl_renderer) + u'\n';
+        log += "  "_L1 + QString::number(gpu_info.GpuCount()) + " GPU(s) detected:\n"_L1;
+        log += "    "_L1 + deviceToString(primary) + u'\n';
+        for (auto &secondary : gpu_info.secondary_gpus)
+            log += "    "_L1 + deviceToString(secondary) + u'\n';
+
+        log += "  NVIDIA Optimus: "_L1 + (gpu_info.optimus ? "enabled"_L1 : "disabled"_L1) + u'\n';
+        log += "  AMD Switchable: "_L1 + (gpu_info.amd_switchable ? "enabled"_L1 : "disabled"_L1);
+    }
+
+    qCDebug(lcWebEngineCompositor, "%ls", qUtf16Printable(log));
+
+#if BUILDFLAG(IS_WIN)
+    log = "Windows specific driver information:\n"_L1;
+
+    log += "  Direct Composition: "_L1;
+    if (gpu_info.overlay_info.direct_composition)
+        log += "enabled\n"_L1;
+    else if (gl::GetGlWorkarounds().disable_direct_composition)
+        log += "disabled by workaround\n"_L1;
+    else
+        log += "disabled\n"_L1;
+
+    log += "  Supports Overlays: "_L1
+            + (gpu_info.overlay_info.supports_overlays ? "yes"_L1 : "no"_L1) + u'\n';
+    log += "  Supports D3D Shared Images: "_L1 + (gpu_info.shared_image_d3d ? "yes"_L1 : "no"_L1);
+    qCDebug(lcWebEngineCompositor, "%ls", qUtf16Printable(log));
+#endif
 }
 
 } // namespace QtWebEngineCore

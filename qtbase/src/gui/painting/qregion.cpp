@@ -1083,7 +1083,7 @@ struct QRegionPrivate {
     QRect extents;
     QRect innerRect;
 
-    inline QRegionPrivate() : numRects(0), innerArea(-1) {}
+    constexpr QRegionPrivate() : numRects(0), innerArea(-1) {}
     inline QRegionPrivate(const QRect &r)
         : numRects(1),
           innerArea(r.width() * r.height()),
@@ -1592,8 +1592,8 @@ void QRegionPrivate::selfTest() const
 }
 #endif // QT_REGION_DEBUG
 
-static QRegionPrivate qrp;
-const QRegion::QRegionData QRegion::shared_empty = {Q_REFCOUNT_INITIALIZE_STATIC, &qrp};
+Q_CONSTINIT static QRegionPrivate qrp;
+Q_CONSTINIT const QRegion::QRegionData QRegion::shared_empty = {Q_REFCOUNT_INITIALIZE_STATIC, &qrp};
 
 typedef void (*OverlapFunc)(QRegionPrivate &dest, const QRect *r1, const QRect *r1End,
                             const QRect *r2, const QRect *r2End, int y1, int y2);
@@ -3812,7 +3812,6 @@ QRegion::QRegion(const QRect &r, RegionType t)
         d = const_cast<QRegionData*>(&shared_empty);
     } else {
         d = new QRegionData;
-        d->ref.initializeOwned();
         if (t == Rectangle) {
             d->qt_rgn = new QRegionPrivate(r);
         } else if (t == Ellipse) {
@@ -3831,7 +3830,6 @@ QRegion::QRegion(const QPolygon &a, Qt::FillRule fillRule)
                                                fillRule == Qt::WindingFill ? WindingRule : EvenOddRule);
         if (qt_rgn) {
             d =  new QRegionData;
-            d->ref.initializeOwned();
             d->qt_rgn = qt_rgn;
         } else {
             d = const_cast<QRegionData*>(&shared_empty);
@@ -3854,7 +3852,6 @@ QRegion::QRegion(const QBitmap &bm)
         d = const_cast<QRegionData*>(&shared_empty);
     } else {
         d = new QRegionData;
-        d->ref.initializeOwned();
         d->qt_rgn = qt_bitmapToRegion(bm);
     }
 }

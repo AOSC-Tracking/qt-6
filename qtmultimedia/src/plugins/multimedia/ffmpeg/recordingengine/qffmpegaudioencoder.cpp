@@ -15,7 +15,7 @@ QT_BEGIN_NAMESPACE
 
 namespace QFFmpeg {
 
-static Q_LOGGING_CATEGORY(qLcFFmpegAudioEncoder, "qt.multimedia.ffmpeg.audioencoder");
+Q_STATIC_LOGGING_CATEGORY(qLcFFmpegAudioEncoder, "qt.multimedia.ffmpeg.audioencoder");
 
 namespace {
 void setupStreamParameters(AVStream *stream, const Codec &codec,
@@ -63,12 +63,14 @@ bool openCodecContext(AVCodecContext *codecContext, AVStream *stream,
 
     if (res != 0) {
         qCWarning(qLcFFmpegAudioEncoder)
-                << "Cannot open audio codec" << codec.name() << "; result:" << err2str(res);
+                << "Cannot open audio codec" << codec.name() << "; result:" << AVError(res);
         return false;
     }
 
     qCDebug(qLcFFmpegAudioEncoder) << "audio codec params: fmt=" << codecContext->sample_fmt
                                    << "rate=" << codecContext->sample_rate;
+
+    avcodec_parameters_from_context(stream->codecpar, codecContext);
 
     return true;
 }
@@ -179,7 +181,7 @@ bool AudioEncoder::init()
 
     // TODO: try to address this dependency here.
     if (auto input = qobject_cast<QFFmpegAudioInput *>(source()))
-        input->setFrameSize(m_codecContext->frame_size);
+        input->setBufferSize(m_codecContext->frame_size);
 
     return EncoderThread::init();
 }

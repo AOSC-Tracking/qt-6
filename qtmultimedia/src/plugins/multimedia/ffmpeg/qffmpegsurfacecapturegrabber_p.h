@@ -16,7 +16,7 @@
 //
 
 #include "qvideoframe.h"
-#include "private/qplatformsurfacecapture_p.h"
+#include <QtMultimedia/private/qplatformsurfacecapture_p.h>
 
 #include <memory>
 #include <optional>
@@ -78,6 +78,7 @@ protected:
     bool isGrabbingContextInitialized() const;
 
 private:
+    class GrabbingProfiler;
     struct GrabbingContext;
     class GrabbingThread;
 

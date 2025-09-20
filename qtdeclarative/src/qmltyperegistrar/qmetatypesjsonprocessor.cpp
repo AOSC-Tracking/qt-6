@@ -56,6 +56,9 @@ QList<QAnyStringView> MetaTypesJsonProcessor::namespaces(const MetaType &classDe
 bool MetaTypesJsonProcessor::processTypes(const QStringList &files)
 {
     for (const QString &source: files) {
+        if (m_seenMetaTypesFiles.hasSeen(source))
+            continue;
+
         QCborValue metaObjects;
         {
             QFile f(source);
@@ -129,6 +132,9 @@ bool MetaTypesJsonProcessor::processForeignTypes(const QStringList &foreignTypes
     bool success = true;
 
     for (const QString &types : foreignTypesFiles) {
+        if (m_seenMetaTypesFiles.hasSeen(types))
+            continue;
+
         if (!processForeignTypes(types))
             success = false;
     }
@@ -772,6 +778,7 @@ Method::Method(const QCborMap &cbor, bool isConstructor)
     , isCloned(cbor[S_IS_CLONED].toBool())
     , isJavaScriptFunction(cbor[S_IS_JAVASCRIPT_FUNCTION].toBool())
     , isConstructor(isConstructor || cbor[S_IS_CONSTRUCTOR].toBool())
+    , isConst(cbor[S_IS_CONST].toBool())
 {
     const QCborArray args = cbor[S_ARGUMENTS].toArray();
     for (const QCborValue &argument : args)

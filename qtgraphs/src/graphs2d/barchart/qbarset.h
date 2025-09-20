@@ -1,8 +1,8 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QBARSET_H
-#define QBARSET_H
+#ifndef QTGRAPHS_QBARSET_H
+#define QTGRAPHS_QBARSET_H
 
 #include <QtCore/qobject.h>
 #include <QtGraphs/qgraphsglobal.h>
@@ -112,4 +112,4 @@ private:
 
 QT_END_NAMESPACE
 
-#endif // QBARSET_H
+#endif // QTGRAPHS_QBARSET_H

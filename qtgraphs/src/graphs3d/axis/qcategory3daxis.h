@@ -1,8 +1,8 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QCATEGORY3DAXIS_H
-#define QCATEGORY3DAXIS_H
+#ifndef QTGRAPHS_QCATEGORY3DAXIS_H
+#define QTGRAPHS_QCATEGORY3DAXIS_H
 
 #include <QtGraphs/qabstract3daxis.h>
 
@@ -15,6 +15,7 @@ class Q_GRAPHS_EXPORT QCategory3DAxis : public QAbstract3DAxis
     Q_OBJECT
     Q_DECLARE_PRIVATE(QCategory3DAxis)
     Q_PROPERTY(QStringList labels READ labels WRITE setLabels NOTIFY labelsChanged FINAL)
+    QML_NAMED_ELEMENT(Category3DAxis)
 
 public:
     explicit QCategory3DAxis(QObject *parent = nullptr);

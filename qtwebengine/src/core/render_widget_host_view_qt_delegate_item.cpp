@@ -14,6 +14,8 @@
 #include <QtGui/qaccessible.h>
 #endif
 
+using namespace Qt::StringLiterals;
+
 namespace QtWebEngineCore {
 
 RenderWidgetHostViewQtDelegateItem::RenderWidgetHostViewQtDelegateItem(RenderWidgetHostViewQtDelegateClient *client, bool isPopup)
@@ -35,8 +37,8 @@ RenderWidgetHostViewQtDelegateItem::RenderWidgetHostViewQtDelegateItem(RenderWid
 
 RenderWidgetHostViewQtDelegateItem::~RenderWidgetHostViewQtDelegateItem()
 {
-    unbind(); // Compositor::Observer
     releaseTextureResources();
+    unbind(); // Compositor::Observer
     if (m_widgetDelegate) {
         m_widgetDelegate->Unbind();
         m_widgetDelegate->Destroy();
@@ -54,8 +56,8 @@ void RenderWidgetHostViewQtDelegateItem::initAsPopup(const QRect &screenRect)
 QRectF RenderWidgetHostViewQtDelegateItem::viewGeometry() const
 {
     // Transform the entire rect to find the correct top left corner.
-    const QPointF p1 = mapToGlobal(mapFromScene(QPointF(0, 0)));
-    const QPointF p2 = mapToGlobal(mapFromScene(QPointF(width(), height())));
+    const QPointF p1 = mapToGlobal(mapFromItem(this, QPointF(0, 0)));
+    const QPointF p2 = mapToGlobal(mapFromItem(this, QPointF(width(), height())));
     QRectF geometry = QRectF(p1, p2).normalized();
     // But keep the size untransformed to behave like other QQuickItems.
     geometry.setSize(size());
@@ -346,7 +348,7 @@ void RenderWidgetHostViewQtDelegateItem::itemChange(ItemChange change, const Ite
                             &RenderWidgetHostViewQtDelegateItem::releaseTextureResources,
                             Qt::DirectConnection));
             if (!m_isPopup)
-                m_windowConnections.append(connect(value.window, SIGNAL(closing(QQuickCloseEvent *)), SLOT(onHide())));
+                m_windowConnections.append(connect(value.window, SIGNAL(closing(QQuickCloseEvent*)), SLOT(onHide())));
         }
         m_client->visualPropertiesChanged();
     } else if (change == QQuickItem::ItemVisibleHasChanged) {
@@ -367,6 +369,12 @@ QSGNode *RenderWidgetHostViewQtDelegateItem::updatePaintNode(QSGNode *oldNode, U
     auto comp = compositor();
     if (!comp)
         return oldNode;
+
+    if (comp->type() == Compositor::Type::Native
+        && QGuiApplication::platformName() == "offscreen"_L1) {
+        comp->swapFrame();
+        return oldNode;
+    }
 
     QQuickWindow *win = QQuickItem::window();
 

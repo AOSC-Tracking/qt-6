@@ -14,6 +14,7 @@
 // We mean it.
 //
 
+#include <QtProtobuf/qtprotobufexports.h>
 #include <QtProtobuf/qtprotobuftypes.h>
 
 #include <QtCore/private/qnumeric_p.h>
@@ -145,13 +146,20 @@ QJsonValue serializeCommon(const QVariant &propertyValue)
     return serialize(propertyValue.value<T>());
 }
 
+Q_PROTOBUF_EXPORT bool validateJsonNumberString(const QString &input);
+
 template <typename T, if_json_int<T> = true>
 T deserialize(const QJsonValue &value, bool &ok)
 {
     auto variantValue = value.toVariant();
     qint64 raw = 0;
     switch (variantValue.metaType().id()) {
-    case QMetaType::QString: // TODO: check if string has prepending/appending whitespaces.
+    case QMetaType::QString:
+        if (!validateJsonNumberString(variantValue.toString()))
+            ok = false;
+        else
+            raw = variantValue.toLongLong(&ok);
+        break;
     case QMetaType::LongLong:
         raw = variantValue.toLongLong(&ok);
         break;

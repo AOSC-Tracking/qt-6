@@ -10,9 +10,9 @@
 // version without notice, or even be removed.
 //
 // We mean it.
-#ifndef QGRAPHSWIDGETGLOBAL_H
-#define QGRAPHSWIDGETGLOBAL_H
+#ifndef QTGRAPHS_QGRAPHSWIDGETGLOBAL_H
+#define QTGRAPHS_QGRAPHSWIDGETGLOBAL_H
 #include <QtCore/qglobal.h>
 #include <QtGraphsWidgets/qtgraphswidgetsexports.h>
 
-#endif // QGRAPHSWIDGETGLOBAL_H
+#endif // QTGRAPHS_QGRAPHSWIDGETGLOBAL_H

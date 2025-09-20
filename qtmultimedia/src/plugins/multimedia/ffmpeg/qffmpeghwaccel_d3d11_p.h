@@ -14,10 +14,9 @@
 // We mean it.
 //
 
-#include "qffmpeghwaccel_p.h"
-#include <private/quniquehandle_p.h>
-#include <private/qcomptr_p.h>
-#include <qt_windows.h>
+#include <QtFFmpegMediaPluginImpl/private/qffmpeghwaccel_p.h>
+#include <QtCore/private/quniquehandle_types_p.h>
+#include <QtCore/private/qcomptr_p.h>
 
 #include <d3d11.h>
 #include <d3d11_1.h>
@@ -30,14 +29,7 @@ class QRhi;
 
 namespace QFFmpeg {
 
-struct SharedTextureHandleTraits
-{
-    using Type = HANDLE;
-    static Type invalidValue() { return nullptr; }
-    static bool close(Type handle) { return CloseHandle(handle) != 0; }
-};
-
-using SharedTextureHandle = QUniqueHandle<SharedTextureHandleTraits>;
+using SharedTextureHandle = QUniqueWin32NullHandle;
 
 /*! \internal Utility class for synchronized transfer of a texture between two D3D devices
  *
@@ -56,7 +48,8 @@ public:
     bool copyToSharedTex(ID3D11Device *dev, ID3D11DeviceContext *ctx,
                          const ComPtr<ID3D11Texture2D> &tex, UINT index, const QSize &frameSize);
 
-    /** Obtain a copy of the texture on a second device 'dev' */
+    /** Obtain a copy of the texture on a second device 'dev'.
+     * NOTE: Will block until a texture is available (copyToSharedTex was called) */
     ComPtr<ID3D11Texture2D> copyFromSharedTex(const ComPtr<ID3D11Device1> &dev,
                                               const ComPtr<ID3D11DeviceContext> &ctx);
 

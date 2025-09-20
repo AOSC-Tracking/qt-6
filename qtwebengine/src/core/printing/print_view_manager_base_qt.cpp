@@ -27,11 +27,13 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_types.h"
 #include "printing/metafile_skia.h"
 #include "printing/print_job_constants.h"
 #include "printing/printed_document.h"
+
+#include <string>
+
+using namespace std::string_literals;
 
 namespace QtWebEngineCore {
 
@@ -160,7 +162,7 @@ void PrintViewManagerBaseQt::NavigationStopped()
 
 std::u16string PrintViewManagerBaseQt::RenderSourceName()
 {
-     return toString16(QLatin1String(""));
+    return u""s;
 }
 
 void PrintViewManagerBaseQt::PrintDocument(scoped_refptr<base::RefCountedMemory> print_data,

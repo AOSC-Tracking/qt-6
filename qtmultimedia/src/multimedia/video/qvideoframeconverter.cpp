@@ -1,23 +1,25 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:data-parser
 
 #include "qvideoframeconverter_p.h"
 #include "qvideoframeconversionhelper_p.h"
 #include "qvideoframeformat.h"
 #include "qvideoframe_p.h"
 #include "qmultimediautils_p.h"
-#include "qabstractvideobuffer.h"
+#include "qthreadlocalrhi_p.h"
+#include "qcachedvalue_p.h"
 
 #include <QtCore/qcoreapplication.h>
 #include <QtCore/qsize.h>
 #include <QtCore/qhash.h>
 #include <QtCore/qfile.h>
-#include <QtCore/qthreadstorage.h>
 #include <QtGui/qimage.h>
-#include <QtGui/qoffscreensurface.h>
-#include <qpa/qplatformintegration.h>
-#include <private/qvideotexturehelper_p.h>
-#include <private/qguiapplication_p.h>
+#include <QtCore/qloggingcategory.h>
+
+#include <QtMultimedia/private/qmultimedia_ranges_p.h>
+#include <QtMultimedia/private/qvideotexturehelper_p.h>
+
 #include <rhi/qrhi.h>
 
 #ifdef Q_OS_DARWIN
@@ -26,41 +28,10 @@
 
 QT_BEGIN_NAMESPACE
 
-static Q_LOGGING_CATEGORY(qLcVideoFrameConverter, "qt.multimedia.video.frameconverter")
+Q_STATIC_LOGGING_CATEGORY(qLcVideoFrameConverter, "qt.multimedia.video.frameconverter")
 
-namespace {
-
-struct State
-{
-    QRhi *rhi = nullptr;
-#if QT_CONFIG(opengl)
-    QOffscreenSurface *fallbackSurface = nullptr;
-#endif
-    bool cpuOnly = false;
-#if defined(Q_OS_ANDROID)
-    QMetaObject::Connection appStateChangedConnection;
-#endif
-    ~State() {
-        resetRhi();
-    }
-
-    void resetRhi() {
-        delete rhi;
-        rhi = nullptr;
-#if QT_CONFIG(opengl)
-        delete fallbackSurface;
-        fallbackSurface = nullptr;
-#endif
-        cpuOnly = false;
-    }
-};
-
-}
-
-static QThreadStorage<State> g_state;
-static QHash<QString, QShader> g_shaderCache;
-
-static const float g_quad[] = {
+// clang-format off
+static constexpr float g_quad[] = {
     // Rotation 0 CW
     1.f, -1.f,   1.f, 1.f,
     1.f,  1.f,   1.f, 0.f,
@@ -82,6 +53,7 @@ static const float g_quad[] = {
    -1.f, -1.f,  0.f, 0.f,
    -1.f,  1.f,  1.f, 0.f,
 };
+// clang-format on
 
 static bool pixelFormatHasAlpha(QVideoFrameFormat::PixelFormat format)
 {
@@ -100,20 +72,14 @@ static bool pixelFormatHasAlpha(QVideoFrameFormat::PixelFormat format)
     }
 };
 
-static QShader vfcGetShader(const QString &name)
+static QShader ensureShader(const QString &name)
 {
-    QShader shader = g_shaderCache.value(name);
-    if (shader.isValid())
-        return shader;
+    static QCachedValueMap<QString, QShader> shaderCache;
 
-    QFile f(name);
-    if (f.open(QIODevice::ReadOnly))
-        shader = QShader::fromSerialized(f.readAll());
-
-    if (shader.isValid())
-        g_shaderCache[name] = shader;
-
-    return shader;
+    return shaderCache.ensure(name, [&name]() {
+        QFile f(name);
+        return f.open(QIODevice::ReadOnly) ? QShader::fromSerialized(f.readAll()) : QShader();
+    });
 }
 
 static void rasterTransform(QImage &image, VideoTransformation transformation)
@@ -121,7 +87,7 @@ static void rasterTransform(QImage &image, VideoTransformation transformation)
     QTransform t;
     if (transformation.rotation != QtVideo::Rotation::None)
         t.rotate(qreal(transformation.rotation));
-    if (transformation.mirrorredHorizontallyAfterRotation)
+    if (transformation.mirroredHorizontallyAfterRotation)
         t.scale(-1., 1);
     if (!t.isIdentity())
         image = image.transformed(t);
@@ -131,65 +97,6 @@ static void imageCleanupHandler(void *info)
 {
     QByteArray *imageData = reinterpret_cast<QByteArray *>(info);
     delete imageData;
-}
-
-static QRhi *initializeRHI(QRhi *videoFrameRhi)
-{
-    if (g_state.localData().rhi || g_state.localData().cpuOnly)
-        return g_state.localData().rhi;
-
-    QRhi::Implementation backend = videoFrameRhi ? videoFrameRhi->backend() : QRhi::Null;
-    const QPlatformIntegration *qpa = QGuiApplicationPrivate::platformIntegration();
-
-    if (qpa && qpa->hasCapability(QPlatformIntegration::RhiBasedRendering)) {
-
-#if defined(Q_OS_MACOS) || defined(Q_OS_IOS)
-        if (backend == QRhi::Metal || backend == QRhi::Null) {
-            QRhiMetalInitParams params;
-            g_state.localData().rhi = QRhi::create(QRhi::Metal, &params);
-        }
-#endif
-
-#if defined(Q_OS_WIN)
-        if (backend == QRhi::D3D11 || backend == QRhi::Null) {
-            QRhiD3D11InitParams params;
-            g_state.localData().rhi = QRhi::create(QRhi::D3D11, &params);
-        }
-#endif
-
-#if QT_CONFIG(opengl)
-        if (!g_state.localData().rhi && (backend == QRhi::OpenGLES2 || backend == QRhi::Null)) {
-            if (qpa->hasCapability(QPlatformIntegration::OpenGL)
-                    && qpa->hasCapability(QPlatformIntegration::RasterGLSurface)
-                    && !QCoreApplication::testAttribute(Qt::AA_ForceRasterWidgets)) {
-
-                g_state.localData().fallbackSurface = QRhiGles2InitParams::newFallbackSurface();
-                QRhiGles2InitParams params;
-                params.fallbackSurface = g_state.localData().fallbackSurface;
-                if (backend == QRhi::OpenGLES2)
-                    params.shareContext = static_cast<const QRhiGles2NativeHandles*>(videoFrameRhi->nativeHandles())->context;
-                g_state.localData().rhi = QRhi::create(QRhi::OpenGLES2, &params);
-
-#if defined(Q_OS_ANDROID)
-                // reset RHI state on application suspension, as this will be invalid after resuming
-                if (!g_state.localData().appStateChangedConnection) {
-                    g_state.localData().appStateChangedConnection = QObject::connect(qApp, &QGuiApplication::applicationStateChanged, qApp, [](auto state) {
-                        if (state == Qt::ApplicationSuspended)
-                            g_state.localData().resetRhi();
-                    });
-                }
-#endif
-            }
-        }
-#endif
-    }
-
-    if (!g_state.localData().rhi) {
-        g_state.localData().cpuOnly = true;
-        qWarning() << Q_FUNC_INFO << ": No RHI backend. Using CPU conversion.";
-    }
-
-    return g_state.localData().rhi;
 }
 
 static bool updateTextures(QRhi *rhi,
@@ -219,11 +126,11 @@ static bool updateTextures(QRhi *rhi,
     graphicsPipeline.reset(rhi->newGraphicsPipeline());
     graphicsPipeline->setTopology(QRhiGraphicsPipeline::TriangleStrip);
 
-    QShader vs = vfcGetShader(QVideoTextureHelper::vertexShaderFileName(format));
+    QShader vs = ensureShader(QVideoTextureHelper::vertexShaderFileName(format));
     if (!vs.isValid())
         return false;
 
-    QShader fs = vfcGetShader(QVideoTextureHelper::fragmentShaderFileName(format, rhi));
+    QShader fs = ensureShader(QVideoTextureHelper::fragmentShaderFileName(format, rhi));
     if (!fs.isValid())
         return false;
 
@@ -256,9 +163,45 @@ static QImage convertJPEG(const QVideoFrame &frame, const VideoTransformation &t
         qCDebug(qLcVideoFrameConverter) << Q_FUNC_INFO << ": frame mapping failed";
         return {};
     }
-    QImage image;
-    image.loadFromData(varFrame.bits(0), varFrame.mappedBytes(0), "JPG");
-    varFrame.unmap();
+
+    auto unmap = std::optional(QScopeGuard([&] {
+        varFrame.unmap();
+    }));
+
+    QSpan<uchar> jpegData{
+        varFrame.bits(0),
+        varFrame.mappedBytes(0),
+    };
+
+    constexpr std::array<uchar, 2> soiMarker{ uchar(0xff), uchar(0xd8) };
+    if (!QtMultimediaPrivate::ranges::equal(jpegData.first(2), soiMarker, std::equal_to<void>{})) {
+        qCDebug(qLcVideoFrameConverter)
+                << Q_FUNC_INFO << ": JPEG data does not start with SOI marker";
+        return QImage{};
+    }
+
+    constexpr std::array<uchar, 2> eoiMarker{ uchar(0xff), uchar(0xd9) };
+
+    // some JPEG cameras contain extra data after the JPEG marker. If so, we drop it to make
+    // libjpeg happy.
+    if (!QtMultimediaPrivate::ranges::equal(jpegData.last(2), eoiMarker, std::equal_to<void>{})) {
+        qCDebug(qLcVideoFrameConverter)
+                << Q_FUNC_INFO << ": JPEG data does not end with EOI marker";
+
+        auto eoi_it = std::find_end(jpegData.begin(), jpegData.end(), std::begin(eoiMarker),
+                                    std::end(eoiMarker));
+        if (eoi_it == jpegData.end()) {
+            qCWarning(qLcVideoFrameConverter)
+                    << Q_FUNC_INFO << ": JPEG data does not contain EOI marker";
+            return QImage{};
+        };
+
+        const size_t newSize = std::distance(jpegData.begin(), eoi_it) + std::size(eoiMarker);
+        jpegData = jpegData.first(newSize);
+    }
+
+    QImage image = QImage::fromData(jpegData, "JPG");
+    unmap = std::nullopt; // Release unmap guard
     rasterTransform(image, transform);
     return image;
 }
@@ -298,9 +241,6 @@ QImage qImageFromVideoFrame(const QVideoFrame &frame, const VideoTransformation 
     QMacAutoReleasePool releasePool;
 #endif
 
-    if (!g_state.hasLocalData())
-        g_state.setLocalData({});
-
     std::unique_ptr<QRhiRenderPassDescriptor> renderPass;
     std::unique_ptr<QRhiBuffer> vertexBuffer;
     std::unique_ptr<QRhiBuffer> uniformBuffer;
@@ -325,7 +265,7 @@ QImage qImageFromVideoFrame(const QVideoFrame &frame, const VideoTransformation 
         rhi = buffer->rhi();
 
     if (!rhi || !rhi->thread()->isCurrentThread())
-        rhi = initializeRHI(rhi);
+        rhi = qEnsureThreadLocalRhi(rhi);
 
     if (!rhi || rhi->isRecordingFrame())
         return convertCPU(frame, transformation);
@@ -337,7 +277,7 @@ QImage qImageFromVideoFrame(const QVideoFrame &frame, const VideoTransformation 
     vertexBuffer.reset(rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(g_quad)));
     vertexBuffer->create();
 
-    uniformBuffer.reset(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 64 + 64 + 4 + 4 + 4 + 4));
+    uniformBuffer.reset(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(QVideoTextureHelper::UniformData)));
     uniformBuffer->create();
 
     textureSampler.reset(rhi->newSampler(QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::None,
@@ -382,7 +322,7 @@ QImage qImageFromVideoFrame(const QVideoFrame &frame, const VideoTransformation 
         return convertCPU(frame, transformation);
     }
 
-    float xScale = transformation.mirrorredHorizontallyAfterRotation ? -1.0 : 1.0;
+    float xScale = transformation.mirroredHorizontallyAfterRotation ? -1.0 : 1.0;
     float yScale = 1.f;
 
     if (rhi->isYUpInFramebuffer())
@@ -391,8 +331,9 @@ QImage qImageFromVideoFrame(const QVideoFrame &frame, const VideoTransformation 
     QMatrix4x4 transform;
     transform.scale(xScale, yScale);
 
-    QByteArray uniformData(64 + 64 + 4 + 4, Qt::Uninitialized);
-    QVideoTextureHelper::updateUniformData(&uniformData, frame.surfaceFormat(), frame, transform, 1.f);
+    QByteArray uniformData(sizeof(QVideoTextureHelper::UniformData), Qt::Uninitialized);
+    QVideoTextureHelper::updateUniformData(&uniformData, rhi, frame.surfaceFormat(), frame,
+                                           transform, 1.f);
     rub->updateDynamicBuffer(uniformBuffer.get(), 0, uniformData.size(), uniformData.constData());
 
     cb->beginPass(renderTarget.get(), Qt::black, { 1.0f, 0 }, rub);

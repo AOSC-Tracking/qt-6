@@ -1,7 +1,7 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
-#ifndef QBARMODELMAPPER_H
-#define QBARMODELMAPPER_H
+#ifndef QTGRAPHS_QBARMODELMAPPER_H
+#define QTGRAPHS_QBARMODELMAPPER_H
 
 #include <QtCore/qobject.h>
 #include <QtGraphs/qgraphsglobal.h>
@@ -80,4 +80,4 @@ private:
 
 QT_END_NAMESPACE
 
-#endif // QBARMODELMAPPER_H
+#endif // QTGRAPHS_QBARMODELMAPPER_H

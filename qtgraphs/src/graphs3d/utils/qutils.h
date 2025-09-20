@@ -1,12 +1,14 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QUTILS_H
-#define QUTILS_H
+#ifndef QTGRAPHS_QUTILS_H
+#define QTGRAPHS_QUTILS_H
 
+#include <QtGraphs/qgraphsglobal.h>
 #include <QtCore/qcoreapplication.h>
 #include <QtGui/qsurfaceformat.h>
 #include <QtQuick3D/qquick3d.h>
+
 
 QT_BEGIN_NAMESPACE
 

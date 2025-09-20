@@ -103,24 +103,22 @@ bool AuthenticatorRequestClientDelegateQt::DoesBlockRequestOnFailure(
     }
     return true;
 }
+
 void AuthenticatorRequestClientDelegateQt::RegisterActionCallbacks(
-        base::OnceClosure cancel_callback, base::RepeatingClosure start_over_callback,
+        base::OnceClosure cancel_callback,
+        base::RepeatingClosure start_over_callback,
         AccountPreselectedCallback account_preselected_callback,
         device::FidoRequestHandlerBase::RequestCallback request_callback,
-        base::RepeatingClosure bluetooth_adapter_power_on_callback)
+        base::RepeatingClosure bluetooth_adapter_power_on_callback,
+        base::RepeatingCallback<
+                void(device::FidoRequestHandlerBase::BlePermissionCallback)>
+                        request_ble_permission_callback)
 {
     m_cancelCallback = std::move(cancel_callback);
     m_startOverCallback = std::move(start_over_callback);
     m_accountPreselectedCallback = std::move(account_preselected_callback);
     m_requestCallback = std::move(request_callback);
     m_bluetoothAdapterPowerOnCallback = std::move(bluetooth_adapter_power_on_callback);
-}
-
-void AuthenticatorRequestClientDelegateQt::ShouldReturnAttestation(
-        const std::string &relying_party_id, const device::FidoAuthenticator *authenticator,
-        bool is_enterprise_attestation, base::OnceCallback<void(bool)> callback)
-{
-    std::move(callback).Run(!is_enterprise_attestation);
 }
 
 void AuthenticatorRequestClientDelegateQt::SelectAccount(
@@ -150,7 +148,7 @@ void AuthenticatorRequestClientDelegateQt::SelectAccount(
         if (has_user_identifying_info) {
             QString userName = toQt(*response.user_entity->name);
             m_userMap[userName] = nIndex;
-            userList.append(userName);
+            userList.append(std::move(userName));
         }
     }
     m_dialogController->selectAccount(userList);

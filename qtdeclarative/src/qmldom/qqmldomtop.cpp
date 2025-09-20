@@ -235,7 +235,7 @@ static DomType fileTypeForPath(const DomItem &self, const QString &canonicalFile
 }
 
 DomUniverse::LoadResult DomUniverse::loadFile(const FileToLoad &file, DomType fileType,
-                                              DomCreationOptions creationOptions)
+                                              DomCreationOption creationOption)
 {
     DomItem univ(shared_from_this());
     switch (fileType) {
@@ -251,7 +251,7 @@ DomUniverse::LoadResult DomUniverse::loadFile(const FileToLoad &file, DomType fi
             return std::get<LoadResult>(preLoadResult);
         } else {
             // content of the file needs to be parsed and value inside Universe needs to be updated
-            return load(std::get<ContentWithDate>(preLoadResult), file, fileType, creationOptions);
+            return load(std::get<ContentWithDate>(preLoadResult), file, fileType, creationOption);
         }
     }
     default:
@@ -267,7 +267,7 @@ DomUniverse::LoadResult DomUniverse::loadFile(const FileToLoad &file, DomType fi
 
 DomUniverse::LoadResult DomUniverse::load(const ContentWithDate &codeWithDate,
                                           const FileToLoad &file, DomType fType,
-                                          DomCreationOptions creationOptions)
+                                          DomCreationOption creationOption)
 {
     QString canonicalPath = file.canonicalPath();
 
@@ -276,7 +276,7 @@ DomUniverse::LoadResult DomUniverse::load(const ContentWithDate &codeWithDate,
     DomItem univ = DomItem(shared_from_this());
 
     if (fType == DomType::QmlFile) {
-        auto qmlFile = parseQmlFile(codeWithDate.content, file, codeWithDate.date, creationOptions);
+        auto qmlFile = parseQmlFile(codeWithDate.content, file, codeWithDate.date, creationOption);
         return insertOrUpdateExternalItem(std::move(qmlFile));
     } else if (fType == DomType::QmltypesFile) {
         auto qmltypesFile = std::make_shared<QmltypesFile>(canonicalPath, codeWithDate.content,
@@ -383,24 +383,24 @@ DomUniverse::ReadResult DomUniverse::readFileContent(const QString &canonicalPat
 
 std::shared_ptr<QmlFile> DomUniverse::parseQmlFile(const QString &code, const FileToLoad &file,
                                                    const QDateTime &contentDate,
-                                                   DomCreationOptions creationOptions)
+                                                   DomCreationOption creationOption)
 {
-    auto qmlFile = std::make_shared<QmlFile>(file.canonicalPath(), code, contentDate, 0,
-                                             creationOptions.testFlag(WithRecovery)
-                                                     ? QmlFile::EnableParserRecovery
-                                                     : QmlFile::DisableParserRecovery);
+    auto qmlFile =
+            std::make_shared<QmlFile>(file.canonicalPath(), code, contentDate, 0,
+                                      creationOption == Extended ? QmlFile::EnableParserRecovery
+                                                                 : QmlFile::DisableParserRecovery);
     std::shared_ptr<DomEnvironment> envPtr;
     if (auto ptr = file.environment().lock())
         envPtr = std::move(ptr);
     else
         envPtr = std::make_shared<DomEnvironment>(QStringList(),
                                                   DomEnvironment::Option::NoDependencies,
-                                                  creationOptions, shared_from_this());
+                                                  creationOption, shared_from_this());
     envPtr->addQmlFile(qmlFile);
     DomItem env(envPtr);
     if (qmlFile->isValid()) {
         // do not call populateQmlFile twice on lazy qml files if the importer already does it!
-        if (!creationOptions.testFlag(DomCreationOption::WithSemanticAnalysis))
+        if (creationOption != DomCreationOption::Extended)
             envPtr->populateFromQmlFile(MutableDomItem(env.copy(qmlFile)));
     } else {
         QString errs;
@@ -430,7 +430,7 @@ std::shared_ptr<JsFile> DomUniverse::parseJsFile(const QString &code, const File
     else
         envPtr = std::make_shared<DomEnvironment>(QStringList(),
                                                   DomEnvironment::Option::NoDependencies,
-                                                  DomCreationOption::None, shared_from_this());
+                                                  DomCreationOption::Default, shared_from_this());
     envPtr->addJsFile(jsFile);
     DomItem env(envPtr);
     if (!jsFile->isValid()) {
@@ -1106,10 +1106,9 @@ std::shared_ptr<OwningItem> DomEnvironment::doCopy(const DomItem &) const
 {
     shared_ptr<DomEnvironment> res;
     if (m_base)
-        res = std::make_shared<DomEnvironment>(m_base, m_loadPaths, m_options,
-                                               m_domCreationOptions);
+        res = std::make_shared<DomEnvironment>(m_base, m_loadPaths, m_options, m_domCreationOption);
     else
-        res = std::make_shared<DomEnvironment>(m_loadPaths, m_options, m_domCreationOptions,
+        res = std::make_shared<DomEnvironment>(m_loadPaths, m_options, m_domCreationOption,
                                                m_universe);
     return res;
 }
@@ -1150,7 +1149,7 @@ void DomEnvironment::loadFile(const FileToLoad &_file, const Callback &loadCallb
 
     FileToLoad file {_file};
 
-    if (domCreationOptions().testFlag(DomCreationOption::WithSemanticAnalysis)) {
+    if (domCreationOption() == DomCreationOption::Extended) {
         // use source folders when loading qml files and build folders otherwise
         if (fType == DomType::QmlFile) {
             file.setCanonicalPath(QQmlJSUtils::qmlSourcePathFromBuildPath(
@@ -1185,7 +1184,7 @@ void DomEnvironment::loadFile(const FileToLoad &_file, const Callback &loadCallb
         oldValue = fetchResult.first;
         newValue = fetchResult.second;
         if (!newValue) {
-            const auto &loadRes = universe()->loadFile(file, fType, m_domCreationOptions);
+            const auto &loadRes = universe()->loadFile(file, fType, m_domCreationOption);
             addExternalItemInfo<QmlDirectory>(loadRes.currentItem,
                                               getLoadCallbackFor(fType, loadCallback), endCallback);
             return;
@@ -1196,7 +1195,7 @@ void DomEnvironment::loadFile(const FileToLoad &_file, const Callback &loadCallb
         oldValue = fetchResult.first;
         newValue = fetchResult.second;
         if (!newValue) {
-            const auto &loadRes = universe()->loadFile(file, fType, m_domCreationOptions);
+            const auto &loadRes = universe()->loadFile(file, fType, m_domCreationOption);
             addExternalItemInfo<QmlFile>(loadRes.currentItem,
                                          getLoadCallbackFor(fType, loadCallback), endCallback);
             return;
@@ -1207,7 +1206,7 @@ void DomEnvironment::loadFile(const FileToLoad &_file, const Callback &loadCallb
         oldValue = fetchResult.first;
         newValue = fetchResult.second;
         if (!newValue) {
-            const auto &loadRes = universe()->loadFile(file, fType, m_domCreationOptions);
+            const auto &loadRes = universe()->loadFile(file, fType, m_domCreationOption);
             addExternalItemInfo<QmltypesFile>(loadRes.currentItem,
                                               getLoadCallbackFor(fType, loadCallback), endCallback);
             return;
@@ -1218,14 +1217,14 @@ void DomEnvironment::loadFile(const FileToLoad &_file, const Callback &loadCallb
         oldValue = fetchResult.first;
         newValue = fetchResult.second;
         if (!newValue) {
-            const auto &loadRes = universe()->loadFile(file, fType, m_domCreationOptions);
+            const auto &loadRes = universe()->loadFile(file, fType, m_domCreationOption);
             addExternalItemInfo<QmldirFile>(loadRes.currentItem,
                                             getLoadCallbackFor(fType, loadCallback), endCallback);
             return;
         }
     } break;
     case DomType::JsFile: {
-        const auto &loadRes = universe()->loadFile(file, fType, m_domCreationOptions);
+        const auto &loadRes = universe()->loadFile(file, fType, m_domCreationOption);
         addExternalItemInfo<JsFile>(loadRes.currentItem, getLoadCallbackFor(fType, loadCallback),
                                     endCallback);
         return;
@@ -1534,24 +1533,24 @@ std::shared_ptr<ModuleIndex> DomEnvironment::moduleIndexWithUri(
 
 
     // use the overload which does not care about changing m_moduleIndexWithUri to find a candidate
-    auto [candidate, origin] = moduleIndexWithUriHelper(self, uri, majorVersion, options);
+    auto candidate = moduleIndexWithUriHelper(self, uri, majorVersion, options);
 
     // A ModuleIndex from m_moduleIndexWithUri can always be returned
-    if (candidate && origin == ModuleLookupResult::FromGlobal)
-        return candidate;
+    if (candidate.module && candidate.fromBase == ModuleLookupResult::FromGlobal)
+        return std::move(candidate.module);
 
     // If we don't want to modify anything, return the candidate that we have found (if any)
     if (changeable == Changeable::ReadOnly)
-        return candidate;
+        return std::move(candidate.module);
 
     // Else we want to create a modifyable version
-    std::shared_ptr<ModuleIndex> newModulePtr = [&, candidate = candidate](){
+    std::shared_ptr<ModuleIndex> newModulePtr = [&] {
         // which is a completely new module in case we don't have candidate
-        if (!candidate)
+        if (!candidate.module)
             return std::make_shared<ModuleIndex>(uri, majorVersion);
         // or a copy of the candidate otherwise
-        DomItem existingModObj = self.copy(candidate);
-        return candidate->makeCopy(existingModObj);
+        DomItem existingModObj = self.copy(candidate.module);
+        return candidate.module->makeCopy(existingModObj);
     }();
 
     DomItem newModule = self.copy(newModulePtr);
@@ -1821,13 +1820,13 @@ DomItem::Callback DomEnvironment::getLoadCallbackFor(DomType fileType, const Cal
 }
 
 DomEnvironment::DomEnvironment(const QStringList &loadPaths, Options options,
-                               DomCreationOptions domCreationOptions,
+                               DomCreationOption domCreationOption,
                                const shared_ptr<DomUniverse> &universe)
     : m_options(options),
       m_universe(DomUniverse::guaranteeUniverse(universe)),
       m_loadPaths(loadPaths),
       m_implicitImports(defaultImplicitImports()),
-      m_domCreationOptions(domCreationOptions)
+      m_domCreationOption(domCreationOption)
 
 {
 }
@@ -1850,7 +1849,7 @@ DomEnvironment::SemanticAnalysis DomEnvironment::semanticAnalysis()
     if (m_semanticAnalysis)
         return *m_semanticAnalysis;
 
-    Q_ASSERT(domCreationOptions().testFlag(DomCreationOption::WithSemanticAnalysis));
+    Q_ASSERT(domCreationOption() == DomCreationOption::Extended);
     m_semanticAnalysis = SemanticAnalysis(m_loadPaths);
     return *m_semanticAnalysis;
 }
@@ -1883,35 +1882,35 @@ void DomEnvironment::SemanticAnalysis::updateLoadPaths(const QStringList &loadPa
 
 std::shared_ptr<DomEnvironment> DomEnvironment::create(const QStringList &loadPaths,
                                                        Options options,
-                                                       DomCreationOptions domCreationOptions,
+                                                       DomCreationOption domCreationOption,
                                                        const DomItem &universe)
 {
     std::shared_ptr<DomUniverse> universePtr = universe.ownerAs<DomUniverse>();
-    return std::make_shared<DomEnvironment>(loadPaths, options, domCreationOptions, universePtr);
+    return std::make_shared<DomEnvironment>(loadPaths, options, domCreationOption, universePtr);
 }
 
 DomEnvironment::DomEnvironment(const shared_ptr<DomEnvironment> &parent,
                                const QStringList &loadPaths, Options options,
-                               DomCreationOptions domCreationOptions)
+                               DomCreationOption domCreationOption)
     : m_options(options),
       m_base(parent),
       m_loadPaths(loadPaths),
       m_implicitImports(defaultImplicitImports()),
-      m_domCreationOptions(domCreationOptions)
+      m_domCreationOption(domCreationOption)
 {
 }
 
 void DomEnvironment::addQmlFile(const std::shared_ptr<QmlFile> &file, AddOption options)
 {
     addExternalItem(file, file->canonicalFilePath(), options);
-    if (domCreationOptions().testFlag(DomCreationOption::WithSemanticAnalysis)) {
-        const QQmlJSScope::Ptr &handle =
+    if (domCreationOption() == DomCreationOption::Extended) {
+        QQmlJSScope::Ptr handle =
                 semanticAnalysis().m_importer->importFile(file->canonicalFilePath());
 
         // force reset the outdated qqmljsscope in case it was already populated
         QDeferredFactory<QQmlJSScope> newFactory(semanticAnalysis().m_importer.get(),
                                                  file->canonicalFilePath(),
-                                                 TypeReader{ weak_from_this() });
+                                                 TypeReader{ weak_from_this(), m_loadPaths });
         file->setHandleForPopulation(handle);
         handle.resetFactory(std::move(newFactory));
     }
@@ -1967,7 +1966,13 @@ DomEnvironment::TypeReader::operator()(QQmlJSImporter *importer, const QString &
                 SourceLocation{} } };
     }
     const DomItem qmlFile = it.value()->currentItem(DomItem(envPtr));
+
+    // workaround for QTBUG-137705 while waiting for qmlls to use separate DomEnvironments for files
+    // requiring different importpaths (QTBUG-134308).
+    const QStringList oldImportPaths = envPtr->loadPaths();
+    envPtr->setLoadPaths(m_importPaths);
     envPtr->populateFromQmlFile(MutableDomItem(qmlFile));
+    envPtr->setLoadPaths(oldImportPaths);
     return {};
 }
 
@@ -2078,7 +2083,8 @@ bool DomEnvironment::commitToBase(
             continue;
 
         const QDeferredFactory<QQmlJSScope> newFactory(
-                oldFactory->importer(), oldFactory->filePath(), TypeReader{ newBaseForPopulation });
+                oldFactory->importer(), oldFactory->filePath(),
+                TypeReader{ newBaseForPopulation, m_loadPaths });
         handle.resetFactory(newFactory);
     }
     return true;
@@ -2242,17 +2248,21 @@ void DomEnvironment::populateFromQmlFile(MutableDomItem &&qmlFile)
             Q_UNUSED(this); // note: integrity requires "this" to be in the capture list, while
                             // other compilers complain about "this" being unused in the lambda
             AST::Node::accept(qmlFilePtr->ast(), visitor);
+
+            if (m_domCreationOption == DomCreationOption::Minimal)
+                return;
+
             CommentCollector collector(qmlFile);
             collector.collectComments();
         };
 
-        if (m_domCreationOptions.testFlag(DomCreationOption::WithSemanticAnalysis)) {
+        if (m_domCreationOption == DomCreationOption::Extended) {
             SemanticAnalysis analysis = semanticAnalysis();
             auto scope = analysis.m_importer->importFile(qmlFile.canonicalFilePath());
             auto v = std::make_unique<QQmlDomAstCreatorWithQQmlJSScope>(
                     scope, qmlFile, logger.get(), analysis.m_importer.get());
             v->enableLoadFileLazily(true);
-            v->enableScriptExpressions(m_domCreationOptions.testFlag(DomCreationOption::WithScriptExpressions));
+            v->enableScriptExpressions(true);
 
             setupFile(v.get());
 
@@ -2263,9 +2273,7 @@ void DomEnvironment::populateFromQmlFile(MutableDomItem &&qmlFile)
                     typeResolver, { analysis.m_importer, analysis.m_mapper, std::move(logger) });
         } else {
             auto v = std::make_unique<QQmlDomAstCreator>(qmlFile);
-            v->enableScriptExpressions(
-                    m_domCreationOptions.testFlag(DomCreationOption::WithScriptExpressions));
-
+            v->enableScriptExpressions(false);
             setupFile(v.get());
         }
     } else {

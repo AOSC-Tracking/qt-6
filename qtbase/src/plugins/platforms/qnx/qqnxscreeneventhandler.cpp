@@ -19,6 +19,8 @@
 #include <errno.h>
 #include <sys/keycodes.h>
 
+using namespace std::chrono_literals;
+
 Q_LOGGING_CATEGORY(lcQpaScreenEvents, "qt.qpa.screen.events");
 
 static int qtKey(int virtualKey, QChar::Category category)
@@ -107,7 +109,6 @@ QQnxScreenEventHandler::QQnxScreenEventHandler(QQnxIntegration *integration)
     , m_touchDevice(0)
     , m_mouseDevice(0)
     , m_eventThread(0)
-    , m_focusLostTimer(-1)
 {
     // Create a touch device
     m_touchDevice = new QPointingDevice(
@@ -189,6 +190,10 @@ bool QQnxScreenEventHandler::handleEvent(screen_event_t event, int qnxType)
 
     case SCREEN_EVENT_PROPERTY:
         handlePropertyEvent(event);
+        break;
+
+    case SCREEN_EVENT_MANAGER:
+        handleManagerEvent(event);
         break;
 
     default:
@@ -697,10 +702,15 @@ void QQnxScreenEventHandler::handlePropertyEvent(screen_event_t event)
     if (Q_UNLIKELY(screen_get_event_property_pv(event, SCREEN_PROPERTY_WINDOW, (void**)&window) != 0))
         qFatal("QQnx: failed to query window property, errno=%d", errno);
 
+    if (window == 0) {
+        qCDebug(lcQpaScreenEvents) << "handlePositionEvent on NULL window";
+        return;
+    }
+
     errno = 0;
     int property;
     if (Q_UNLIKELY(screen_get_event_property_iv(event, SCREEN_PROPERTY_NAME, &property) != 0))
-        qFatal("QQnx: failed to query window property, errno=%d", errno);
+        qWarning("QQnx: failed to query window property, errno=%d", errno);
 
     switch (property) {
     case SCREEN_PROPERTY_FOCUS:
@@ -721,31 +731,30 @@ void QQnxScreenEventHandler::handleKeyboardFocusPropertyEvent(screen_window_t wi
     errno = 0;
     int focus = 0;
     if (Q_UNLIKELY(window && screen_get_window_property_iv(window, SCREEN_PROPERTY_FOCUS, &focus) != 0))
-        qFatal("QQnx: failed to query keyboard focus property, errno=%d", errno);
+        qWarning("QQnx: failed to query keyboard focus property, errno=%d", errno);
 
     QWindow *focusWindow = QQnxIntegration::instance()->window(window);
 
-    if (m_focusLostTimer != -1) {
-        killTimer(m_focusLostTimer);
-        m_focusLostTimer = -1;
-    }
+    m_focusLostTimer.stop();
 
     if (focus && focusWindow != QGuiApplication::focusWindow())
         QWindowSystemInterface::handleFocusWindowChanged(focusWindow, Qt::ActiveWindowFocusReason);
     else if (!focus && focusWindow == QGuiApplication::focusWindow())
-        m_focusLostTimer = startTimer(50);
+        m_focusLostTimer.start(50ms, this);
 }
 
 void QQnxScreenEventHandler::handleGeometryPropertyEvent(screen_window_t window)
 {
     int pos[2];
     if (screen_get_window_property_iv(window, SCREEN_PROPERTY_POSITION, pos) != 0) {
-        qFatal("QQnx: failed to query window property, errno=%d", errno);
+        qWarning("QQnx: failed to query window property, errno=%d", errno);
+        return;
     }
 
     int size[2];
     if (screen_get_window_property_iv(window, SCREEN_PROPERTY_SIZE, size) != 0) {
-        qFatal("QQnx: failed to query window property, errno=%d", errno);
+        qWarning("QQnx: failed to query window property, errno=%d", errno);
+        return;
     }
 
     QRect rect(pos[0], pos[1], size[0], size[1]);
@@ -760,9 +769,8 @@ void QQnxScreenEventHandler::handleGeometryPropertyEvent(screen_window_t window)
 
 void QQnxScreenEventHandler::timerEvent(QTimerEvent *event)
 {
-    if (event->timerId() == m_focusLostTimer) {
-        killTimer(m_focusLostTimer);
-        m_focusLostTimer = -1;
+    if (event->id() == m_focusLostTimer.id()) {
+        m_focusLostTimer.stop();
         event->accept();
     } else {
         QObject::timerEvent(event);
@@ -770,5 +778,31 @@ void QQnxScreenEventHandler::timerEvent(QTimerEvent *event)
 }
 
 QT_END_NAMESPACE
+
+void QQnxScreenEventHandler::handleManagerEvent(screen_event_t event)
+{
+    errno = 0;
+    int subtype;
+    Q_SCREEN_CHECKERROR(
+            screen_get_event_property_iv(event, SCREEN_PROPERTY_SUBTYPE, &subtype),
+            "Failed to query object type property");
+
+    errno = 0;
+    screen_window_t window = 0;
+    if (screen_get_event_property_pv(event, SCREEN_PROPERTY_WINDOW, (void**)&window) != 0)
+        qFatal("QQnx: failed to query window property, errno=%d", errno);
+
+    switch (subtype) {
+    case SCREEN_EVENT_CLOSE: {
+        QWindow *closeWindow = QQnxIntegration::instance()->window(window);
+        closeWindow->close();
+        break;
+    }
+
+    default:
+        // event ignored
+        qCDebug(lcQpaScreenEvents) << "Ignore manager event for subtype: " << subtype;
+    }
+}
 
 #include "moc_qqnxscreeneventhandler.cpp"

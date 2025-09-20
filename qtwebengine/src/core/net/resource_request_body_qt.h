@@ -43,8 +43,6 @@ public:
     qint64 writeData(const char *data, qint64 maxSize) override;
     bool isSequential() const override;
 
-    void appendFilesForTest(const QString &path);
-
 private:
     network::ResourceRequestBody *const m_requestBody;
 
@@ -61,7 +59,7 @@ private:
     getConsumerHandleFromPipeGetter(mojo::Remote<network::mojom::DataPipeGetter> &pipeGetter);
     void
     readDataElementPipe(const mojo::ScopedHandleBase<mojo::DataPipeConsumerHandle> &consumerHandle,
-                        qint64 &bytesRead, const qint64 &maxSize, char **data);
+                        qint64 &bytesRead, qint64 maxSize, char **data);
     void pipeGetterOnReadComplete(int32_t status, uint64_t size);
 };
 

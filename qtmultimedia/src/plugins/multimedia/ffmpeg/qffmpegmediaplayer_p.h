@@ -15,13 +15,13 @@
 #ifndef QFFMPEGMEDIAPLAYER_H
 #define QFFMPEGMEDIAPLAYER_H
 
-#include <private/qplatformmediaplayer_p.h>
+#include <QtMultimedia/private/qplatformmediaplayer_p.h>
 #include <qmediametadata.h>
 #include <qtimer.h>
 #include <qpointer.h>
 #include <qfuture.h>
-#include "qffmpeg_p.h"
-#include "playbackengine/qffmpegmediadataholder_p.h"
+#include <QtFFmpegMediaPluginImpl/private/qffmpeg_p.h>
+#include <QtFFmpegMediaPluginImpl/private/qffmpegmediadataholder_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -85,7 +85,7 @@ private:
 private slots:
     void updatePosition();
     void endOfStream();
-    void error(int error, const QString &errorString)
+    void error(QMediaPlayer::Error error, const QString &errorString)
     {
         QPlatformMediaPlayer::error(error, errorString);
     }

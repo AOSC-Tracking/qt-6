@@ -6,6 +6,7 @@
 #define QLIST_H
 
 #include <QtCore/qarraydatapointer.h>
+#include <QtCore/qcompare.h>
 #include <QtCore/qnamespace.h>
 #include <QtCore/qhashfunctions.h>
 #include <QtCore/qiterator.h>
@@ -31,11 +32,7 @@ template <typename T> struct QListSpecialMethodsBase
 {
 protected:
     QListSpecialMethodsBase() = default;
-    ~QListSpecialMethodsBase() = default;
-    QListSpecialMethodsBase(const QListSpecialMethodsBase &) = default;
-    QListSpecialMethodsBase(QListSpecialMethodsBase &&) = default;
-    QListSpecialMethodsBase &operator=(const QListSpecialMethodsBase &) = default;
-    QListSpecialMethodsBase &operator=(QListSpecialMethodsBase &&) = default;
+    QT_DECLARE_RO5_SMF_AS_DEFAULTED(QListSpecialMethodsBase)
 
     using Self = QList<T>;
     Self *self() { return static_cast<Self *>(this); }
@@ -57,11 +54,7 @@ template <typename T> struct QListSpecialMethods : QListSpecialMethodsBase<T>
 {
 protected:
     QListSpecialMethods() = default;
-    ~QListSpecialMethods() = default;
-    QListSpecialMethods(const QListSpecialMethods &) = default;
-    QListSpecialMethods(QListSpecialMethods &&) = default;
-    QListSpecialMethods &operator=(const QListSpecialMethods &) = default;
-    QListSpecialMethods &operator=(QListSpecialMethods &&) = default;
+    QT_DECLARE_RO5_SMF_AS_DEFAULTED(QListSpecialMethods)
 
 public:
     using QListSpecialMethodsBase<T>::indexOf;
@@ -285,7 +278,7 @@ public:
     }
 
 public:
-    QList() = default;
+    constexpr QList() noexcept = default;
     explicit QList(qsizetype size)
         : d(size)
     {
@@ -349,6 +342,27 @@ public:
     void swap(QList &other) noexcept { d.swap(other.d); }
 
 #ifndef Q_QDOC
+private:
+    template <typename U = T,
+              Qt::if_has_qt_compare_three_way<U, U> = true>
+    friend auto compareThreeWay(const QList &lhs, const QList &rhs)
+    {
+        return QtOrderingPrivate::lexicographicalCompareThreeWay(lhs.begin(), lhs.end(),
+                                                                 rhs.begin(), rhs.end());
+    }
+
+#if defined(__cpp_lib_three_way_comparison) && defined(__cpp_lib_concepts)
+    template <typename U = T,
+              QtOrderingPrivate::if_has_op_less_or_op_compare_three_way<QList, U> = true>
+    friend auto operator<=>(const QList &lhs, const QList &rhs)
+    {
+        return std::lexicographical_compare_three_way(lhs.begin(), lhs.end(),
+                                                      rhs.begin(), rhs.end(),
+                                                      QtOrderingPrivate::synthThreeWay);
+    }
+#endif // __cpp_lib_three_way_comparison && __cpp_lib_concepts
+
+public:
     template <typename U = T>
     QTypeTraits::compare_eq_result_container<QList, U> operator==(const QList &other) const
     {
@@ -360,12 +374,14 @@ public:
         // do element-by-element comparison
         return std::equal(begin(), end(), other.begin(), other.end());
     }
+
     template <typename U = T>
     QTypeTraits::compare_eq_result_container<QList, U> operator!=(const QList &other) const
     {
         return !(*this == other);
     }
 
+#ifndef __cpp_lib_three_way_comparison
     template <typename U = T>
     QTypeTraits::compare_lt_result_container<QList, U> operator<(const QList &other) const
         noexcept(noexcept(std::lexicographical_compare<typename QList<U>::const_iterator,
@@ -397,6 +413,7 @@ public:
     {
         return !(*this < other);
     }
+#endif // __cpp_lib_three_way_comparison
 #else
     bool operator==(const QList &other) const;
     bool operator!=(const QList &other) const;
@@ -404,6 +421,7 @@ public:
     bool operator>(const QList &other) const;
     bool operator<=(const QList &other) const;
     bool operator>=(const QList &other) const;
+    friend auto operator<=>(const QList &lhs, const QList &rhs);
 #endif // Q_QDOC
 
     static constexpr qsizetype maxSize() { return Data::maxSize(); }

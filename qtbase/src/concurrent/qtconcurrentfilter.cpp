@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 /*!
     \page qtconcurrentfilter.html
@@ -54,6 +55,18 @@
     Since the sequence is modified in place, QtConcurrent::filter() does not
     return any results via QFuture. However, you can still use QFuture and
     QFutureWatcher to monitor the status of the filter.
+
+    \section2 Concurrent Filtered and Continuations
+
+    The result of QtConcurrent::filtered() call is a QFuture that contains
+    multiple results. When attaching a \c {.then()} continuation to such
+    QFuture, make sure to use a continuation that takes QFuture as a parameter,
+    otherwise only the first result will be processed:
+
+    \snippet code/src_concurrent_qtconcurrentfilter.cpp 18
+
+    In this example \c {badFuture} will only print a single result, while
+    \c {goodFuture} will print all results.
 
     \section1 Concurrent Filter-Reduce
 

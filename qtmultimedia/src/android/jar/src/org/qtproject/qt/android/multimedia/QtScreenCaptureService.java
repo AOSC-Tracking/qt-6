@@ -151,7 +151,7 @@ public class QtScreenCaptureService extends Service {
         mImageReader.setOnImageAvailableListener(mScreenFrameListener, mBackgroundHandler);
     }
 
-    public void stopScreenCapture()
+    void stopScreenCapture()
     {
         synchronized (mServiceStopLock) {
             if (mServiceStopped)
@@ -183,7 +183,8 @@ public class QtScreenCaptureService extends Service {
     }
 
     private final IBinder binder = new ScreenCaptureBinder();
-    public class ScreenCaptureBinder extends Binder {
+
+    class ScreenCaptureBinder extends Binder {
         QtScreenCaptureService getService() {
             return QtScreenCaptureService.this;
         }

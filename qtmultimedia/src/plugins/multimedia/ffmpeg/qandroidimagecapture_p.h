@@ -15,10 +15,11 @@
 // We mean it.
 //
 
-#include "qffmpegimagecapture_p.h"
+#include <QtFFmpegMediaPluginImpl/private/qffmpegimagecapture_p.h>
 
 QT_BEGIN_NAMESPACE
 
+namespace QFFmpeg {
 class QAndroidImageCapture : public QFFmpegImageCapture
 {
 public:
@@ -32,6 +33,7 @@ protected:
 private slots:
     void updateExif(int id, const QString &filename);
 };
+} // namespace QFFmpeg
 
 QT_END_NAMESPACE
 

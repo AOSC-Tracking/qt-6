@@ -170,7 +170,10 @@ static void doTestData(const QString &testString, const QList<int> &expectedBrea
             if (boundaryFinder.boundaryReasons() & reasons)
                 actualBreakPositions.append(boundaryFinder.position());
         } while (boundaryFinder.toNextBoundary() != -1);
-        QCOMPARE(actualBreakPositions, expectedBreakPositions);
+        QString comment;
+        QDebug format(&comment);
+        format << actualBreakPositions << "vs" << expectedBreakPositions;
+        QVERIFY2(actualBreakPositions == expectedBreakPositions, qPrintable(comment));
     }
     QCOMPARE(boundaryFinder.position(), -1);
     QVERIFY(!boundaryFinder.isAtBoundary());
@@ -260,10 +263,7 @@ void tst_QTextBoundaryFinder::sentenceBoundariesDefault()
 
 void tst_QTextBoundaryFinder::lineBoundariesDefault_data()
 {
-    // QTBUG-121907: Indic line breaking is not supported
-    QSet<QString> skipSet = {u"AK"_s, u"AP"_s, u"AS"_s, u"VI"_s, u"VF"_s};
-
-    generateDataFromFile("data/LineBreakTest.txt", skipSet);
+    generateDataFromFile("data/LineBreakTest.txt", {});
 }
 
 void tst_QTextBoundaryFinder::lineBoundariesDefault()

@@ -1,8 +1,8 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QGRAPHSTHEME_H
-#define QGRAPHSTHEME_H
+#ifndef QTGRAPHS_QGRAPHSTHEME_H
+#define QTGRAPHS_QGRAPHSTHEME_H
 
 #include <QtCore/qobject.h>
 #include <QtGraphs/qgraphsglobal.h>
@@ -19,7 +19,11 @@ class QQuickGradient;
 class QGraphsThemePrivate;
 struct QGraphsLinePrivate;
 
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
 QT_DECLARE_QESDP_SPECIALIZATION_DTOR_WITH_EXPORT(QGraphsLinePrivate, Q_GRAPHS_EXPORT)
+#else
+QT_DECLARE_QESDP_SPECIALIZATION_DTOR(QGraphsLinePrivate)
+#endif
 
 struct QGraphsThemeDirtyBitField
 {

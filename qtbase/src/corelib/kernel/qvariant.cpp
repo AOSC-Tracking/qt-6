@@ -305,11 +305,18 @@ static QVariant::Private clonePrivate(const QVariant::Private &other)
     if (d.is_shared) {
         d.data.shared->ref.ref();
     } else if (const QtPrivate::QMetaTypeInterface *iface = d.typeInterface()) {
-        Q_ASSERT(d.canUseInternalSpace(iface));
+        if (Q_LIKELY(d.canUseInternalSpace(iface))) {
+            // if not trivially copyable, ask to copy (if it's trivially
+            // copyable, we've already copied it)
+            if (iface->copyCtr)
+                QtMetaTypePrivate::copyConstruct(iface, d.data.data, other.data.data);
+        } else {
+            // highly unlikely, but possible case: type has changed relocatability
+            // between builds
+            d.data.shared = QVariant::PrivateShared::create(iface->size, iface->alignment);
+            QtMetaTypePrivate::copyConstruct(iface, d.data.shared->data(), other.data.data);
+        }
 
-        // if not trivially copyable, ask to copy
-        if (iface->copyCtr)
-            QtMetaTypePrivate::copyConstruct(iface, d.data.data, other.data.data);
     }
     return d;
 }
@@ -325,11 +332,6 @@ static QVariant::Private clonePrivate(const QVariant::Private &other)
     \ingroup shared
 
     \compares equality
-
-    Because C++ forbids unions from including types that have
-    non-default constructors or destructors, most interesting Qt
-    classes cannot be used in unions. Without QVariant, this would be
-    a problem for QObject::property() and for database work, etc.
 
     A QVariant object holds a single value of a single typeId() at a
     time. (Some types are multi-valued, for example a string list.)
@@ -549,15 +551,14 @@ QVariant::QVariant(const QVariant &p)
 
     \since 6.6
     Constructs a new variant containing a value of type \c T. The contained
-    value is is initialized with the arguments
+    value is initialized with the arguments
     \c{std::forward<Args>(args)...}.
-
-    This overload only participates in overload resolution if \c T can be
-    constructed from \a args.
 
     This constructor is provided for STL/std::any compatibility.
 
     \overload
+
+    \constraints \c T can be constructed from \a args.
  */
 
 /*!
@@ -2062,6 +2063,10 @@ QVariantList QVariant::toList() const
     type, \a type. Such casting is done automatically when calling the
     toInt(), toBool(), ... methods.
 
+    Note this function operates only on the variant's type, not the contents.
+    It indicates whether there is a conversion path from this variant to \a
+    type, not that the conversion will succeed when attempted.
+
     \sa QMetaType::canConvert()
 */
 
@@ -2204,6 +2209,7 @@ static bool qIsNumericType(uint tp)
             Q_UINT64_C(1) << QMetaType::QString |
             Q_UINT64_C(1) << QMetaType::Bool |
             Q_UINT64_C(1) << QMetaType::Double |
+            Q_UINT64_C(1) << QMetaType::Float16 |
             Q_UINT64_C(1) << QMetaType::Float |
             Q_UINT64_C(1) << QMetaType::Char |
             Q_UINT64_C(1) << QMetaType::Char16 |

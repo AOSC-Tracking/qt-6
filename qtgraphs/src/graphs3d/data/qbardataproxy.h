@@ -1,8 +1,8 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QBARDATAPROXY_H
-#define QBARDATAPROXY_H
+#ifndef QTGRAPHS_QBARDATAPROXY_H
+#define QTGRAPHS_QBARDATAPROXY_H
 
 #include <QtCore/qlist.h>
 #include <QtCore/qstringlist.h>
@@ -26,6 +26,9 @@ class Q_GRAPHS_EXPORT QBarDataProxy : public QAbstractDataProxy
     Q_PROPERTY(qsizetype rowCount READ rowCount NOTIFY rowCountChanged FINAL)
     Q_PROPERTY(qsizetype colCount READ colCount NOTIFY colCountChanged FINAL)
     Q_PROPERTY(QBar3DSeries *series READ series NOTIFY seriesChanged FINAL)
+    QML_NAMED_ELEMENT(BarDataProxy)
+    QML_UNCREATABLE("")
+
 public:
     explicit QBarDataProxy(QObject *parent = nullptr);
     ~QBarDataProxy() override;

@@ -77,7 +77,7 @@ Rectangle {
             inputPanel.setLayoutMirroring(data !== undefined && data.hasOwnProperty("layoutMirroring") && data.layoutMirroring)
             inputPanel.setVisibleFunctionKeys(data !== undefined && data.hasOwnProperty("visibleFunctionKeys") ? data.visibleFunctionKeys : ["All"])
             inputPanel.setCloseOnReturn(data !== undefined && data.hasOwnProperty("closeOnReturn") && data.closeOnReturn)
-
+            inputPanel.noAnimations = !data || !data.hasOwnProperty("noAnimations") || data.noAnimations
 
             var window = container.Window.window
             verify(window)
@@ -269,6 +269,19 @@ Rectangle {
 
             Qt.inputMethod.hide()
             verify(inputPanel.visible === false)
+        }
+
+        function test_keyboardRectWithWordCandidateView_data() {
+            return [
+                { wclAlwaysVisible: false },
+                { wclAlwaysVisible: true },
+            ]
+        }
+
+        function test_keyboardRectWithWordCandidateView(data) {
+            prepareTest()
+
+            compare(Qt.inputMethod.keyboardRectangle, Qt.rect(0, container.height - inputPanel.height, inputPanel.width, inputPanel.height))
         }
 
         function test_keyPress_data() {
@@ -669,6 +682,15 @@ Rectangle {
             compare(inputPanel.soundEffectSpy.count, 2)
         }
 
+        function test_keySoundVolume() {
+            inputPanel.setKeySoundVolume(0.5)
+            compare(inputPanel.keySoundVolumeSpy.count, 1)
+            compare(inputPanel.keySoundVolume(), 0.5);
+            inputPanel.setKeySoundVolume(1.5)
+            compare(inputPanel.keySoundVolumeSpy.count, 2)
+            compare(inputPanel.keySoundVolume(), 1.0);
+        }
+
         function test_navigationKeyInputSequence_data() {
             return [
                 { initialKey: Qt.Key_Space, initInputMethodHints: Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase, inputSequence: "\u00E1\u017C", outputText: "\u00E1\u017C" },
@@ -966,6 +988,7 @@ Rectangle {
                 { initInputMethodHints: Qt.ImhNone | Qt.ImhSensitiveData, initLocale: "zh_CN", inputSequence: "zhang'ang", expectedCandidates: [ "\u7AE0", "\u6602" ], outputText: "\u7AE0\u6602" },
                 // Invalid pinyin sequence
                 { initInputMethodHints: Qt.ImhNone, initLocale: "zh_CN", inputSequence: "fi", expectedCandidates: [ "\u53D1", "i" ], outputText: "\u53D1i" },
+                { initInputMethodHints: Qt.ImhNone, initLocale: "zh_CN", inputSequence: "dfrt7", expectedCandidates: [], outputText: "dfrt7" },
             ]
         }
 
@@ -1231,6 +1254,8 @@ Rectangle {
                 //              2. Change input mode to Katakana.
                 //              3. The input sequence should be committed leaving the cursor in the middle.
                 { initLocale: "ja_JP", initInputMode: "Hiragana", inputSequence: ["n","i","h","o","n","g","o",Qt.Key_Left,Qt.Key_Left,Qt.Key_Left,Qt.Key_Mode_switch], outputText: "\u306B\u307B\u3093\u3054", expectedCursorPosition: 2 },
+                // HiraganaFlick
+                { initLocale: "ja_JP", initInputMode: "HiraganaFlick", inputSequence: ["\u3092","\u306A","\u3099","\u308F","\u3001","\u305F"], outputText: "\u3092\u306A\u3099\u308F\u3001\u305F" },
             ]
         }
 
@@ -1945,6 +1970,48 @@ Rectangle {
                 var currentIndex = data.activeLocales.indexOf(languagePopupList.model.get(i).localeName)
                 verify(currentIndex > previousIndex)
                 previousIndex = currentIndex
+            }
+        }
+
+
+        function test_languagePopupListToggleCheckItemsVisible_data() {
+            return [
+                { initLocale: "fi_FI", noAnimations: false },
+            ]
+        }
+
+        function test_languagePopupListToggleCheckItemsVisible(data) {
+            prepareTest(data)
+
+            if (!inputPanel.keyboard.style.languagePopupListEnabled)
+                skip("The language popup is disabled (!style.languagePopupListEnabled)")
+
+            var languagePopupList = inputPanel.findObjectByName("languagePopupList")
+
+            // show
+            inputPanel.doKeyboardFunction("ChangeLanguage")
+            waitForPolish(languagePopupList)
+
+            // hide
+            inputPanel.doKeyboardFunction("ChangeLanguage")
+
+            // show
+            inputPanel.doKeyboardFunction("ChangeLanguage")
+            waitForPolish(languagePopupList)
+
+            function checkItemVisibility(index) {
+                if (index >= 0 && index < languagePopupList.count) {
+                    let itemDelegate = languagePopupList.itemAtIndex(index)
+                    verify(itemDelegate.visible)
+                    compare(itemDelegate.opacity, 1)
+                }
+            }
+
+            if (languagePopupList.preferredVisibleItems > 2) {
+                let numberOfSurroundingItems = Math.floor((languagePopupList.preferredVisibleItems - 1) / 2)
+                for (let offset = -numberOfSurroundingItems; offset < numberOfSurroundingItems; ++offset) {
+                    checkItemVisibility(languagePopupList.currentIndex + offset)
+                }
             }
         }
 

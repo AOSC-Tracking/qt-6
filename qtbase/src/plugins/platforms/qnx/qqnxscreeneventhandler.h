@@ -5,6 +5,7 @@
 #define QQNXSCREENEVENTHANDLER_H
 
 #include <qpa/qwindowsysteminterface.h>
+#include <QtCore/QBasicTimer>
 #include <QtCore/QLoggingCategory>
 
 #include <screen/screen.h>
@@ -53,6 +54,7 @@ private:
     void handlePropertyEvent(screen_event_t event);
     void handleKeyboardFocusPropertyEvent(screen_window_t window);
     void handleGeometryPropertyEvent(screen_window_t window);
+    void handleManagerEvent(screen_event_t event);
 
 private:
     enum {
@@ -69,7 +71,7 @@ private:
     QWindowSystemInterface::TouchPoint m_touchPoints[MaximumTouchPoints];
     QList<QQnxScreenEventFilter*> m_eventFilters;
     QQnxScreenEventThread *m_eventThread;
-    int m_focusLostTimer;
+    QBasicTimer m_focusLostTimer;
 };
 
 QT_END_NAMESPACE

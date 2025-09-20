@@ -60,6 +60,8 @@ void tst_valueaxis::initialProperties()
     QCOMPARE(m_axis->subTickCount(), 0);
     QCOMPARE(m_axis->tickAnchor(), 0.0);
     QCOMPARE(m_axis->tickInterval(), 0.0);
+    QCOMPARE(m_axis->zoom(), 1.0);
+    QCOMPARE(m_axis->pan(), 0.0);
 }
 
 void tst_valueaxis::initializeProperties()
@@ -81,6 +83,8 @@ void tst_valueaxis::initializeProperties()
     m_axis->setSubTickCount(2);
     m_axis->setTickAnchor(0.5);
     m_axis->setTickInterval(0.5);
+    m_axis->setZoom(2.0);
+    m_axis->setPan(1.0);
 
     QCOMPARE(m_axis->min(), 5);
     QCOMPARE(m_axis->max(), 100);
@@ -89,10 +93,21 @@ void tst_valueaxis::initializeProperties()
     QCOMPARE(m_axis->subTickCount(), 2);
     QCOMPARE(m_axis->tickAnchor(), 0.5);
     QCOMPARE(m_axis->tickInterval(), 0.5);
+    QCOMPARE(m_axis->zoom(), 2.0);
+    QCOMPARE(m_axis->pan(), 1.0);
+
+    m_axis->setLabelFormat("%.2f cakes");
+    QCOMPARE(m_axis->labelFormat(), "%.2f cakes");
+
+    //Constuct a string same way we do in axisRenderer.
+    QByteArray format = m_axis->labelFormat().toLatin1();
+    QString formatTest = QString::asprintf(format.constData(), m_axis->min());
+
+    QCOMPARE(formatTest, "5.00 cakes");
 
     QCOMPARE(spy0.size(), 1);
     QCOMPARE(spy1.size(), 1);
-    QCOMPARE(spy2.size(), 1);
+    QCOMPARE(spy2.size(), 2);
     QCOMPARE(spy3.size(), 1);
     QCOMPARE(spy4.size(), 1);
     QCOMPARE(spy5.size(), 1);

@@ -25,7 +25,7 @@ QMaybe<QPlatformCamera *> QGstreamerCamera::create(QCamera *camera)
     static const auto error = qGstErrorMessageIfElementsNotAvailable(
             "videotestsrc", "capsfilter", "videoconvert", "videoscale", "identity");
     if (error)
-        return *error;
+        return QUnexpected{ *error };
 
     return new QGstreamerCamera(camera);
 }
@@ -194,7 +194,7 @@ void QGstreamerCamera::updateCameraProperties()
 #if QT_CONFIG(gstreamer_photography)
 GstPhotography *QGstreamerCamera::photography() const
 {
-    if (!gstCamera.isNull() && GST_IS_PHOTOGRAPHY(gstCamera.element()))
+    if (gstCamera && GST_IS_PHOTOGRAPHY(gstCamera.element()))
         return GST_PHOTOGRAPHY(gstCamera.element());
     return nullptr;
 }

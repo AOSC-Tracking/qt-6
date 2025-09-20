@@ -14,11 +14,12 @@
 
 #if QT_CONFIG(accessibility)
 
+#include <QtGui/private/qaccessiblehelper_p.h>
+
 QT_BEGIN_NAMESPACE
 
 #if QT_CONFIG(menu)
 
-QString qt_accStripAmp(const QString &text);
 QString qt_accHotKey(const QString &text);
 
 QAccessibleInterface *getOrCreateMenu(QWidget *menu, QAction *action)
@@ -259,7 +260,7 @@ QAccessible::State QAccessibleMenuItem::state() const
             s.focused = true;
 #endif
     }
-    if (own && own->style()->styleHint(QStyle::SH_Menu_MouseTracking))
+    if (own && own->style()->styleHint(QStyle::SH_Menu_MouseTracking, nullptr, own))
         s.hotTracked = true;
     if (m_action->isSeparator() || !m_action->isEnabled())
         s.disabled = true;

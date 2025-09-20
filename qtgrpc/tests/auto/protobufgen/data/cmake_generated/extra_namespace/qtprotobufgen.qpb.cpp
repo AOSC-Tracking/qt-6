@@ -116,6 +116,10 @@ EnumTypes &EnumTypes::operator =(const EnumTypes &other)
 }
 EnumTypes::EnumTypes(EnumTypes &&other) noexcept
     = default;
+EnumTypes::operator QVariant() const
+{
+    return QVariant::fromValue(*this);
+}
 bool comparesEqual(const EnumTypes &lhs, const EnumTypes &rhs) noexcept
 {
     return operator ==(static_cast<const QProtobufMessage&>(lhs),
@@ -395,6 +399,10 @@ ScalarTypes &ScalarTypes::operator =(const ScalarTypes &other)
 }
 ScalarTypes::ScalarTypes(ScalarTypes &&other) noexcept
     = default;
+ScalarTypes::operator QVariant() const
+{
+    return QVariant::fromValue(*this);
+}
 bool comparesEqual(const ScalarTypes &lhs, const ScalarTypes &rhs) noexcept
 {
     return operator ==(static_cast<const QProtobufMessage&>(lhs),
@@ -774,6 +782,10 @@ ScalarRepeatedTypes &ScalarRepeatedTypes::operator =(const ScalarRepeatedTypes &
 }
 ScalarRepeatedTypes::ScalarRepeatedTypes(ScalarRepeatedTypes &&other) noexcept
     = default;
+ScalarRepeatedTypes::operator QVariant() const
+{
+    return QVariant::fromValue(*this);
+}
 bool comparesEqual(const ScalarRepeatedTypes &lhs, const ScalarRepeatedTypes &rhs) noexcept
 {
     return operator ==(static_cast<const QProtobufMessage&>(lhs),
@@ -1247,6 +1259,10 @@ ScalarRepeatedNoPackedTypes &ScalarRepeatedNoPackedTypes::operator =(const Scala
 }
 ScalarRepeatedNoPackedTypes::ScalarRepeatedNoPackedTypes(ScalarRepeatedNoPackedTypes &&other) noexcept
     = default;
+ScalarRepeatedNoPackedTypes::operator QVariant() const
+{
+    return QVariant::fromValue(*this);
+}
 bool comparesEqual(const ScalarRepeatedNoPackedTypes &lhs, const ScalarRepeatedNoPackedTypes &rhs) noexcept
 {
     return operator ==(static_cast<const QProtobufMessage&>(lhs),
@@ -1694,6 +1710,10 @@ ScalarOneOfTypes &ScalarOneOfTypes::operator =(const ScalarOneOfTypes &other)
 }
 ScalarOneOfTypes::ScalarOneOfTypes(ScalarOneOfTypes &&other) noexcept
     = default;
+ScalarOneOfTypes::operator QVariant() const
+{
+    return QVariant::fromValue(*this);
+}
 bool comparesEqual(const ScalarOneOfTypes &lhs, const ScalarOneOfTypes &rhs) noexcept
 {
     return operator ==(static_cast<const QProtobufMessage&>(lhs),
@@ -2335,6 +2355,10 @@ ScalarOptionalTypes &ScalarOptionalTypes::operator =(const ScalarOptionalTypes &
 }
 ScalarOptionalTypes::ScalarOptionalTypes(ScalarOptionalTypes &&other) noexcept
     = default;
+ScalarOptionalTypes::operator QVariant() const
+{
+    return QVariant::fromValue(*this);
+}
 bool comparesEqual(const ScalarOptionalTypes &lhs, const ScalarOptionalTypes &rhs) noexcept
 {
     return operator ==(static_cast<const QProtobufMessage&>(lhs),
@@ -3080,6 +3104,10 @@ MapScalarTypes &MapScalarTypes::operator =(const MapScalarTypes &other)
 }
 MapScalarTypes::MapScalarTypes(MapScalarTypes &&other) noexcept
     = default;
+MapScalarTypes::operator QVariant() const
+{
+    return QVariant::fromValue(*this);
+}
 bool comparesEqual(const MapScalarTypes &lhs, const MapScalarTypes &rhs) noexcept
 {
     return operator ==(static_cast<const QProtobufMessage&>(lhs),
@@ -3455,6 +3483,10 @@ MessageTypes &MessageTypes::operator =(const MessageTypes &other)
 }
 MessageTypes::MessageTypes(MessageTypes &&other) noexcept
     = default;
+MessageTypes::operator QVariant() const
+{
+    return QVariant::fromValue(*this);
+}
 bool comparesEqual(const MessageTypes &lhs, const MessageTypes &rhs) noexcept
 {
     return operator ==(static_cast<const QProtobufMessage&>(lhs),
@@ -3849,6 +3881,10 @@ NestedMessage &NestedMessage::operator =(const NestedMessage &other)
 }
 NestedMessage::NestedMessage(NestedMessage &&other) noexcept
     = default;
+NestedMessage::operator QVariant() const
+{
+    return QVariant::fromValue(*this);
+}
 bool comparesEqual(const NestedMessage &lhs, const NestedMessage &rhs) noexcept
 {
     return operator ==(static_cast<const QProtobufMessage&>(lhs),
@@ -4003,6 +4039,10 @@ MessageNestedTypes &MessageNestedTypes::operator =(const MessageNestedTypes &oth
 }
 MessageNestedTypes::MessageNestedTypes(MessageNestedTypes &&other) noexcept
     = default;
+MessageNestedTypes::operator QVariant() const
+{
+    return QVariant::fromValue(*this);
+}
 bool comparesEqual(const MessageNestedTypes &lhs, const MessageNestedTypes &rhs) noexcept
 {
     return operator ==(static_cast<const QProtobufMessage&>(lhs),

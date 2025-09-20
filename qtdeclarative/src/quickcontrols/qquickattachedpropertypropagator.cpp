@@ -13,7 +13,7 @@
 
 QT_BEGIN_NAMESPACE
 
-Q_LOGGING_CATEGORY(lcAttached, "qt.quick.controls.attachedpropertypropagator")
+Q_STATIC_LOGGING_CATEGORY(lcAttached, "qt.quick.controls.attachedpropertypropagator")
 
 /*!
     \class QQuickAttachedPropertyPropagator
@@ -39,18 +39,49 @@ Q_LOGGING_CATEGORY(lcAttached, "qt.quick.controls.attachedpropertypropagator")
     as it is better suited for that use case, and is more efficient in that
     it only requires one QObject.
 
-    To use QQuickAttachedPropertyPropagator:
-    \list
-    \li Derive from it
-    \li Call \l initialize() in the constructor
-    \li Define set/inherit/propagate/reset functions for each property as needed
-    \li Reimplement \l attachedParentChange() to handle property inheritance
+    To implement a custom attached property:
+
+    \list 1
+    \li Derive a class that exposes the attached property from
+        QQuickAttachedPropertyPropagator.
+
+        For example, to implement an attached \c {MyStyle.theme} property,
+        declare the \c {MyStyle} class:
+
+        \quotefromfile ../../examples/quickcontrols/attachedstyleproperties/MyStyle/mystyle.h
+        \skipto class
+        \printto {
+
+    \li Call \l initialize() in the constructor of your class:
+
+        \quotefromfile ../../examples/quickcontrols/attachedstyleproperties/MyStyle/mystyle.cpp
+        \skipto MyStyle::MyStyle
+        \printuntil }
+
+    \li Define set/inherit/propagate/reset functions for the attached property
+        as needed. For example, to define a \c theme attached property:
+
+        \quotefromfile ../../examples/quickcontrols/attachedstyleproperties/MyStyle/mystyle.cpp
+        \skipto theme()
+        \printto MyStyle::themeChange()
+
+    \li Reimplement \l attachedParentChange() to handle property inheritance:
+
+        \quotefromfile ../../examples/quickcontrols/attachedstyleproperties/MyStyle/mystyle.cpp
+        \skipto attachedParentChange
+        \printuntil /^\}/
+
     \li Implement a static \c qmlAttachedProperties function and declare the
         type as an attached QML type with \l QML_ELEMENT and \l QML_ATTACHED,
-        as detailed in \l {Providing Attached Properties}
+        as detailed in \l {Providing Attached Properties}:
+
+        \quotefromfile ../../examples/quickcontrols/attachedstyleproperties/MyStyle/mystyle.cpp
+        \skipto qmlAttachedProperties
+        \printuntil }
+
     \endlist
 
-    For an example that demonstrates this in depth, see
+    The complete implementation is available in
     \l {Qt Quick Controls - Attached Style Properties Example}.
 
     \sa {Styling Qt Quick Controls}
@@ -99,7 +130,7 @@ static QQuickAttachedPropertyPropagator *findAttachedParent(const QMetaObject *o
     */
     auto popupItem = qobject_cast<QQuickPopupItem *>(objectWeAreAttachedTo);
     if (popupItem) {
-        qCDebug(lcAttached).noquote() << "- attachee belongs to popup item" << popupItem << "- checking if it has an attached object";
+        qCDebug(lcAttached).noquote() << "- attachee is a popup item" << popupItem << "- checking if it has an attached object";
         auto popupItemPrivate = QQuickPopupItemPrivate::get(popupItem);
         QQuickAttachedPropertyPropagator *popupAttached = attachedObject(ourAttachedType, popupItemPrivate->popup);
         if (popupAttached) {
@@ -109,7 +140,7 @@ static QQuickAttachedPropertyPropagator *findAttachedParent(const QMetaObject *o
             qCDebug(lcAttached).noquote() << "- popup item does not have attached object";
         }
     } else {
-        qCDebug(lcAttached).noquote() << "- attachee does not belong to a popup";
+        qCDebug(lcAttached).noquote() << "- attachee is not a popup item";
     }
 
     QQuickItem *item = qobject_cast<QQuickItem *>(objectWeAreAttachedTo);
@@ -245,7 +276,8 @@ static QQuickItem *findAttachedItem(QObject *parent)
     return item;
 }
 
-class QQuickAttachedPropertyPropagatorPrivate : public QObjectPrivate, public QQuickItemChangeListener
+class QQuickAttachedPropertyPropagatorPrivate : public QObjectPrivate,
+                                                public QSafeQuickItemChangeListener<QQuickAttachedPropertyPropagatorPrivate>
 {
 public:
     Q_DECLARE_PUBLIC(QQuickAttachedPropertyPropagator)

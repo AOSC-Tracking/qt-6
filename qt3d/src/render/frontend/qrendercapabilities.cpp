@@ -318,7 +318,7 @@ int QRenderCapabilities::minorVersion() const
 }
 
 /*!
-\qmlproperty QStringList RenderCapabilities::extensions
+\qmlproperty list<string> RenderCapabilities::extensions
 
 Returns the list of extensions currently available.
 

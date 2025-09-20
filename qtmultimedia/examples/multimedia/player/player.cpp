@@ -6,6 +6,7 @@
 #include "playlistmodel.h"
 #include "qmediaplaylist.h"
 #include "videowidget.h"
+#include "audiolevelmeter.h"
 
 #include <QApplication>
 #include <QAudioDevice>
@@ -27,6 +28,7 @@
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QVBoxLayout>
+#include <QAudioBufferOutput>
 
 Player::Player(QWidget *parent) : QWidget(parent)
 {
@@ -56,12 +58,22 @@ Player::Player(QWidget *parent) : QWidget(parent)
     connect(m_playlist, &QMediaPlaylist::currentIndexChanged, this,
             &Player::playlistPositionChanged);
 
+    // audio level meter
+    m_audioBufferOutput = new QAudioBufferOutput(this);
+    m_player->setAudioBufferOutput(m_audioBufferOutput);
+    m_audioLevelMeter = new AudioLevelMeter(this);
+    connect(m_audioBufferOutput, &QAudioBufferOutput::audioBufferReceived,
+            m_audioLevelMeter, &AudioLevelMeter::onAudioBufferReceived);
+    connect(m_player, &QMediaPlayer::playingChanged,
+            m_audioLevelMeter, &AudioLevelMeter::deactivate);
+
     // player layout
     QBoxLayout *layout = new QVBoxLayout(this);
 
     // display
     QBoxLayout *displayLayout = new QHBoxLayout;
     displayLayout->addWidget(m_videoWidget, 2);
+    displayLayout->addWidget(m_audioLevelMeter, 3);
 #if !defined(Q_OS_ANDROID) && !defined(Q_OS_IOS)
     m_playlistView = new QListView();
     m_playlistView->setModel(m_playlistModel);
@@ -170,10 +182,13 @@ Player::Player(QWidget *parent) : QWidget(parent)
         for (int j = 0; j < 6; j += 2) {
             m_metaDataLabels[key] = new QLabel(
                     QMediaMetaData::metaDataKeyToString(static_cast<QMediaMetaData::Key>(key)));
-            if (key == QMediaMetaData::ThumbnailImage || key == QMediaMetaData::CoverArtImage)
+            if (key == QMediaMetaData::ThumbnailImage || key == QMediaMetaData::CoverArtImage) {
                 m_metaDataFields[key] = new QLabel;
-            else
-                m_metaDataFields[key] = new QLineEdit;
+            } else {
+                auto lineEdit = new QLineEdit;
+                lineEdit->setReadOnly(true);
+                m_metaDataFields[key] = lineEdit;
+            }
             m_metaDataLabels[key]->setDisabled(true);
             m_metaDataFields[key]->setDisabled(true);
             metaDataLayout->addWidget(m_metaDataLabels[key], i, j);

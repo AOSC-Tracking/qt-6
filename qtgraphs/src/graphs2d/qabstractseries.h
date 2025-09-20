@@ -1,8 +1,8 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QABSTRACTSERIES_H
-#define QABSTRACTSERIES_H
+#ifndef QTGRAPHS_QABSTRACTSERIES_H
+#define QTGRAPHS_QABSTRACTSERIES_H
 
 #include <QtCore/qobject.h>
 #include <QtGraphs/qabstractaxis.h>
@@ -123,4 +123,4 @@ QT_END_NAMESPACE
 
 Q_DECLARE_METATYPE(QLegendData)
 
-#endif // QABSTRACTSERIES_H
+#endif // QTGRAPHS_QABSTRACTSERIES_H

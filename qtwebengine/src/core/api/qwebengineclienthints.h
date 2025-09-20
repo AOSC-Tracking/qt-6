@@ -70,6 +70,7 @@ private:
     Q_DISABLE_COPY(QWebEngineClientHints)
     friend class QWebEngineProfilePrivate;
     friend class QQuickWebEngineProfilePrivate;
+    friend class QQuickWebEngineProfile;
 
     QPointer<QtWebEngineCore::ProfileAdapter> m_profileAdapter;
 };

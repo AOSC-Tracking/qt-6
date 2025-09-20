@@ -69,13 +69,13 @@ namespace Qt3DExtras {
  */
 
 /*!
- * \qmlproperty float Text2DEntity::width
+ * \qmlproperty real Text2DEntity::width
  *
  * Holds the width of the text's bounding rectangle.
  */
 
 /*!
- * \qmlproperty float Text2DEntity::height
+ * \qmlproperty real Text2DEntity::height
  *
  * Holds the height of the text's bounding rectangle.
  */

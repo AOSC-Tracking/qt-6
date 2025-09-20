@@ -11,7 +11,7 @@
 #include <QtQuick/qquickwindow.h>
 #include <QtQuick/qsgtexture.h>
 
-#if defined(USE_OZONE)
+#if BUILDFLAG(IS_OZONE)
 #if BUILDFLAG(IS_OZONE_X11)
 // We need to define USE_VULKAN_XCB for proper vulkan function pointers.
 // Avoiding it may lead to call wrong vulkan functions.
@@ -23,7 +23,7 @@
 #include "gpu/vulkan/vulkan_device_queue.h"
 #include "third_party/skia/include/gpu/vk/GrVkTypes.h"
 #include "third_party/skia/include/gpu/ganesh/vk/GrVkBackendSurface.h"
-#endif // defined(USE_OZONE)
+#endif // BUILDFLAG(IS_OZONE)
 
 namespace QtWebEngineCore {
 
@@ -37,11 +37,13 @@ NativeSkiaOutputDeviceVulkan::NativeSkiaOutputDeviceVulkan(
                              shared_image_factory, shared_image_representation_factory,
                              didSwapBufferCompleteCallback)
 {
+    qCDebug(lcWebEngineCompositor, "Native Skia Output Device: Vulkan");
+
     SkColorType skColorType = kRGBA_8888_SkColorType;
-    capabilities_.sk_color_types[static_cast<int>(gfx::BufferFormat::RGBA_8888)] = skColorType;
-    capabilities_.sk_color_types[static_cast<int>(gfx::BufferFormat::RGBX_8888)] = skColorType;
-    capabilities_.sk_color_types[static_cast<int>(gfx::BufferFormat::BGRA_8888)] = skColorType;
-    capabilities_.sk_color_types[static_cast<int>(gfx::BufferFormat::BGRX_8888)] = skColorType;
+    capabilities_.sk_color_type_map[viz::SinglePlaneFormat::kRGBA_8888] = skColorType;
+    capabilities_.sk_color_type_map[viz::SinglePlaneFormat::kRGBX_8888] = skColorType;
+    capabilities_.sk_color_type_map[viz::SinglePlaneFormat::kBGRA_8888] = skColorType;
+    capabilities_.sk_color_type_map[viz::SinglePlaneFormat::kBGRX_8888] = skColorType;
 }
 
 NativeSkiaOutputDeviceVulkan::~NativeSkiaOutputDeviceVulkan() { }
@@ -51,7 +53,7 @@ QSGTexture *NativeSkiaOutputDeviceVulkan::texture(QQuickWindow *win, uint32_t te
     if (!m_frontBuffer || !m_readyWithTexture)
         return nullptr;
 
-#if defined(USE_OZONE)
+#if BUILDFLAG(IS_OZONE)
     Q_ASSERT(m_contextState->gr_context_type() == gpu::GrContextType::kVulkan);
 
     GrVkImageInfo vkImageInfo;
@@ -95,7 +97,7 @@ QSGTexture *NativeSkiaOutputDeviceVulkan::texture(QQuickWindow *win, uint32_t te
 #elif defined(Q_OS_WIN)
     Q_ASSERT(m_contextState->gr_context_type() == gpu::GrContextType::kGL);
 
-    absl::optional<gl::DCLayerOverlayImage> overlayImage = m_frontBuffer->overlayImage();
+    std::optional<gl::DCLayerOverlayImage> overlayImage = m_frontBuffer->overlayImage();
     if (!overlayImage) {
         qWarning("No overlay image.");
         return nullptr;
@@ -110,22 +112,12 @@ QSGTexture *NativeSkiaOutputDeviceVulkan::texture(QQuickWindow *win, uint32_t te
     QVulkanFunctions *f = win->vulkanInstance()->functions();
     QVulkanDeviceFunctions *df = win->vulkanInstance()->deviceFunctions(qtVulkanDevice);
 
-    VkImageLayout imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    VkPhysicalDeviceProperties deviceProperties;
-    f->vkGetPhysicalDeviceProperties(qtPhysicalDevice, &deviceProperties);
-    if (deviceProperties.vendorID == 0x10DE) {
-        // FIXME: This is a workaround for Nvidia driver.
-        // The imported image is empty if the initialLayout is not
-        // VK_IMAGE_LAYOUT_PREINITIALIZED.
-        imageLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
-    }
-
     VkExternalMemoryImageCreateInfoKHR externalMemoryImageCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO_KHR,
         .pNext = nullptr,
         .handleTypes = 0,
     };
-#if defined(USE_OZONE)
+#if BUILDFLAG(IS_OZONE)
     base::ScopedFD scopedFd;
 
     VkSubresourceLayout planeLayout = {
@@ -144,20 +136,28 @@ QSGTexture *NativeSkiaOutputDeviceVulkan::texture(QQuickWindow *win, uint32_t te
         .pPlaneLayouts = &planeLayout,
     };
 
+    bool usingDrmModifier = false;
     if (nativePixmap) {
+        qCDebug(lcWebEngineCompositor, "VULKAN: Importing NativePixmap into VkImage.");
         gfx::NativePixmapHandle nativePixmapHandle = nativePixmap->ExportHandle();
-        if (nativePixmapHandle.planes.size() != 1)
-            qFatal("VULKAN: Multiple planes are not supported.");
+        qCDebug(lcWebEngineCompositor, "  DRM Format Modifier: 0x%lx", nativePixmapHandle.modifier);
 
-        planeLayout.offset = nativePixmapHandle.planes[0].offset;
-        planeLayout.rowPitch = nativePixmapHandle.planes[0].stride;
-        modifierInfo.drmFormatModifier = nativePixmapHandle.modifier;
+        if (nativePixmapHandle.modifier != gfx::NativePixmapHandle::kNoModifier) {
+            usingDrmModifier = true;
+            if (nativePixmapHandle.planes.size() != 1)
+                qFatal("VULKAN: Multiple planes are not supported.");
 
-        externalMemoryImageCreateInfo.pNext = &modifierInfo;
+            planeLayout.offset = nativePixmapHandle.planes[0].offset;
+            planeLayout.rowPitch = nativePixmapHandle.planes[0].stride;
+            modifierInfo.drmFormatModifier = nativePixmapHandle.modifier;
+
+            externalMemoryImageCreateInfo.pNext = &modifierInfo;
+        }
         externalMemoryImageCreateInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
 
         scopedFd = std::move(nativePixmapHandle.planes[0].fd);
     } else {
+        qCDebug(lcWebEngineCompositor, "VULKAN: Importing VkImage into VkImage.");
         externalMemoryImageCreateInfo.handleTypes =
                 VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT_KHR;
 
@@ -183,6 +183,7 @@ QSGTexture *NativeSkiaOutputDeviceVulkan::texture(QQuickWindow *win, uint32_t te
     if (!scopedFd.is_valid())
         qFatal("VULKAN: Unable to extract file descriptor.");
 #elif defined(Q_OS_WIN)
+    qCDebug(lcWebEngineCompositor, "VULKAN: Importing DXGI Resource into VkImage.");
     externalMemoryImageCreateInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_BIT;
 
     Q_ASSERT(overlayImage->type() == gl::DCLayerOverlayType::kNV12Texture);
@@ -205,10 +206,6 @@ QSGTexture *NativeSkiaOutputDeviceVulkan::texture(QQuickWindow *win, uint32_t te
     Q_ASSERT(sharedHandle != INVALID_HANDLE_VALUE);
 #endif
 
-    constexpr VkImageUsageFlags kUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-            | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT
-            | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-
     VkImageCreateInfo importedImageCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .pNext = &externalMemoryImageCreateInfo,
@@ -224,17 +221,19 @@ QSGTexture *NativeSkiaOutputDeviceVulkan::texture(QQuickWindow *win, uint32_t te
         .arrayLayers = 1,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = kUsage,
+        // The image is fed into a combined image sampler
+        .usage = VK_IMAGE_USAGE_SAMPLED_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .queueFamilyIndexCount = 0,
         .pQueueFamilyIndices = nullptr,
-        .initialLayout = imageLayout,
+        // VkExternalMemoryImageCreateInfo only allows UNDEFINED
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
     };
 
-#if defined(USE_OZONE)
-    if (nativePixmap)
+#if BUILDFLAG(IS_OZONE)
+    if (usingDrmModifier)
         importedImageCreateInfo.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
-    else
+    else if (vkImageInfo.fAlloc.fMemory != VK_NULL_HANDLE)
         importedImageCreateInfo.tiling = vkImageInfo.fImageTiling;
 #endif
 
@@ -243,9 +242,9 @@ QSGTexture *NativeSkiaOutputDeviceVulkan::texture(QQuickWindow *win, uint32_t te
     result = df->vkCreateImage(qtVulkanDevice, &importedImageCreateInfo, nullptr /* pAllocator */,
                                &importedImage);
     if (result != VK_SUCCESS)
-        qFatal() << "VULKAN: vkCreateImage failed result:" << result;
+        qFatal("VULKAN: vkCreateImage failed result: %d", static_cast<int>(result));
 
-#if defined(USE_OZONE)
+#if BUILDFLAG(IS_OZONE)
     VkImportMemoryFdInfoKHR importMemoryHandleInfo = {
         .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR,
         .pNext = nullptr,
@@ -304,13 +303,13 @@ QSGTexture *NativeSkiaOutputDeviceVulkan::texture(QQuickWindow *win, uint32_t te
     result = df->vkAllocateMemory(qtVulkanDevice, &memoryAllocateInfo, nullptr /* pAllocator */,
                                   &importedImageMemory);
     if (result != VK_SUCCESS)
-        qFatal() << "VULKAN: vkAllocateMemory failed result:" << result;
+        qFatal("VULKAN: vkAllocateMemory failed result: %d", static_cast<int>(result));
 
     df->vkBindImageMemory(qtVulkanDevice, importedImage, importedImageMemory, 0);
 
     QQuickWindow::CreateTextureOptions texOpts(textureOptions);
-    QSGTexture *texture = QNativeInterface::QSGVulkanTexture::fromNative(importedImage, imageLayout,
-                                                                         win, size(), texOpts);
+    QSGTexture *texture = QNativeInterface::QSGVulkanTexture::fromNative(
+            importedImage, importedImageCreateInfo.initialLayout, win, size(), texOpts);
 
     m_frontBuffer->textureCleanupCallback = [=]() {
         df->vkDestroyImage(qtVulkanDevice, importedImage, nullptr);

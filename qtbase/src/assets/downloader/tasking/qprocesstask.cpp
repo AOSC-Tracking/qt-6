@@ -6,6 +6,7 @@
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDebug>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QMutex>
 #include <QtCore/QThread>
 #include <QtCore/QTimer>
@@ -217,7 +218,7 @@ ProcessReaper::ProcessReaper()
 
 ProcessReaper::~ProcessReaper()
 {
-    if (QThread::currentThread() != qApp->thread())
+    if (!QThread::isMainThread())
         qWarning() << "Destructing process reaper from non-main thread.";
 
     instance()->m_private->waitForFinished();

@@ -18,6 +18,7 @@
 #include <QtWebEngineCore/qtwebenginecoreglobal.h>
 #include <QtCore/private/qglobal_p.h>
 #include <QtWebEngineCore/private/qtwebenginecore-config_p.h>
+#include <QLoggingCategory>
 
 #ifdef QT_WEBENGINE_LOGGING
 #define QT_NOT_YET_IMPLEMENTED fprintf(stderr, "function %s not implemented! - %s:%d\n", __func__, __FILE__, __LINE__);
@@ -25,6 +26,19 @@
 #else
 #define QT_NOT_YET_IMPLEMENTED qt_noop();
 #define QT_NOT_USED Q_UNREACHABLE(); // This will assert in debug.
+#endif
+
+// The Q_WEBENGINE_LOGGING_CATEGORY macro is a stopgap fix for the deprecation warnings
+// introduced alongside the new logging category macros in Qt 6.9. Since we need to support
+// building with older versions up to and including the last LTS release (6.8), we can't simply
+// switch to using Q_STATIC_LOGGING_CATEGORY. This file and the macro definition within
+// are intended to be removed in the next Qt 6 LTS release.
+#if QT_VERSION < QT_VERSION_CHECK(6, 11, 0)
+#if defined(Q_STATIC_LOGGING_CATEGORY)
+#define Q_WEBENGINE_LOGGING_CATEGORY(name, ...) Q_STATIC_LOGGING_CATEGORY(name, __VA_ARGS__)
+#else
+#define Q_WEBENGINE_LOGGING_CATEGORY(name, ...) Q_LOGGING_CATEGORY(name, __VA_ARGS__)
+#endif
 #endif
 
 namespace QtWebEngineCore {

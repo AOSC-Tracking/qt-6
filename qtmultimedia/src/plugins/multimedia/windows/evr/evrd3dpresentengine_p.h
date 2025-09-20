@@ -18,7 +18,7 @@
 #include <QMutex>
 #include <QSize>
 #include <QVideoFrameFormat>
-#include <private/qcomptr_p.h>
+#include <QtCore/private/qcomptr_p.h>
 #include <qpointer.h>
 
 #include <d3d9.h>
@@ -110,7 +110,7 @@ public:
     HRESULT createVideoSamples(IMFMediaType *format, QList<ComPtr<IMFSample>> &videoSampleQueue,
                                QSize frameSize);
     QVideoFrameFormat videoSurfaceFormat() const { return m_surfaceFormat; }
-    QVideoFrame makeVideoFrame(const ComPtr<IMFSample> &sample);
+    QVideoFrame makeVideoFrame(const ComPtr<IMFSample> &sample, QtVideo::Rotation rotation);
 
     void releaseResources();
     void setSink(QVideoSink *sink);

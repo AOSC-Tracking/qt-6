@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/modules/xr/xr_frame_request_callback_collection.h"
 
+#include "base/not_fatal_until.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_xr_frame_request_callback.h"
 #include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/probe/async_task_context.h"
@@ -40,7 +41,13 @@ void XRFrameRequestCallbackCollection::CancelCallback(CallbackId id) {
     callback_frame_requests_.erase(id);
     callback_async_tasks_.erase(id);
     current_callback_frame_requests_.erase(id);
-    current_callback_async_tasks_.erase(id);
+    // We intentionally do not erase from `current_callback_async_tasks_` here.
+    // If we are not actively processing a set of callbacks these will be empty.
+    // If we *are* actively processing callbacks, we cannot erase the task of
+    // the current callback, and these tasks will get cleaned up once the
+    // callbacks are finished processing. Removing the id from
+    // `current_callback_frame_requests_` is enough to ensure that the callback
+    // is not run.
   }
 }
 
@@ -69,10 +76,10 @@ void XRFrameRequestCallbackCollection::ExecuteCallbacks(XRSession* session,
     auto it_frame_request = current_callback_frame_requests_.find(id);
     auto it_async_task = current_callback_async_tasks_.find(id);
     if (it_frame_request == current_callback_frame_requests_.end()) {
-      DCHECK_EQ(current_callback_async_tasks_.end(), it_async_task);
       continue;
     }
-    DCHECK_NE(current_callback_async_tasks_.end(), it_async_task);
+    CHECK_NE(current_callback_async_tasks_.end(), it_async_task,
+             base::NotFatalUntil::M130);
 
     probe::AsyncTask async_task(context_, it_async_task->value.get());
     it_frame_request->value->InvokeAndReportException(session, timestamp,

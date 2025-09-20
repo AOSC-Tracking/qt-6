@@ -59,7 +59,7 @@ void TCPServerReadableStreamWrapper::CloseStream() {
 
   tcp_server_socket_.reset();
 
-  std::move(on_close_).Run(/*exception=*/ScriptValue());
+  std::move(on_close_).Run(/*exception=*/v8::Local<v8::Value>());
 }
 
 void TCPServerReadableStreamWrapper::ErrorStream(int32_t error_code) {
@@ -75,12 +75,10 @@ void TCPServerReadableStreamWrapper::ErrorStream(int32_t error_code) {
   // ScriptValue.
   ScriptState::Scope scope{script_state};
 
-  auto exception = ScriptValue(
-      script_state->GetIsolate(),
-      V8ThrowDOMException::CreateOrDie(
-          script_state->GetIsolate(), DOMExceptionCode::kNetworkError,
-          String{"Server socket closed: " + net::ErrorToString(error_code)}));
-  Controller()->Error(exception.V8Value());
+  auto exception = V8ThrowDOMException::CreateOrDie(
+      script_state->GetIsolate(), DOMExceptionCode::kNetworkError,
+      String{"Server socket closed: " + net::ErrorToString(error_code)});
+  Controller()->Error(exception);
   std::move(on_close_).Run(exception);
 }
 
@@ -93,7 +91,7 @@ void TCPServerReadableStreamWrapper::OnAccept(
     mojo::PendingReceiver<network::mojom::blink::SocketObserver>
         socket_observer,
     int result,
-    const absl::optional<net::IPEndPoint>& remote_addr,
+    const std::optional<net::IPEndPoint>& remote_addr,
     mojo::PendingRemote<network::mojom::blink::TCPConnectedSocket>
         tcp_socket_remote,
     mojo::ScopedDataPipeConsumerHandle receive_stream,

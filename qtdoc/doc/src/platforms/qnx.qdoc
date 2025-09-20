@@ -6,7 +6,7 @@
     \ingroup supportedplatform
     \keyword QNX
     \startpage Qt for QNX
-    \nextpage Qt for QNX Support
+    \nextpage Qt for QNX support
     \brief Platform support for QNX is described here.
 
 
@@ -29,30 +29,41 @@
     \page qnx-support.html
     \previouspage Qt for QNX
     \nextpage Building Qt for QNX
-    \title Qt for QNX Support
+    \title Qt for QNX support
     \brief Details support on Qt modules, QNX releases and target architectures.
     \ingroup qnxcontent
 
 
     \section1 QNX releases and architectures
 
-    Qt 6 is currently tested and supported on QNX SDP 7.1, with support for
-    both 32-bit and 64-bit target architectures:
+    Qt 6 is currently tested and supported on QNX SDP 7.1 and on QNX SDP 8.0.
+    Supported target architectures are limited on what QNX SDPs support.
+
+    \section2 QNX SDP 7.1 support
+
+    The following architectures are supported:
 
     \list
-        \li \c ARMle-v7
-        \li \c AArch64le and \c x86-64 (64-bit)
+        \li \c ARMle-v7 (32-bit)
+        \li \c AArch64le (64-bit)
+        \li \c x86-64 (64-bit)
     \endlist
 
-    \note Support for x86 (32-bit) was removed in QNX SDP 7.1.
+    \section2 QNX SDP 8.0 support
 
-    QNX SDP 8.0 is supported as technical preview. QNX SDP 8.0 doesn't support
-    multimedia, which means that qtmultimedia and the dependent components cannot
-    be compiled. Furthermore, qtRemoteObjects hasn't been adapted for QNX SDP 8.0
-    yet, which means that qtRemoteObjects and the dependent components cannot be
-    compiled either.
-    Pre-built Qt binaries and automatic Qt Creator Kits are not available for
-    QNX SDP 8.0, however, manual Kit creation is possible.
+    The following architectures are supported:
+
+    \list
+        \li \c AArch64le (64-bit)
+        \li \c x86-64 (64-bit)
+    \endlist
+
+    \section3 Support notes
+
+    Pre-built Qt binaries are not delivered due to possible binary compatibility
+    issues between different QNX SDP installations. This means that automatic Qt
+    Creator Kits are not available for QNX SDP 8.0 either. However, manual Kit
+    creation is possible.
 
     \section2 Previous releases
 
@@ -70,17 +81,67 @@
     \l{Support Levels for Target Hardware}. For support on other target devices
     \l {https://www.qt.io/contact-us/}{contact The Qt Company} for more details.
 
-    \section2 Qt for QNX licensing
-
-    Qt for QNX is available under the Qt for Device Creation Professional (DCP)
-    license. For more information, see \l{Qt Pricing}.
-
     \section1 Supported Qt modules
 
-    All the \l{Qt Essentials} modules are supported in Qt for QNX, except for DBus.
+    \table
+        \header
+            \li All Modules category
+            \li QNX 7.1
+            \li QNX 8.0
+        \row
+            \li \l{Qt Essentials}
+            \li All except the following module are supported:
+                \list
+                    \li Qt D-Bus
+                \endlist
+            \li All except the following module are supported:
+                \list
+                    \li Qt D-Bus
+                \endlist
+        \row
+            \li \l{Qt Add-Ons}
+            \li All except the following modules are supported:
+                \list
+                    \li Active Qt
+                    \li Qt Bluetooth
+                    \li Qt NFC
+                    \li Qt OPC UA
+                    \li Qt Positioning
+                    \li Qt Quick 3D Physics
+                    \li Qt Sensors
+                    \li Qt SerialBus
+                    \li Qt SerialPort
+                    \li Qt Wayland Compositor
+                    \li Qt Webview
+                \endlist
+            \li All except the following modules are supported:
+                \list
+                    \li Active Qt
+                    \li Qt Bluetooth
+                    \li Qt Multimedia*
+                    \li Qt NFC
+                    \li Qt OPC UA
+                    \li Qt Positioning
+                    \li Qt Quick 3D Physics
+                    \li Qt Remote Objects
+                    \li Qt Sensors
+                    \li Qt SerialBus
+                    \li Qt SerialPort
+                    \li Qt Wayland Compositor
+                    \li Qt Webview
+                \endlist
+        \row
+            \li \l{Qt Add-Ons in Technical Preview}
+            \li Supported
+            \li Supported
+        \row
+            \li \l{Qt Extension Modules}
+            \li Not supported
+            \li Not supported
+    \endtable
 
-    See \l{Qt Add-Ons} for information about which Qt Add-On modules are
-    supported in Qt for QNX.
+    *QNX SDP 8.0 doesn't currently support multimedia, which means that qtMultimedia and
+    the dependent components cannot be compiled.
 
     \section1 Host systems
 
@@ -89,8 +150,8 @@
 
     \section1 Pre-built binaries
 
-    The pre-built Qt binaries for QNX are delivered through Qt Online Installer. These
-    binaries have been created using the QNX SDP installation from Qt's continuous
+    The pre-built Qt binaries for QNX SDP 7.1 are delivered through Qt Online Installer.
+    These binaries have been created using the QNX SDP installation from Qt's continuous
     integration (CI) system. These binaries are only for preliminary testing and trials,
     so there is no guarantee that the QNX SDP content matches with the current default
     installation from QNX Software Center. The safest way to avoid binary compatibility
@@ -100,18 +161,22 @@
 
 /*!
     \page building-qt-for-qnx.html
-    \previouspage Qt for QNX Support
-    \nextpage Qt for QNX Runtime Target Requirements
+    \previouspage Qt for QNX support
+    \nextpage Qt for QNX runtime target requirements
     \title Building Qt for QNX
     \ingroup qnxcontent
     \brief Describes required packages and necessary configuration for building.
 
     \section1 Setting up QNX SDP
 
-    Building Qt 6 requires downloading and installing QNX SDP 7.1 from the
+    Building Qt 6 requires downloading and installing a QNX SDP from the
     \l{QNX website}.
     \note A suitable license is required. \l {mailto://info@qnx.com}{Contact QNX}
     for more information.
+
+    \note Don't add experimental Wayland packages from QNX Software Center to your
+    QNX SDP 8.0 installation. They are not needed to build Qt but can cause a header
+    conflict when configuring a Qt build.
 
     The compiler and other parts of the toolchain are provided in the SDP
     packages. Initialize your build environment by running the QNX setup script
@@ -132,8 +197,6 @@
         \li \l{Building Qt Sources} for the host or
         \li installing host build using \QOI.
     \endlist
-    However, it is advisable to ensure that you can build Qt for the desktop target on the
-    host as well since the same tools are also needed when compiling for QNX.
 
     \section1 Creating a toolchain file for QNX
 
@@ -170,21 +233,24 @@
     \list
         \li Tools for building Qt, as described in \l{Building Qt Sources}, are in place and
             functional for your host platform.
-        \li The toolchain file, \c{$HOME/qnx.cmake}.
-        \li The Qt source code checked out or installed under \c{$HOME/qt}.
-        \li There is a host build of Qt in \c{$HOME/qt-host}.
-        \li The installation location on the local system is set to
+        \li The toolchain file, in this example \c{$HOME/qnx.cmake}.
+        \li The Qt source code checked out or installed, in this example under \c{$HOME/qt}.
+        \li \l{Cross-compiling Qt}{Host build of Qt}, in this example \c{$HOME/qt-host}.
+        \li Prefix for the Qt build installation location on the local system, in this example
         \c{$HOME/qnx-install}.
+        \li Prefix for the Qt build deployment location on the target device, in this example
+        \c{/qt}.
     \endlist
 
     After creating and switching to the \c build directory, run the following:
 
     \badcode
     $HOME/qt/configure -nomake examples -nomake tests \
-    -qt-host-path $HOME/qt_host \
-    -extprefix qnx_install \
+    -qt-host-path $HOME/qt-host \
+    -extprefix $HOME/qnx-install \
     -prefix /qt \
     -- -DCMAKE_TOOLCHAIN_FILE=$HOME/qnx.cmake  \
+    -DCMAKE_SYSTEM_VERSION=710  \
     $HOME/qt
     \endcode
 
@@ -192,12 +258,22 @@
     this configure command is equivalent to the following direct CMake call:
     \badcode
     cmake -GNinja -DQT_BUILD_EXAMPLES=OFF -DQT_BUILD_TESTS=OFF \
-    -DQT_HOST_PATH=$HOME/qt_host \
-    -DCMAKE_STAGING_PREFIX=$HOME/qnx_install \
+    -DQT_HOST_PATH=$HOME/qt-host \
+    -DCMAKE_STAGING_PREFIX=$HOME/qnx-install \
     -DCMAKE_INSTALL_PREFIX=/qt \
     -DCMAKE_TOOLCHAIN_FILE=$HOME/qnx.cmake  \
+    -DCMAKE_SYSTEM_VERSION=710  \
     $HOME/qt
     \endcode
+
+    Choose the value of CMAKE_SYSTEM_VERSION based on your QNX SDP version:
+    \list
+        \li 710 for QNX SDP 7.1
+        \li 800 for QNX SDP 8.0
+    \endlist
+
+    If you are working only with one QNX version, you can also define CMAKE_SYSTEM_VERSION
+    in your toolchain file.
 
     \note When building on Windows, PCH (Precompiled Headers) needs to be explicitly disabled,
     as enabling it causes the QNX compiler to crash. To disable PCH, use the configuration
@@ -219,22 +295,23 @@
     cmake --install .
     \endcode
 
-    This installs the results to \c{$HOME/qnx_install}. From there the Qt build can be deployed
+    This installs the results to \c{$HOME/qnx-install}. From there you can deploy the Qt build
     to target device using Qt Creator, scp directly or some another method. The \c{-prefix}
     configuration parameter (/qt in the example) defines the deployment location on target device.
 
     \sa {Qt Configure Options}, {Configuring Qt}
 
-    \section1 Building Applications for the Target Device
+    \section1 Building applications for the target device
 
     When you have finished the Qt build and it's installed in the staging location,
     you can build examples or applications.
 
     With CMake, use the generated \c{qt-cmake} script in the bin directory of the staging location
-    ($HOME/qnx_install in the example) to configure, then run ninja. For example:
+    (\c{$HOME/qnx-install} in the example) to configure the application build and then run ninja.
+    For example:
 
     \badcode
-    $HOME/qnx_install/bin/qt-cmake .
+    $HOME/qnx-install/bin/qt-cmake .
     cmake --build .
     \endcode
 
@@ -249,14 +326,14 @@
     by setting the \c{QT_CHAINLOAD_TOOLCHAIN_FILE} variable as follows:
 
     \badcode
-    $HOME/qnx_install/bin/qt-cmake -DQT_CHAINLOAD_TOOLCHAIN_FILE=$HOME/qnx.cmake .
+    $HOME/qnx-install/bin/qt-cmake -DQT_CHAINLOAD_TOOLCHAIN_FILE=$HOME/qnx.cmake .
     \endcode
 
-    When building applications in Qt Creator using Qt installation that has not been
+    When building applications in \QC using Qt installation that has not been
     built in your machine, the \c {CMAKE_TOOLCHAIN_FILE} variable, pointing to local toolchain
      file, needs to be added to kit configuration (\b {Edit > Preferences > Kits}).
 
-    For more information on connecting and adding kits for QNX devices while using Qt Creator,
+    For more information on connecting and adding kits for QNX devices while using \QC,
     see \l {https://doc.qt.io/qtcreator/creator-developing-qnx.html} {Connecting QNX devices}.
 
     \section1 Third party libraries
@@ -289,7 +366,7 @@
 /*!
     \page qnx-target-requirements.html
     \previouspage Building Qt for QNX
-    \title Qt for QNX Runtime Target Requirements
+    \title Qt for QNX runtime target requirements
     \ingroup qnxcontent
     \brief Describes target requirements for running qt applications.
 
@@ -303,7 +380,7 @@
     requirements listed in the following sections to ensure that Qt works as
     expected.
 
-    \section1 QNX Screen Graphics Subsystem
+    \section1 QNX screen graphics subsystem
 
     Before any Qt application can be started, the
     \l {http://www.qnx.com/developers/docs/7.1/#com.qnx.doc.screen/topic/manual/cscreen_about.html}
@@ -334,7 +411,7 @@
     waitfor /dev/random
     \endcode
 
-    \section1 System Logger
+    \section1 System logger
 
     QNX provides the
     \l {http://www.qnx.com/developers/docs/7.1/#com.qnx.doc.neutrino.utilities/topic/s/slogger2.html}
@@ -353,7 +430,7 @@
     waitfor /dev/slog2
     \endcode
 
-    \section1 Environment Variables
+    \section1 Environment variables
 
     There is a set of environment variables you should set when starting a Qt
     application. Most of them are actually not specific to QNX Neutrino RTOS.
@@ -406,7 +483,7 @@
     (mm) and should correspond to the actual physical size of the display in the
     final configuration.
 
-    \section2 Troubleshooting the First Start of a Qt Application
+    \section2 Troubleshooting the first start of a Qt application
 
     The only drawback of the flexibility provided by QNX Neutrino RTOS
     is a risk that the run environment is slightly different on your target

@@ -14,11 +14,29 @@ project(QtMultimedia
 )
 
 find_package(Qt6 ${PROJECT_VERSION} CONFIG REQUIRED COMPONENTS BuildInternals Core)
-find_package(Qt6 ${PROJECT_VERSION} QUIET CONFIG OPTIONAL_COMPONENTS Gui Network Svg Widgets Quick Qml QuickTest QuickControls2 Quick3D)
+find_package(Qt6 ${PROJECT_VERSION} QUIET CONFIG
+    OPTIONAL_COMPONENTS
+        Gui
+        Network
+        Svg
+        Widgets
+        Quick
+        Qml
+        Test
+        QuickTest
+        QuickControls2
+        Quick3D
+        OpenGLPrivate
+        Concurrent)
 qt_internal_project_setup()
 
 if(NOT TARGET Qt::Gui)
     message(NOTICE "Skipping the build as the condition \"TARGET Qt::Gui\" is not met.")
+    return()
+endif()
+
+if(QNX AND CMAKE_SYSTEM_VERSION GREATER_EQUAL 800)
+    message(NOTICE "Skipping the build as multimedia is not supported on QNX8.0.")
     return()
 endif()
 
@@ -55,7 +73,6 @@ set(QT_BUILD_EXTRA_IDE_FILE_PATTERNS
     src/multimedia/doc/src/qtmultimedia-qml-types.qdoc
     src/multimedia/doc/src/videooverview.qdoc
     src/multimedia/doc/src/advanced-ffmpeg-configuration.qdoc
-    src/multimedia/doc/src/examples/video-qml-paint-rate.qdocinc
     src/multimedia/doc/src/images/Zoom.gif
     src/multimedia/doc/src/images/annotatedurl.png
     src/multimedia/doc/src/images/camera_correctionAngle_90.png
@@ -69,7 +86,7 @@ set(QT_BUILD_EXTRA_IDE_FILE_PATTERNS
     src/multimedia/doc/src/images/slideshow-img1.png
     src/multimedia/doc/src/images/sound-wave-small.jpg
     src/multimedia/doc/src/images/video-graphics-memory.png
-    src/multimedia/doc/src/images/video-qml-paint-rate.png
+
 )
 
 qt_build_repo()

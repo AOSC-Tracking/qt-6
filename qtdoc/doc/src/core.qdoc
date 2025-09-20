@@ -76,9 +76,16 @@ also launch and manage external processes using the QProcess class.
 Qt provides functionality to manage threads and parallelized code in a safe and
 platform-independent way.
 
+See \l{Thread Support in Qt} for more information.
+
+
+\section1 C++20 support in Qt
+
+Qt has been providing support for C++17 since Qt 6.0. However, we are
+constantly working on providing support for new language features.
+
 \list
-\li \l{Threading Basics}
-\li \l{Thread Support in Qt}
+\li \l {C++20 Overview}
 \endlist
 
 \section1 Platform Support

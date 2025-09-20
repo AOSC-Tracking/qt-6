@@ -210,27 +210,27 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlproperty vector3d DynamicRigidBody::kinematicRotation
+    \qmlproperty quaternion DynamicRigidBody::kinematicRotation
     \since 6.5
 
     Defines the rotation of the object when it is kinematic, i.e. when \l isKinematic is set to \c
     true. On each iteration of the simulation the physical object will be updated according to this
     value.
 
-    Default value: \c{(0, 0, 0)}
+    Default value: \c{(1, 0, 0, 0)}
 
     \sa isKinematic, kinematicPosition, kinematicEulerRotation, kinematicPivot
 */
 
 /*!
-    \qmlproperty vector4d DynamicRigidBody::kinematicEulerRotation
+    \qmlproperty vector3d DynamicRigidBody::kinematicEulerRotation
     \since 6.5
 
     Defines the euler rotation of the object when it is kinematic, i.e. when \l isKinematic is set to \c
     true. On each iteration of the simulation the physical object will be updated according to this
     value.
 
-    Default value: \c{(1, 0, 0, 0)}
+    Default value: \c{(0, 0, 0)}
 
     \sa isKinematic, kinematicPosition, kinematicEulerRotation, kinematicPivot
 */
@@ -246,6 +246,15 @@ QT_BEGIN_NAMESPACE
     Default value: \c{(0, 0, 0)}
 
     \sa isKinematic, kinematicPosition, kinematicEulerRotation, kinematicRotation
+*/
+
+/*!
+    \qmlproperty bool DynamicRigidBody::isSleeping
+    \since 6.9
+
+    Is set to \c{true} if the body is sleeping. While it is technically possible to set this property
+    it should be seen as a read-only property that is set on every frame the physics simulation is
+    running.
 */
 
 /*!
@@ -658,6 +667,20 @@ void QDynamicRigidBody::setKinematicPivot(const QVector3D &pivot)
 QVector3D QDynamicRigidBody::kinematicPivot() const
 {
     return m_kinematicPivot;
+}
+
+bool QDynamicRigidBody::isSleeping() const
+{
+    return m_isSleeping;
+}
+
+void QDynamicRigidBody::setIsSleeping(bool newIsSleeping)
+{
+    if (m_isSleeping == newIsSleeping)
+        return;
+
+    m_isSleeping = newIsSleeping;
+    emit isSleepingChanged(newIsSleeping);
 }
 
 QAbstractPhysXNode *QDynamicRigidBody::createPhysXBackend()

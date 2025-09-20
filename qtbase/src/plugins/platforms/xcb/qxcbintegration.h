@@ -1,8 +1,7 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
-#ifndef QXCBINTEGRATION_H
-#define QXCBINTEGRATION_H
+#pragma once
 
 #include <QtGui/private/qtguiglobal_p.h>
 #include <qpa/qplatformintegration.h>
@@ -18,6 +17,7 @@ QT_BEGIN_NAMESPACE
 class QXcbConnection;
 class QAbstractEventDispatcher;
 class QXcbNativeInterface;
+class QXcbUnixServices;
 
 class Q_XCB_EXPORT QXcbIntegration : public QPlatformIntegration
 #ifndef QT_NO_OPENGL
@@ -115,7 +115,7 @@ private:
     mutable QScopedPointer<QPlatformAccessibility> m_accessibility;
 #endif
 
-    QScopedPointer<QPlatformServices> m_services;
+    QScopedPointer<QXcbUnixServices> m_services;
 
     mutable QByteArray m_wmClass;
     const char *m_instanceName;
@@ -126,5 +126,3 @@ private:
 };
 
 QT_END_NAMESPACE
-
-#endif

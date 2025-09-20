@@ -12,9 +12,11 @@
 
 QT_BEGIN_NAMESPACE
 
+using namespace Qt::StringLiterals;
+
 namespace QFFmpeg {
 
-static Q_LOGGING_CATEGORY(qLcFFmpegVideoEncoder, "qt.multimedia.ffmpeg.videoencoder");
+Q_STATIC_LOGGING_CATEGORY(qLcFFmpegVideoEncoder, "qt.multimedia.ffmpeg.videoencoder");
 
 VideoEncoder::VideoEncoder(RecordingEngine &recordingEngine, const QMediaEncoderSettings &settings,
                            const QVideoFrameFormat &format, std::optional<AVPixelFormat> hwFormat)
@@ -106,7 +108,7 @@ bool VideoEncoder::init()
     qCDebug(qLcFFmpegVideoEncoder) << "VideoEncoder::init started video device thread.";
     if (!m_frameEncoder) {
         emit m_recordingEngine.sessionError(QMediaRecorder::ResourceError,
-                                            "Could not initialize encoder");
+                                            u"Could not initialize encoder"_s);
         return false;
     }
 
@@ -219,7 +221,7 @@ void VideoEncoder::processOne()
             << ">>> sending frame" << avFrame->pts << time << m_lastFrameTime;
     int ret = m_frameEncoder->sendFrame(std::move(avFrame));
     if (ret < 0) {
-        qCDebug(qLcFFmpegVideoEncoder) << "error sending frame" << ret << err2str(ret);
+        qCDebug(qLcFFmpegVideoEncoder) << "error sending frame" << ret << AVError(ret);
         emit m_recordingEngine.sessionError(QMediaRecorder::ResourceError, err2str(ret));
     }
 }

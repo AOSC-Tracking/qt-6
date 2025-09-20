@@ -4,8 +4,6 @@
 #ifndef PLATFORM_WINDOW_QT_H
 #define PLATFORM_WINDOW_QT_H
 
-#if defined(USE_OZONE)
-
 #include "ui/base/cursor/platform_cursor.h"
 #include "ui/events/platform/platform_event_dispatcher.h"
 #include "ui/gfx/geometry/point.h"
@@ -61,7 +59,6 @@ private:
     gfx::Rect bounds_;
 };
 
-}
+} // namespace ui
 
-#endif // defined(USE_OZONE)
-#endif //PLATFORM_WINDOW_QT_H
+#endif // PLATFORM_WINDOW_QT_H

@@ -1,8 +1,8 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef Q3DSCENE_H
-#define Q3DSCENE_H
+#ifndef QTGRAPHS_Q3DSCENE_H
+#define QTGRAPHS_Q3DSCENE_H
 
 #include <QtCore/qobject.h>
 #include <QtCore/qrect.h>

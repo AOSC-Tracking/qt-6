@@ -22,7 +22,7 @@ static void initResources()
 
 QT_BEGIN_NAMESPACE
 
-Q_LOGGING_CATEGORY(QQSHAPE_LOG_TIME_DIRTY_SYNC, "qt.shape.time.sync")
+Q_STATIC_LOGGING_CATEGORY(QQSHAPE_LOG_TIME_DIRTY_SYNC, "qt.shape.time.sync")
 
 /*!
     \keyword Qt Quick Shapes
@@ -1176,8 +1176,10 @@ static void vpe_append(QQmlListProperty<QObject> *property, QObject *obj)
     QQuickShape *item = static_cast<QQuickShape *>(property->object);
     QQuickShapePrivate *d = QQuickShapePrivate::get(item);
     QQuickShapePath *path = qobject_cast<QQuickShapePath *>(obj);
-    if (path)
+    if (path) {
+        QQuickShapePathPrivate::get(path)->dirty = QQuickShapePathPrivate::DirtyAll;
         d->sp.append(path);
+    }
 
     QQuickItemPrivate::data_append(property, obj);
 

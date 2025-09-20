@@ -1,8 +1,8 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QITEMMODELBARDATAPROXY_H
-#define QITEMMODELBARDATAPROXY_H
+#ifndef QTGRAPHS_QITEMMODELBARDATAPROXY_H
+#define QTGRAPHS_QITEMMODELBARDATAPROXY_H
 
 #include <QtCore/qabstractitemmodel.h>
 #include <QtCore/qregularexpression.h>
@@ -52,6 +52,7 @@ class Q_GRAPHS_EXPORT QItemModelBarDataProxy : public QBarDataProxy
                    NOTIFY rotationRoleReplaceChanged FINAL)
     Q_PROPERTY(QItemModelBarDataProxy::MultiMatchBehavior multiMatchBehavior READ multiMatchBehavior
                    WRITE setMultiMatchBehavior NOTIFY multiMatchBehaviorChanged FINAL)
+    QML_NAMED_ELEMENT(ItemModelBarDataProxy)
 
 public:
     enum class MultiMatchBehavior {
