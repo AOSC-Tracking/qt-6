@@ -262,6 +262,8 @@ message Study {
     // A Mac-only value, indicating an x86-64 binary running on an arm64 host
     // via "Rosetta 2" binary translation.
     TRANSLATED_X86_64 = 4;
+
+    LOONGARCH64 = 5;
   }
 
   // Enum to pass as optional bool.

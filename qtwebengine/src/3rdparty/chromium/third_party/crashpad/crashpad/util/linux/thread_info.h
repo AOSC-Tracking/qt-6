@@ -87,6 +87,8 @@ union ThreadContext {
     uint32_t padding1_;
 #elif defined(ARCH_CPU_RISCV64)
     // 32 bit RISC-V not supported
+#elif defined(ARCH_CPU_LOONGARCH_FAMILY)
+    // 32 bit LoongArch not supported
 #else
 #error Port.
 #endif  // ARCH_CPU_X86_FAMILY
@@ -144,13 +146,20 @@ union ThreadContext {
     // Reflects user_regs_struct in asm/ptrace.h.
     uint64_t pc;
     uint64_t regs[31];
+#elif defined(ARCH_CPU_LOONGARCH_FAMILY)
+    // Reflects user_regs_struct in sys/user.h.
+    uint64_t regs[32];
+    uint64_t orig_a0;
+    uint64_t csr_era;
+    uint64_t csr_badv;
+    uint64_t reserved[10];
 #else
 #error Port.
 #endif  // ARCH_CPU_X86_FAMILY
   } t64;
 
 #if defined(ARCH_CPU_X86_FAMILY) || defined(ARCH_CPU_ARM64) || \
-    defined(ARCH_CPU_RISCV64)
+    defined(ARCH_CPU_RISCV64) || defined(ARCH_CPU_LOONGARCH64)
   using NativeThreadContext = user_regs_struct;
 #elif defined(ARCH_CPU_ARMEL)
   using NativeThreadContext = user_regs;
@@ -233,6 +242,8 @@ union FloatContext {
     uint32_t fpu_id;
 #elif defined(ARCH_CPU_RISCV64)
     // 32 bit RISC-V not supported
+#elif defined(ARCH_CPU_LOONGARCH_FAMILY)
+    // 32 bit LoongArch not supported
 #else
 #error Port.
 #endif  // ARCH_CPU_X86_FAMILY
@@ -271,6 +282,11 @@ union FloatContext {
     // Reflects __riscv_d_ext_state in asm/ptrace.h
     uint64_t fpregs[32];
     uint64_t fcsr;
+#elif defined(ARCH_CPU_LOONGARCH_FAMILY)
+    // Reflects user_fp_struct in sys/user.h
+    uint64_t fpregs[32];
+    uint64_t fcc;
+    uint32_t fcsr;
 #else
 #error Port.
 #endif  // ARCH_CPU_X86_FAMILY
@@ -302,6 +318,8 @@ union FloatContext {
 // No appropriate floating point context native type for available MIPS.
 #elif defined(ARCH_CPU_RISCV64)
   static_assert(sizeof(f64) == sizeof(__riscv_d_ext_state), "Size mismatch");
+#elif defined(ARCH_CPU_LOONGARCH_FAMILY)
+  static_assert(sizeof(f64) == sizeof(user_fp_struct), "Size mismatch");
 #else
 #error Port.
 #endif  // ARCH_CPU_X86

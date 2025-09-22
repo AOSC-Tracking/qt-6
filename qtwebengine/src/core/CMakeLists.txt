@@ -617,6 +617,7 @@ target_include_directories(WebEngineCore PRIVATE
     ${buildDir}/$<CONFIG>/${arch}/gen/third_party/perfetto/build_config
     ${buildDir}/$<CONFIG>/${arch}/gen/base/allocator/partition_allocator/src
 )
+target_link_options(WebEngineCore PRIVATE -mno-relax)
 
 set(stamps QtWebEngineCore.stamp)
 set(dataStampOption "")

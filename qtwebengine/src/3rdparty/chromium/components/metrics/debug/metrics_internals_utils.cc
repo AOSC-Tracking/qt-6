@@ -69,6 +69,8 @@ std::string CpuArchitectureToString(
       return "arm32";
     case variations::Study::TRANSLATED_X86_64:
       return "translated_x86_64";
+    case variations::Study::LOONGARCH64:
+      return "loongarch64";
   }
   NOTREACHED_IN_MIGRATION();
 }

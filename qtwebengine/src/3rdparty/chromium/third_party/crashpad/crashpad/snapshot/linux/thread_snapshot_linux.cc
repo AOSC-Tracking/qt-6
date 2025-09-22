@@ -196,6 +196,13 @@ bool ThreadSnapshotLinux::Initialize(
   InitializeCPUContextRISCV64(thread.thread_info.thread_context.t64,
                               thread.thread_info.float_context.f64,
                               context_.riscv64);
+#elif defined(ARCH_CPU_LOONGARCH64)
+  context_.architecture = kCPUArchitectureLOONG64;
+  context_.loong64 = &context_union_.loong64;
+  InitializeCPUContextLOONG64<ContextTraits64>(
+      thread.thread_info.thread_context.t64,
+      thread.thread_info.float_context.f64,
+      context_.loong64);
 #else
 #error Port.
 #endif

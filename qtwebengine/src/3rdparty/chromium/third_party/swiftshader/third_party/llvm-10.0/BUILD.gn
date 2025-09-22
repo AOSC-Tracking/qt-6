@@ -156,6 +156,8 @@ swiftshader_llvm_source_set("swiftshader_llvm") {
     deps += [ ":swiftshader_llvm_ppc" ]
   } else if (current_cpu == "riscv64") {
     deps += [ ":swiftshader_llvm_riscv64" ]
+  } else if (current_cpu == "loong64") {
+    # swiftshader unused in qt6-webengine
   } else if (current_cpu == "x86" || current_cpu == "x64") {
     deps += [ ":swiftshader_llvm_x86" ]
   } else {
