@@ -90,7 +90,7 @@ ReturnedValue ArrayBufferCtor::method_isView(const FunctionObject *, const Value
 void Heap::SharedArrayBuffer::init(size_t length)
 {
     Object::init();
-    QPair<QTypedArrayData<char> *, char *> pair;
+    std::pair<QTypedArrayData<char> *, char *> pair;
     if (length < UINT_MAX)
         pair =  QTypedArrayData<char>::allocate(length + 1);
     if (!pair.first) {

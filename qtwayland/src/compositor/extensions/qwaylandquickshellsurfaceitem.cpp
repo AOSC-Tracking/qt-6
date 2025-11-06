@@ -61,6 +61,9 @@ QWaylandQuickShellSurfaceItem::~QWaylandQuickShellSurfaceItem()
 {
     Q_D(QWaylandQuickShellSurfaceItem);
 
+    if (d->m_shellSurface)
+        disconnect(d->m_shellSurface, &QWaylandShellSurface::modalChanged, this, nullptr);
+
     if (d->m_shellIntegration) {
         removeEventFilter(d->m_shellIntegration);
         delete d->m_shellIntegration;
@@ -105,21 +108,21 @@ void QWaylandQuickShellSurfaceItem::setShellSurface(QWaylandShellSurface *shellS
     if (Q_UNLIKELY(d->m_shellSurface))
         disconnect(d->m_shellSurface, &QWaylandShellSurface::modalChanged, this, nullptr);
 
-    d->m_shellSurface = shellSurface;
-
     if (d->m_shellIntegration) {
         removeEventFilter(d->m_shellIntegration);
         delete d->m_shellIntegration;
         d->m_shellIntegration = nullptr;
     }
 
+    d->m_shellSurface = shellSurface;
+
     if (shellSurface) {
         d->m_shellIntegration = shellSurface->createIntegration(this);
         installEventFilter(d->m_shellIntegration);
-    }
 
-    connect(shellSurface, &QWaylandShellSurface::modalChanged, this,
-            [d](){ if (d->m_shellSurface->isModal()) d->raise(); });
+        connect(shellSurface, &QWaylandShellSurface::modalChanged, this,
+                [d](){ if (d->m_shellSurface->isModal()) d->raise(); });
+    }
 
     emit shellSurfaceChanged();
 }

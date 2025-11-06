@@ -1,8 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#undef QT_NO_FOREACH // this file contains unported legacy Q_FOREACH uses
-
 #include <QTest>
 #include <QtCore/qmath.h>
 #include <QtGui/qquaternion.h>
@@ -970,19 +968,23 @@ void tst_QQuaternion::fromDirection_data()
     QTest::addColumn<QVector3D>("direction");
     QTest::addColumn<QVector3D>("up");
 
-    QList<QQuaternion> orientations;
-    orientations << QQuaternion();
+    // 1 default constructed element + 360/45 loops, each adding 4 elements
+    constexpr int size = 1 + (360 / 45) * 4;
+    std::array<QQuaternion, size> orientations;
+    orientations[0] = {};
+    int n = 0;
     for (int angle = 45; angle <= 360; angle += 45) {
-        orientations << QQuaternion::fromAxisAndAngle(QVector3D(1, 0, 0), angle)
-                     << QQuaternion::fromAxisAndAngle(QVector3D(0, 1, 0), angle)
-                     << QQuaternion::fromAxisAndAngle(QVector3D(0, 0, 1), angle)
-                     << QQuaternion::fromAxisAndAngle(QVector3D(1, 0, 0), angle)
-                        * QQuaternion::fromAxisAndAngle(QVector3D(0, 1, 0), angle)
-                        * QQuaternion::fromAxisAndAngle(QVector3D(0, 0, 1), angle);
+        orientations[++n] = QQuaternion::fromAxisAndAngle(QVector3D(1, 0, 0), angle);
+        orientations[++n] = QQuaternion::fromAxisAndAngle(QVector3D(0, 1, 0), angle);
+        orientations[++n] = QQuaternion::fromAxisAndAngle(QVector3D(0, 0, 1), angle);
+        orientations[++n] = QQuaternion::fromAxisAndAngle(QVector3D(1, 0, 0), angle)
+                          * QQuaternion::fromAxisAndAngle(QVector3D(0, 1, 0), angle)
+                          * QQuaternion::fromAxisAndAngle(QVector3D(0, 0, 1), angle);
     }
+    QCOMPARE(n, size - 1);
 
     // othonormal up and dir
-    foreach (const QQuaternion &q, orientations) {
+    for (QQuaternion q : orientations) {
         QVector3D xAxis, yAxis, zAxis;
         q.getAxes(&xAxis, &yAxis, &zAxis);
 
@@ -1004,7 +1006,7 @@ void tst_QQuaternion::fromDirection_data()
     QTest::newRow("dir: +X+Y+Z, up: -X-Y-Z") << QVector3D(10.0f, 10.0f, 10.0f) << QVector3D(-10.0f, -10.0f, -10.0f);
 
     // invalid up
-    foreach (const QQuaternion &q, orientations) {
+    for (QQuaternion q : orientations) {
         QVector3D xAxis, yAxis, zAxis;
         q.getAxes(&xAxis, &yAxis, &zAxis);
 
@@ -1055,11 +1057,20 @@ void tst_QQuaternion::fromEulerAngles_data()
     QTest::newRow("xonly")
         << 90.0f << 0.0f << 0.0f << QQuaternion(0.707107f, 0.707107f, 0.0f, 0.0f);
 
+    QTest::newRow("xonly-opposite")
+        << -90.0f << 0.0f << 0.0f << QQuaternion{M_SQRT1_2, -M_SQRT1_2, 0, 0};
+
     QTest::newRow("yonly")
         << 0.0f << 180.0f << 0.0f << QQuaternion(0.0f, 0.0f, 1.0f, 0.0f);
 
+    QTest::newRow("yonly-opposite")
+        << 0.0f << -180.0f << 0.0f << QQuaternion(0.0f, 0.0f, -1.0f, 0.0f);
+
     QTest::newRow("zonly")
         << 0.0f << 0.0f << 270.0f << QQuaternion(-0.707107f, 0.0f, 0.0f, 0.707107f);
+
+    QTest::newRow("zonly-opposite")
+        << 0.0f << 0.0f << -270.0f << QQuaternion(-M_SQRT1_2, 0.0f, 0.0f, M_SQRT1_2);
 
     QTest::newRow("x+z")
         << 30.0f << 0.0f << 45.0f << QQuaternion(0.892399f, 0.239118f, -0.099046f, 0.369644f);

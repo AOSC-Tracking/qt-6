@@ -233,8 +233,6 @@ installPackages+=(keyutils)
 installPackages+=(cifs-utils)
 # VxWorks QEMU network setup (tunctl)
 installPackages+=(uml-utilities)
-# used for reading vcpkg packages version, from vcpkg.json
-installPackages+=(jq)
 # To save iptables rules
 installPackages+=(iptables-persistent)
 
@@ -255,7 +253,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get -q -y -o DPkg::Lock::Timeout=300 ins
 # Configure pip
 pip config --user set global.index https://ci-files01-hki.ci.qt.io/input/python_module_cache
 pip config --user set global.extra-index-url https://pypi.org/simple/
-pip install --user -r "${BASH_SOURCE%/*}/../common/shared/sbom_requirements.txt"
+pip install --user -r "${BASH_SOURCE%/*}/../common/shared/requirements.txt"
 
 source "${BASH_SOURCE%/*}/../common/unix/SetEnvVar.sh"
 # SetEnvVar "PATH" "/usr/lib/nodejs-mozilla/bin:\$PATH"
@@ -267,6 +265,9 @@ SetEnvVar "SBOM_PYTHON_APPS_PATH" "/home/qt/.local/bin"
 
 gccVersion="$(gcc --version |grep -Eo '[0-9]+\.[0-9]+(\.[0-9]+)?' |head -n 1)"
 echo "GCC = $gccVersion" >> versions.txt
+
+glibcVersion="$(ldd --version |grep -Eo '[0-9]+\.[0-9]+(\.[0-9]+)?' |head -n 1)"
+echo "glibc = $glibcVersion" >> versions.txt
 
 OpenSSLVersion="$(openssl version |cut -b 9-14)"
 echo "System's OpenSSL = $OpenSSLVersion" >> ~/versions.txt

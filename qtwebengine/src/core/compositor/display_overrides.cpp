@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "display_software_output_surface.h"
 #include "native_skia_output_device.h"
@@ -40,9 +41,6 @@ viz::SkiaOutputSurfaceImplOnGpu::CreateOutputDevice()
 
 #if QT_CONFIG(opengl)
     if (graphicsApi == QSGRendererInterface::OpenGL) {
-        if (gl::GetGLImplementation() != gl::kGLImplementationEGLANGLE)
-            qFatal("OpenGL is only supported over ANGLE.");
-
         return std::make_unique<QtWebEngineCore::NativeSkiaOutputDeviceOpenGL>(
                 context_state_, renderer_settings_.requires_alpha_channel,
                 shared_gpu_deps_->memory_tracker(), dependency_.get(), shared_image_factory_.get(),

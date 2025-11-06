@@ -60,6 +60,8 @@ public:
     void classBegin() override;
     void componentComplete() override;
 
+    void forceCompletion() final;
+
 private:
     QByteArray m_name;
     DefaultLogLevel m_defaultLogLevel = Debug;

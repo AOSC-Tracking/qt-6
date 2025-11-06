@@ -2,8 +2,6 @@
 // Copyright (C) 2013 David Faure <faure+bluesystems@kde.org>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#undef QT_NO_FOREACH // this file contains unported legacy Q_FOREACH uses
-
 #include <QTest>
 #include <QtConcurrentRun>
 #if QT_CONFIG(process)
@@ -401,7 +399,8 @@ void tst_QLockFile::staleLockRace()
     for (int i = 0; i < 8; ++i)
         synchronizer.addFuture(QtConcurrent::run(tryStaleLockFromThread, fileName));
     synchronizer.waitForFinished();
-    foreach (const QFuture<QString> &future, synchronizer.futures())
+    const auto futures = synchronizer.futures();
+    for (const QFuture<QString> &future : futures)
         QVERIFY2(future.result().isEmpty(), qPrintable(future.result()));
 #endif // QT_CONFIG(process)
 }

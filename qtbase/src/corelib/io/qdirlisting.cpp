@@ -63,8 +63,9 @@
     of QDirListing. Values from this enumerator can be bitwise OR'ed together.
 
     \value Default
-        List all files, directories and symbolic links, including broken
-        symlinks (where the target doesn't exist).
+        List all entries, that is, files, directories, symbolic links including broken
+        symbolic links (where the target doesn't exist) and special (\e other) system
+        files, see ExcludeOther for details.
         Hidden files and directories and the special entries \c{.} and \c{..}
         aren't listed by default.
 
@@ -76,15 +77,17 @@
         Don't list directories. When combined with ResolveSymlinks, symbolic
         links to directories will be excluded too.
 
-    \value ExcludeSpecial
+    \omitvalue ExcludeSpecial
+    \value ExcludeOther [since 6.10]
         Don't list file system entries that are \e not directories, regular files,
-        nor symbolic links.
+        or symbolic links.
         \list
-            \li On Unix, an example of a special file system entry is a FIFO, socket,
-                character device, or block device. For more details on Linux, see the
-                \l{https://www.man7.org/linux/man-pages/man2/mknod.2.html}{mknod manual page}.
-            \li On Windows (for historical reasons) \c .lnk files are considered special
-                file system entries.
+            \li On Unix, a special (other) file system entry is a FIFO, socket,
+                character device, or block device. For more details see the
+                \l{https://pubs.opengroup.org/onlinepubs/9699919799/functions/mknod.html}{\c mknod}
+                manual page.
+            \li On Windows (for historical reasons) \c .lnk files are considered
+                special (other) file system entries.
         \endlist
 
     \value ResolveSymlinks
@@ -497,14 +500,14 @@ bool QDirListingPrivate::matchesFilters(QDirEntryInfo &entryInfo) const
     if (fileName.isEmpty())
         return false;
 
-    if (isDotOrDotDot(fileName)) // All done, other checks below don't matter in this case
-        return iteratorFlags.testAnyFlags(F::IncludeDotAndDotDot);
-
     // name filter
 #if QT_CONFIG(regularexpression)
     if (!regexMatchesName(fileName))
         return false;
 #endif // QT_CONFIG(regularexpression)
+
+    if (isDotOrDotDot(fileName))
+        return iteratorFlags.testFlags(F::IncludeDotAndDotDot);
 
     if (!iteratorFlags.testAnyFlag(F::IncludeHidden) && entryInfo.isHidden())
         return false;
@@ -519,7 +522,7 @@ bool QDirListingPrivate::matchesFilters(QDirEntryInfo &entryInfo) const
         return false; // symlink is not a file or dir
     }
 
-    if (iteratorFlags.testAnyFlag(F::ExcludeSpecial)
+    if (iteratorFlags.testAnyFlag(F::ExcludeOther)
         && !entryInfo.isFile() && !entryInfo.isDir() && !entryInfo.isSymLink()) {
         return false;
     }
@@ -570,12 +573,19 @@ QDirListing::QDirListing(const QString &path, IteratorFlags flags)
     be iterated. By default, \a flags is IteratorFlag::Default.
 
     The listed entries will be filtered according to the file glob patterns
-    in \a nameFilters (see QDir::setNameFilters() for more details).
+    in \a nameFilters, which are converted to a regular expression using
+    QRegularExpression::fromWildcard (see QDir::setNameFilters() for more
+    details).
 
     For example, the following iterator could be used to iterate over audio
     files:
 
     \snippet code/src_corelib_io_qdirlisting.cpp 2
+
+    Sometimes you can filter by name more efficiently by iterating over the
+    entries with a range-for loop, using string comparison. For example:
+
+    \snippet code/src_corelib_io_qdirlisting.cpp 7
 
     \sa IteratorFlags, QDir::setNameFilters()
 */

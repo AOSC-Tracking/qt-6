@@ -115,6 +115,12 @@ function(qt_internal_add_plugin target)
 
     qt_get_sanitized_plugin_type("${plugin_type}" plugin_type_escaped)
 
+    if(NOT TARGET qt_${plugin_type_escaped}_plugins_all)
+        add_custom_target(qt_${plugin_type_escaped}_plugins_all)
+    endif()
+    add_dependencies(qt_${plugin_type_escaped}_plugins_all ${target})
+
+
     set(output_directory_default "${QT_BUILD_DIR}/${INSTALL_PLUGINSDIR}/${plugin_type}")
     set(install_directory_default "${INSTALL_PLUGINSDIR}/${plugin_type}")
 
@@ -337,6 +343,7 @@ function(qt_internal_add_plugin target)
         list(APPEND qt_register_target_dependencies_args PUBLIC ${arg_PUBLIC_LIBRARIES})
     endif()
     if(qt_libs_private)
+        qt_internal_wrap_private_modules(qt_libs_private ${qt_libs_private})
         list(APPEND qt_register_target_dependencies_args PRIVATE ${qt_libs_private})
     endif()
     qt_internal_register_target_dependencies("${target}"

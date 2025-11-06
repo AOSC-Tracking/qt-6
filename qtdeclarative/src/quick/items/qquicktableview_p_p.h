@@ -393,6 +393,9 @@ public:
 
     bool warnNoSelectionModel = true;
 
+    QQmlDelegateModel::DelegateModelAccess assignedDelegateModelAccess
+            = QQmlDelegateModel::Qt5ReadWrite;
+
     QJSValue rowHeightProvider;
     QJSValue columnWidthProvider;
 
@@ -594,6 +597,7 @@ public:
 
     virtual void syncWithPendingChanges();
     virtual void syncDelegate();
+    virtual void syncDelegateModelAccess();
     virtual QVariant modelImpl() const;
     virtual void setModelImpl(const QVariant &newModel);
     virtual void syncModel();

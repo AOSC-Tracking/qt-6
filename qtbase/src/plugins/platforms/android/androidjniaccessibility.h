@@ -13,7 +13,6 @@ class QJniEnvironment;
 
 namespace QtAndroidAccessibility
 {
-    void initialize();
     bool isActive();
     bool registerNatives(QJniEnvironment &env);
     void notifyLocationChange(uint accessibilityObjectId);
@@ -21,6 +20,7 @@ namespace QtAndroidAccessibility
     void notifyObjectShow(uint accessibilityObjectId);
     void notifyObjectFocus(uint accessibilityObjectId);
     void notifyValueChanged(uint accessibilityObjectId);
+    void notifyDescriptionOrNameChanged(uint accessibilityObjectId);
     void notifyScrolledEvent(uint accessibilityObjectId);
     void notifyAnnouncementEvent(uint accessibilityObjectId, const QString &message);
     void createAccessibilityContextObject(QObject *parent);

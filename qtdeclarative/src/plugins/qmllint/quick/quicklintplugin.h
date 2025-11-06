@@ -180,6 +180,22 @@ private:
     QQmlSA::LoggerWarningId category;
 };
 
+class StateNoItemChildrenValidator : public QQmlSA::ElementPass
+{
+public:
+    StateNoItemChildrenValidator(QQmlSA::PassManager *manager);
+
+    bool shouldRun(const QQmlSA::Element &element) override;
+    void run(const QQmlSA::Element &element) override;
+
+private:
+    QQmlSA::Element m_state;
+    QQmlSA::Element m_anchorChanges;
+    QQmlSA::Element m_parentChanges;
+    QQmlSA::Element m_propertyChanges;
+    QQmlSA::Element m_stateChangeScript;
+};
+
 QT_END_NAMESPACE
 
 #endif // QUICKLINTPLUGIN_H

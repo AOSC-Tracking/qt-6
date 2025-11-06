@@ -1,5 +1,6 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qwebenginepermission.h"
 #include "qwebenginepermission_p.h"
@@ -19,11 +20,12 @@ QWebEnginePermissionPrivate::QWebEnginePermissionPrivate()
 
 /*! \internal */
 QWebEnginePermissionPrivate::QWebEnginePermissionPrivate(const QUrl &origin_, QWebEnginePermission::PermissionType permissionType_,
-        QSharedPointer<QtWebEngineCore::WebContentsAdapter> webContentsAdapter_, QtWebEngineCore::ProfileAdapter *profileAdapter_)
+        QtWebEngineCore::ProfileAdapter *profileAdapter_, int childId_, const std::string &serializedToken_)
     : QSharedData()
     , origin(origin_)
     , permissionType(permissionType_)
-    , webContentsAdapter(webContentsAdapter_)
+    , childId(childId_)
+    , serializedToken(serializedToken_)
     , profileAdapter(profileAdapter_)
 {
 }
@@ -113,15 +115,12 @@ bool QWebEnginePermission::equals(const QWebEnginePermission &other) const
         return false;
 
     if (!isPersistent(d_ptr->permissionType)) {
-        if (d_ptr->webContentsAdapter != other.d_ptr->webContentsAdapter)
+        if (d_ptr->childId != other.d_ptr->childId
+                && d_ptr->serializedToken != other.d_ptr->serializedToken)
             return false;
     } else {
-        QtWebEngineCore::ProfileAdapter *thisProfile = d_ptr->webContentsAdapter
-            ? d_ptr->webContentsAdapter.toStrongRef()->profileAdapter()
-            : d_ptr->profileAdapter.get();
-        QtWebEngineCore::ProfileAdapter *otherProfile = d_ptr->webContentsAdapter
-            ? other.d_ptr->webContentsAdapter.toStrongRef()->profileAdapter()
-            : other.d_ptr->profileAdapter.get();
+        QtWebEngineCore::ProfileAdapter *thisProfile = d_ptr->profileAdapter.get();
+        QtWebEngineCore::ProfileAdapter *otherProfile = other.d_ptr->profileAdapter.get();
 
         if (thisProfile != otherProfile)
             return false;
@@ -200,11 +199,7 @@ QWebEnginePermission::State QWebEnginePermission::state() const
 {
     if (!isValid())
         return State::Invalid;
-    if (d_ptr->webContentsAdapter)
-        return d_ptr->webContentsAdapter.toStrongRef()->getPermissionState(origin(), permissionType());
-    if (d_ptr->profileAdapter)
-        return d_ptr->profileAdapter->getPermissionState(origin(), permissionType());
-    Q_UNREACHABLE_RETURN(State::Ask);
+    return d_ptr->profileAdapter->getPermissionState(origin(), permissionType(), d_ptr->childId, d_ptr->serializedToken);
 }
 
 /*!
@@ -226,7 +221,7 @@ bool QWebEnginePermission::isValid() const
         return false;
     if (permissionType() == PermissionType::Unsupported)
         return false;
-    if (!d_ptr->profileAdapter && !d_ptr->webContentsAdapter)
+    if (!d_ptr->profileAdapter)
         return false;
     if (!d_ptr->origin.isValid())
         return false;
@@ -242,10 +237,7 @@ void QWebEnginePermission::grant() const
 {
     if (!isValid())
         return;
-    if (d_ptr->webContentsAdapter)
-        d_ptr->webContentsAdapter.toStrongRef()->setPermission(origin(), permissionType(), State::Granted);
-    else if (d_ptr->profileAdapter)
-        d_ptr->profileAdapter->setPermission(origin(), permissionType(), State::Granted);
+    d_ptr->profileAdapter->setPermission(origin(), permissionType(), State::Granted, d_ptr->childId, d_ptr->serializedToken);
 }
 
 /*!
@@ -257,10 +249,7 @@ void QWebEnginePermission::deny() const
 {
     if (!isValid())
         return;
-    if (d_ptr->webContentsAdapter)
-        d_ptr->webContentsAdapter.toStrongRef()->setPermission(origin(), permissionType(), State::Denied);
-    else if (d_ptr->profileAdapter)
-        d_ptr->profileAdapter->setPermission(origin(), permissionType(), State::Denied);
+    d_ptr->profileAdapter->setPermission(origin(), permissionType(), State::Denied, d_ptr->childId, d_ptr->serializedToken);
 }
 
 /*!
@@ -278,10 +267,7 @@ void QWebEnginePermission::reset() const
 {
     if (!isValid())
         return;
-    if (d_ptr->webContentsAdapter)
-        d_ptr->webContentsAdapter.toStrongRef()->setPermission(origin(), permissionType(), State::Ask);
-    else if (d_ptr->profileAdapter)
-        d_ptr->profileAdapter->setPermission(origin(), permissionType(), State::Ask);
+    d_ptr->profileAdapter->setPermission(origin(), permissionType(), State::Ask, d_ptr->childId, d_ptr->serializedToken);
 }
 
 /*!

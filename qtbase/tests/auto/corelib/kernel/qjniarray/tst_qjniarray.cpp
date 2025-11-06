@@ -6,6 +6,8 @@
 #include <QtCore/qjnitypes.h>
 #include <QtCore/qjniarray.h>
 
+QT_BEGIN_NAMESPACE
+
 using namespace Qt::StringLiterals;
 
 class tst_QJniArray : public QObject
@@ -147,6 +149,13 @@ void tst_QJniArray::construct()
         QCOMPARE(list.size(), 10000);
         QCOMPARE(list.at(500), QString::number(500));
         QCOMPARE(list.toContainer(), strings);
+    }
+    {
+        constexpr qsizetype size = 5;
+        const QJniArray<jstring> list(size);
+        const QStringList strings = list.toContainer();
+        QCOMPARE(strings.at(0), QString());
+        QCOMPARE(strings.size(), size);
     }
     {
         QJniArray bytes = QJniArrayBase::fromContainer(QByteArray("abc"));
@@ -493,6 +502,8 @@ void tst_QJniArray::mutate()
         QCOMPARE(source.toContainer(), target.toContainer());
     }
 }
+
+QT_END_NAMESPACE
 
 QTEST_MAIN(tst_QJniArray)
 

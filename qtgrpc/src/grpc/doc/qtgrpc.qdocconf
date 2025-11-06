@@ -7,7 +7,9 @@ version                 = $QT_VERSION
 examplesinstallpath     = grpc
 examples.fileextensions += "*.proto"
 url.examples = "https://code.qt.io/cgit/qt/qtgrpc.git/tree/examples/\1?h=$QT_VER"
-
+url.sources  = "https://code.qt.io/cgit/qt/qtgrpc.git/tree/\1?h=$QT_VER#n\2"
+# Path to the root of qtgrpc (for automatic linking to source code)
+url.sources.rootdir     = ../../..
 qhp.projects            = QtGrpc
 
 qhp.QtGrpc.file                = qtgrpc.qhp
@@ -36,7 +38,7 @@ qhp.QtGrpc.subprojects.manual.title = Qt GRPC
 qhp.QtGrpc.subprojects.manual.indexTitle = Qt GRPC module topics
 qhp.QtGrpc.subprojects.manual.type = manual
 
-depends += qtdoc qtcore qtnetwork qtwidgets qtprotobuf qtcmake qtqml qtquick qtquickcontrols
+depends += qtdoc qtcore qtnetwork qtwidgets qtprotobuf qtcmake qtqml qtquick qtquickcontrols qtnetworkauth
 
 {headerdirs,sourcedirs}  += .. \
                             ../../grpcquick

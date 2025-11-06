@@ -1,6 +1,7 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // Copyright (C) 2016 Intel Corporation.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QTHREAD_P_H
 #define QTHREAD_P_H
@@ -59,6 +60,7 @@ inline bool operator<(const QPostEvent &first, const QPostEvent &second)
 
 // This class holds the list of posted events.
 //  The list has to be kept sorted by priority
+// ### Qt7 remove the next line
 // It's used in a virtual in QCoreApplication, so ELFVERSION:ignore-next
 class QPostEventList : public QList<QPostEvent>
 {
@@ -107,6 +109,11 @@ public:
     explicit BindingStatusOrList(QBindingStatus *status) noexcept :
         data(encodeBindingStatus(status)) {}
     explicit BindingStatusOrList(List *list) noexcept : data(encodeList(list)) {}
+    ~BindingStatusOrList()
+    {
+        auto status = bindingStatus();
+        delete status;
+    }
 
     // requires external synchronization:
     QBindingStatus *addObjectUnlessAlreadyStatus(QObject *object);
@@ -250,10 +257,7 @@ public:
         }
     }
 
-    QBindingStatus *bindingStatus()
-    {
-        return m_statusOrPendingObjects.bindingStatus();
-    }
+    QBindingStatus *bindingStatus();
 
     /* Returns nullptr if the object has been added, or the binding status
        if that one has been set in the meantime
@@ -261,8 +265,6 @@ public:
     QBindingStatus *addObjectWithPendingBindingStatusChange(QObject *obj);
     void removeObjectWithPendingBindingStatusChange(QObject *obj);
 
-    // manipulating m_statusOrPendingObjects requires mutex to be locked
-    QtPrivate::BindingStatusOrList m_statusOrPendingObjects = {};
 #ifndef Q_OS_INTEGRITY
 private:
     // Used in QThread(Private)::start to avoid racy access to QObject::objectName,
@@ -351,12 +353,23 @@ public:
         return canWait;
     }
 
+    void clearEvents();
+
+    void reuseBindingStatusForNewNativeThread()
+    {
+        auto status = m_statusOrPendingObjects.bindingStatus();
+        if (status)
+            QtPrivate::setBindingStatus(status, {});
+    }
+
     QStack<QEventLoop *> eventLoops;
     QPostEventList postEventList;
     QAtomicPointer<QThread> thread;
     QAtomicPointer<void> threadId;
     QAtomicPointer<QAbstractEventDispatcher> eventDispatcher;
     QList<void *> tls;
+    // manipulating m_statusOrPendingObjects requires QTreadPrivate's mutex to be locked
+    QtPrivate::BindingStatusOrList m_statusOrPendingObjects = {};
 
 private:
     QAtomicInt _ref;
@@ -403,6 +416,13 @@ private:
     void run() override;
 #endif
 };
+
+#if QT_CONFIG(thread)
+inline QBindingStatus *QThreadPrivate::bindingStatus()
+{
+    return data->m_statusOrPendingObjects.bindingStatus();
+}
+#endif
 
 QT_END_NAMESPACE
 

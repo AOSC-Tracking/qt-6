@@ -24,8 +24,9 @@
 
 #include <QtCore/qglobal.h>
 #include <QtCore/qmetatype.h>
-#include <QtCore/qpair.h>
 #include <QtCore/qhash.h>
+
+#include <utility>
 
 QT_BEGIN_NAMESPACE
 
@@ -120,6 +121,7 @@ private:
 struct Q_QML_EXPORT QObjectWrapper : public Object
 {
     V4_OBJECT2(QObjectWrapper, Object)
+    Q_MANAGED_TYPE(V4QObjectWrapper)
     V4_NEEDS_DESTROY
 
     enum Flag {
@@ -397,7 +399,7 @@ struct Q_QML_EXPORT QObjectMethod : public QV4::FunctionObject
     void callInternalWithMetaTypes(
             QObject *thisObject, void **argv, const QMetaType *types, int argc) const;
 
-    static QPair<QObject *, int> extractQtMethod(const QV4::FunctionObject *function);
+    static std::pair<QObject *, int> extractQtMethod(const QV4::FunctionObject *function);
 
     static bool isExactMatch(
             const QMetaMethod &method, void **argv, int argc, const QMetaType *types);

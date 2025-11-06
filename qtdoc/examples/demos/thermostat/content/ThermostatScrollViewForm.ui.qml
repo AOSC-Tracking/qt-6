@@ -9,7 +9,7 @@ this file manually, you might introduce QML code that is not supported by Qt Des
 Check out https://doc.qt.io/qtcreator/creator-quick-ui-forms.html for details on .ui.qml files.
 */
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Thermostat
 
@@ -19,10 +19,7 @@ ScrollView {
     clip: true
     contentWidth: availableWidth
 
-    property alias thermoSettings: thermoSettings
-    property alias roomName: thermoSettings.roomNameText
-    property alias roomIcon: thermoSettings.roomIconSource
-    property alias isActive: thermoSettings.isActive
+    required property Room room
 
     property bool isOneColumn
     property int thermostatControlHeight
@@ -54,15 +51,22 @@ ScrollView {
             Layout.preferredWidth: root.thermostatControlWidth
             Layout.alignment: Qt.AlignHCenter
 
-            model: root.model
+            room: root.room
 
-            onIsActiveChanged: root.model.active = isActive
+            Connections {
+                target: thermoSettings
+                function onIsActiveChanged() {
+                    root.room.active = thermoSettings.isActive
+                }
+            }
         }
 
-        ThermostatInfo {
+        TemperatureInfo {
             Layout.preferredHeight: root.delegateHeight
             Layout.preferredWidth: root.delegateWidth
             Layout.alignment: Qt.AlignHCenter
+
+            temperatureValues: root.room.tempStats
         }
 
         HumidityInfo {
@@ -70,7 +74,7 @@ ScrollView {
             Layout.preferredWidth: root.delegateWidth
             Layout.alignment: Qt.AlignHCenter
 
-            humidityValuesModel: root.model.humidityStats
+            humidityValues: root.room.humidityStats
         }
 
         EnergyInfo {
@@ -78,7 +82,7 @@ ScrollView {
             Layout.preferredWidth: root.delegateWidth
             Layout.alignment: Qt.AlignHCenter
 
-            energyValuesModel: root.model.energyStats
+            energyValues: root.room.energyStats
         }
     }
 

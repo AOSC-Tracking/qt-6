@@ -14,6 +14,11 @@
 
 #ifdef Q_OS_DARWIN
 #  include <private/qcore_mac_p.h>
+
+// Apple's dyld *does* support RTLD_NODELETE and the library remains loaded in
+// memory after the dlclose() call, but their Objective C crashes when running
+// code from unloaded-but-still-loaded plugins.
+#  undef RTLD_NODELETE
 #endif
 
 #ifdef Q_OS_ANDROID
@@ -52,6 +57,12 @@ QStringList QLibraryPrivate::suffixes_sys(const QString &fullVersion)
         suffixes << ".%1"_L1.arg(fullVersion);
     } else {
         suffixes << ".sl"_L1;
+    }
+#elif defined(Q_OS_CYGWIN)
+    if (!fullVersion.isEmpty()) {
+        suffixes << "-%1.dll"_L1.arg(fullVersion);
+    } else {
+        suffixes << QStringLiteral(".dll");
     }
 #elif defined(Q_OS_AIX)
     suffixes << ".a";

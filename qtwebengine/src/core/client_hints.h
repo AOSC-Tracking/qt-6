@@ -37,7 +37,7 @@ private:
     ~ClientHintsFactory() override;
 
     // BrowserContextKeyedServiceFactory methods:
-    KeyedService *BuildServiceInstanceFor(content::BrowserContext *profile) const override;
+    std::unique_ptr<KeyedService> BuildServiceInstanceForBrowserContext(content::BrowserContext *profile) const override;
     content::BrowserContext *GetBrowserContextToUse(content::BrowserContext *context) const override;
 };
 
@@ -57,8 +57,6 @@ public:
     void GetAllowedClientHintsFromSource(const url::Origin &origin, blink::EnabledClientHints *client_hints) override;
 
     bool IsJavaScriptAllowed(const GURL &url, content::RenderFrameHost *parent_rfh) override;
-
-    bool AreThirdPartyCookiesBlocked(const GURL &url, content::RenderFrameHost *rfh) override;
 
     blink::UserAgentMetadata GetUserAgentMetadata() override;
 

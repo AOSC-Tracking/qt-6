@@ -6,6 +6,8 @@
 
 #include <QtCore/qstring.h>
 
+QT_BEGIN_NAMESPACE
+
 namespace Utils {
 
 bool TextBlock::isValid() const
@@ -99,3 +101,5 @@ bool operator!=(const TextBlock &t1, const TextBlock &t2)
 }
 
 } // namespace Utils
+
+QT_END_NAMESPACE

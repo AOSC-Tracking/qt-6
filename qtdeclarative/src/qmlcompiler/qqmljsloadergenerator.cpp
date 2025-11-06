@@ -14,8 +14,6 @@
 #include <QFileInfo>
 #include <QSaveFile>
 
-#include <algorithm>
-
 QT_BEGIN_NAMESPACE
 
 /*!

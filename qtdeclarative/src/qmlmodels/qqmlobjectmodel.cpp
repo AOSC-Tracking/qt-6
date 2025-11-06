@@ -264,6 +264,8 @@ QQmlObjectModel::QQmlObjectModel(QObject *parent)
 {
 }
 
+QQmlObjectModel::~QQmlObjectModel() = default;
+
 /*!
     \qmlattachedproperty int QtQml.Models::ObjectModel::index
     This attached property holds the index of this delegate's item within the model.

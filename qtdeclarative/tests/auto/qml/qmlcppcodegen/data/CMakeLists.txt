@@ -7,8 +7,11 @@ add_subdirectory(WithSubDir)
 set(cpp_sources
     ambiguous.h
     birthdayparty.cpp birthdayparty.h
+    collector.h
     convertQJSPrimitiveValueToIntegral.h
     cppbaseclass.h
+    cppobj.h
+    detachedreferences.h
     druggeljug.h
     dummyobjekt.h
     dynamicmeta.h
@@ -49,6 +52,7 @@ set(qml_files
     BaseConstraint.qml
     BaseMember.qml
     BindingExpression.qml
+    BindingToScriptStringProperty.qml
     Categorizer.qml
     CxxTypeFromDir.qml
     CxxTypeFromImplicit.qml
@@ -61,6 +65,7 @@ set(qml_files
     Dummy2.qml
     EditConstraint.qml
     Enums.qml
+    FinalProperty.qml
     Foozle.qml
     GetOptionalLookupNonVoidableBase.qml
     GetOptionalLookupOnQJSValueNonStrict.qml
@@ -89,6 +94,7 @@ set(qml_files
     Variable.qml
     WindowDerived.qml
     aliasLookup.qml
+    aliasToAliasResolutionSkipCorruption.qml
     ambiguous1/Ambiguous.qml
     ambiguous2/Ambiguous.qml
     ambiguousAs.qml
@@ -111,9 +117,11 @@ set(qml_files
     brokenAs.qml
     boundComponents.qml
     callContextPropertyLookupResult.qml
+    callFactory.qml
     callObjectLookupOnNull.qml
     callWithSpread.qml
     childobject.qml
+    collector.qml
     colorAsVariant.qml
     colorString.qml
     compareOriginals.qml
@@ -140,6 +148,7 @@ set(qml_files
     deadStoreLoop.qml
     destroyAndToString.qml
     detachOnAssignment.qml
+    detachedreferences.qml
     dialog.qml
     dialogButtonBox.qml
     dynamicscene.qml
@@ -167,9 +176,11 @@ set(qml_files
     fallbacklookups.qml
     fallbackresettable.qml
     fileDialog.qml
+    finalUser.qml
     flagEnum.qml
     fromBoolValue.qml
     funcWithParams.qml
+    functionCallInitCrash.qml
     functionLookup.qml
     functionReturningVoid.qml
     functionTakingVar.qml

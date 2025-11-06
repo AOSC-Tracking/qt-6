@@ -109,6 +109,9 @@ QQmlJSTypeResolver::QQmlJSTypeResolver(QQmlJSImporter *importer)
     m_varType = builtinTypes.type(u"QVariant"_s).scope;
     Q_ASSERT(m_varType);
 
+    m_qmlPropertyMapType = builtinTypes.type(u"QQmlPropertyMap"_s).scope;
+    Q_ASSERT(m_qmlPropertyMapType);
+
     m_jsValueType = builtinTypes.type(u"QJSValue"_s).scope;
     Q_ASSERT(m_jsValueType);
 
@@ -360,12 +363,49 @@ bool QQmlJSTypeResolver::isPrimitive(const QQmlJSScope::ConstPtr &type) const
 
 bool QQmlJSTypeResolver::isNumeric(const QQmlJSScope::ConstPtr &type) const
 {
-    return QQmlJSUtils::searchBaseAndExtensionTypes(
-            type, [&](const QQmlJSScope::ConstPtr &scope, QQmlJSScope::ExtensionKind mode) {
-                if (mode == QQmlJSScope::ExtensionNamespace)
-                    return false;
-                return scope == m_numberPrototype;
-    });
+    if (!type) // should this be a precondition instead?
+        return false;
+
+    if (type->scopeType() == QQmlJSScope::ScopeType::EnumScope)
+        return true;
+
+    if (type == m_realType)
+        return true;
+    if (type == m_floatType)
+        return true;
+    if (type == m_int8Type)
+        return true;
+    if (type == m_uint8Type)
+        return true;
+    if (type == m_int16Type)
+        return true;
+    if (type == m_uint16Type)
+        return true;
+    if (type == m_int32Type)
+        return true;
+    if (type == m_uint32Type)
+        return true;
+    if (type == m_int64Type)
+        return true;
+    if (type == m_uint64Type)
+        return true;
+    // sizetype is covered by one of the above cases (int32 or int64)
+    // booleans are not numeric
+
+    // the number prototype is numeric
+    if (type == m_numberPrototype)
+        return true;
+
+    // and types directly inheriting from it, notably number, are also
+    // numeric
+    if (type->baseType() == m_numberPrototype)
+        return true;
+
+    // it isn't possible (for users) to derive from m_numberPrototpye,
+    // so we know the list above is exhaustive / we don't need to go up
+    // further in the inheritance chain
+
+    return false;
 }
 
 bool QQmlJSTypeResolver::isSignedInteger(const QQmlJSScope::ConstPtr &type) const
@@ -1486,6 +1526,12 @@ bool QQmlJSTypeResolver::canPrimitivelyConvertFromTo(
         return true;
     }
 
+    // it is possible to assing a singlar object to a list property if it could be stored in the list
+    if (to->accessSemantics() == QQmlJSScope::AccessSemantics::Sequence
+        && from->accessSemantics()  == QQmlJSScope::AccessSemantics::Reference
+        &&  from->inherits(to->valueType()))
+        return true;
+
     if (to == m_stringType && from->accessSemantics() == QQmlJSScope::AccessSemantics::Sequence)
         return canConvertFromTo(from->valueType(), m_stringType);
 
@@ -1516,7 +1562,7 @@ QQmlJSRegisterContent QQmlJSTypeResolver::memberType(
     if (contained == metaObjectType())
         return {};
 
-    if (contained == variantMapType()) {
+    if (contained == variantMapType() || contained->inherits(qmlPropertyMapType())) {
         QQmlJSMetaProperty prop;
         prop.setPropertyName(name);
         prop.setTypeName(u"QVariant"_s);

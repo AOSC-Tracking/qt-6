@@ -6,6 +6,8 @@
 
 QT_BEGIN_NAMESPACE
 
+QT_DEFINE_QSDP_SPECIALIZATION_DTOR(QCanBusDeviceInfoPrivate)
+
 /*!
     \class QCanBusDeviceInfo
     \inmodule QtSerialBus
@@ -21,6 +23,13 @@ QT_BEGIN_NAMESPACE
     Constructs a copy of \a other.
 */
 QCanBusDeviceInfo::QCanBusDeviceInfo(const QCanBusDeviceInfo &) = default;
+
+/*!
+    \fn QCanBusDeviceInfo::QCanBusDeviceInfo(QCanBusDeviceInfo &&other)
+
+    Move-constructs a CAN bus device info from \a other.
+    \since 6.10
+*/
 
 /*!
     Constructs a CAN bus device info from QCanBusDeviceInfoPrivate \a dd.

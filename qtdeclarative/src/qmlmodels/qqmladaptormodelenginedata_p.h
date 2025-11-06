@@ -40,7 +40,7 @@ public:
         if (!o)
             RETURN_RESULT(scope.engine->throwTypeError(QStringLiteral("Not a valid DelegateModel object")));
 
-        RETURN_RESULT(QV4::Encode(o->d()->item->index));
+        RETURN_RESULT(QV4::Encode(o->d()->item->modelIndex()));
     }
 
     template <typename T, typename M> static void setModelDataType(QMetaObjectBuilder *builder, M *metaType)
@@ -52,12 +52,14 @@ public:
         metaType->signalOffset = T::staticMetaObject.methodCount();
     }
 
-    static void addProperty(QMetaObjectBuilder *builder, int propertyId, const QByteArray &propertyName, const QByteArray &propertyType)
+    static void addProperty(
+            QMetaObjectBuilder *builder, int propertyId, const QByteArray &propertyName,
+            const QByteArray &propertyType, bool isWritable)
     {
         builder->addSignal("__" + QByteArray::number(propertyId) + "()");
         QMetaPropertyBuilder property = builder->addProperty(
                 propertyName, propertyType, propertyId);
-        property.setWritable(true);
+        property.setWritable(isWritable);
     }
 
     V4_DEFINE_EXTENSION(QQmlAdaptorModelEngineData, get)

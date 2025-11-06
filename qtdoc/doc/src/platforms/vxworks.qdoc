@@ -17,7 +17,7 @@
 
   \section1 Supported Architectures and VxWorks Releases
 
-  Qt 6.9 is verified on VxWorks 24.03.
+  Qt 6.10 is verified on VxWorks 25.03.
 
   Supported architectures:
   \list
@@ -286,7 +286,7 @@
 
     \row
         \li \c MESA
-        \li itl_generic specific
+        \li itl_generic and nxp_imx8 specific
 
   \endtable
 
@@ -1039,6 +1039,7 @@
 
   set(VxWorksPlatformGraphics_DEFINES "-D_NXPVIV -D__vxworks -D__VXWORKS__")
   set(VxWorksPlatformGraphics_LIBRARIES_PACK
+      "-Wl,--start-group"
       "${_common_lib_path}/libgfxNxpVivGAL.so"
       "${_common_lib_path}/libgfxNxpVivEGL.so"
       "${_common_lib_path}/libgfxNxpVivGLSLC.so"
@@ -1046,6 +1047,7 @@
       "${_common_lib_path}/libgfxNxpVivGLESv1_CM.so"
       "${_common_lib_path}/libgfxNxpVivVSC.so"
       "${_common_lib_path}/libxml.so"
+      "-Wl,--end-group"
   )
 
   set(VxWorksPlatformGraphics_REQUIRED_LIBRARIES
@@ -1111,7 +1113,7 @@
   \badcode
   export WIND_CC_SYSROOT=<path/to/VxWorks/VSB/directory>
   export QT_VXWORKS_TOOLCHAIN_FILE=<path/to/the/BSP/toolchain.cmake>
-  <path/to/Qt6/target/installation/dir>/bin/qt-cmake -G Ninja -S ~/Qt/Examples/Qt-6.9.2/demos/clocks -B <path/to/build/directory>
+  <path/to/Qt6/target/installation/dir>/bin/qt-cmake -G Ninja -S ~/Qt/Examples/Qt-6.10.0/demos/clocks -B <path/to/build/directory>
   cd <path/to/build/directory>
   cmake --build . --parallel
   \endcode
@@ -1164,6 +1166,10 @@
     \endcode
     \li Use GDB commands for debugging.
   \endlist
+
+  \section2 From \QC
+
+  To debug from \QC, see \l{\QC: Debug C++ applications on VxWorks devices}.
 
   \section2 From Workbench
 

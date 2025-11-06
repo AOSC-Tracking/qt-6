@@ -893,35 +893,6 @@ bool QFSFileEngine::supportsExtension(Extension extension) const
   \reimp
 */
 
-/*!
-  Returns the home path of the current user.
-
-  \sa rootPath()
-*/
-QString QFSFileEngine::homePath()
-{
-    return QFileSystemEngine::homePath();
-}
-
-/*!
-  Returns the root path.
-
-  \sa homePath()
-*/
-QString QFSFileEngine::rootPath()
-{
-    return QFileSystemEngine::rootPath();
-}
-
-/*!
-  Returns the temporary path (i.e., a path in which it is safe
-  to store temporary files).
-*/
-QString QFSFileEngine::tempPath()
-{
-    return QFileSystemEngine::tempPath();
-}
-
 /*! \fn bool QFSFileEngine::isRelativePath() const
   \reimp
 */

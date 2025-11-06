@@ -50,6 +50,8 @@ public:
     QListModel(QListWidget *parent);
     ~QListModel();
 
+    inline QListWidget *view() const { return qobject_cast<QListWidget *>(QObject::parent()); }
+
     void clear();
     QListWidgetItem *at(int row) const;
     void insert(int row, QListWidgetItem *item);
@@ -95,8 +97,8 @@ public:
     bool dropMimeData(const QMimeData *data, Qt::DropAction action,
                       int row, int column, const QModelIndex &parent) override;
     Qt::DropActions supportedDropActions() const override;
+    Qt::DropActions supportedDragActions() const override;
 #endif
-
     QMimeData *internalMimeData()  const;
 private:
     QList<QListWidgetItem*> items;
@@ -124,9 +126,10 @@ public:
     void emitCurrentItemChanged(const QModelIndex &current, const QModelIndex &previous);
     void sort();
     void dataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight);
+
     Qt::SortOrder sortOrder;
     bool sortingEnabled;
-
+    std::optional<Qt::DropActions> supportedDragActions;
     std::array<QMetaObject::Connection, 8> connections;
     std::array<QMetaObject::Connection, 2> selectionModelConnections;
 };

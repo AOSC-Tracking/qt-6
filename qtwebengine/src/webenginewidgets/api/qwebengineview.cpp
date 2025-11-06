@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:data-parser
 
 #include "qapplication.h"
 #include "qwebenginenotificationpresenter_p.h"
@@ -507,6 +508,8 @@ QStringList QWebEngineViewPrivate::chooseFiles(QWebEnginePage::FileSelectionMode
     QStringList ret;
     QString str;
     switch (static_cast<QtWebEngineCore::FilePickerController::FileChooserMode>(mode)) {
+    case QtWebEngineCore::FilePickerController::OpenDirectory:
+        Q_FALLTHROUGH();
     case QtWebEngineCore::FilePickerController::OpenMultiple:
         ret = QFileDialog::getOpenFileNames(q, QString(), QString(),
                                             filter.join(QStringLiteral(";;")), nullptr,
@@ -1490,7 +1493,7 @@ void QWebEngineView::printToPdf(const std::function<void(const QByteArray&)> &re
     the \l QWebEnginePage::Stop web action.
 
     \note This function rasterizes the result when rendering onto \a printer. Please consider raising
-    the default resolution of \a printer to at least 300 DPI or using printToPdf() to produce
+    the default resolution of \a printer to at least 300 DPI, or using printToPdf() to produce
     PDF file output more effectively.
 
     \since 6.2
@@ -1703,7 +1706,6 @@ void QWebEngineViewPrivate::hideTouchSelectionMenu()
 void QWebEngineViewPrivate::showTouchSelectionMenu(
         QtWebEngineCore::TouchSelectionMenuController *controller, const QRect &selectionBounds)
 {
-    Q_ASSERT(m_touchSelectionMenu == nullptr);
     Q_Q(QWebEngineView);
 
     // Do not show outside of view

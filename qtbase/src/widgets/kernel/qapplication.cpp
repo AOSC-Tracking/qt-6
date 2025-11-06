@@ -238,8 +238,7 @@ void QApplicationPrivate::createEventDispatcher()
             palette(),
             setPalette(),
             font(),
-            setFont(),
-            fontMetrics().
+            setFont().
 
         \row
         \li  Event handling
@@ -696,7 +695,8 @@ QApplication::~QApplication()
     QApplicationPrivate::sys_font = nullptr;
     delete QApplicationPrivate::set_font;
     QApplicationPrivate::set_font = nullptr;
-    app_fonts()->clear();
+    if (app_fonts.exists())
+        app_fonts()->clear();
 
     delete QApplicationPrivate::app_style;
     QApplicationPrivate::app_style = nullptr;
@@ -781,7 +781,14 @@ QWidget *QApplication::widgetAt(const QPoint &p)
 /*!
     \internal
 */
+#if QT_VERSION < QT_VERSION_CHECK(7, 0, 0)
 bool QApplication::compressEvent(QEvent *event, QObject *receiver, QPostEventList *postedEvents)
+{
+    return d_func()->compressEvent(event, receiver, postedEvents);
+}
+#endif
+
+bool QApplicationPrivate::compressEvent(QEvent *event, QObject *receiver, QPostEventList *postedEvents)
 {
     // Only compress the following events:
     const QEvent::Type type = event->type();
@@ -794,7 +801,7 @@ bool QApplication::compressEvent(QEvent *event, QObject *receiver, QPostEventLis
     case QEvent::LanguageChange:
         break;
     default:
-        return QGuiApplication::compressEvent(event, receiver, postedEvents);
+        return QGuiApplicationPrivate::compressEvent(event, receiver, postedEvents);
     }
 
     for (const auto &postedEvent : std::as_const(*postedEvents)) {

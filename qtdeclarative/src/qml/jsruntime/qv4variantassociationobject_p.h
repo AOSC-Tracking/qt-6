@@ -45,8 +45,13 @@ namespace QV4 {
 
     namespace Heap {
 
-        struct VariantAssociationObject : ReferenceObject
+        #define VariantAssociationObjectMembers(class, Member) \
+            Member(class, Pointer, ArrayObject *, propertyIndexMapping);
+
+        DECLARE_HEAP_OBJECT(VariantAssociationObject, ReferenceObject)
         {
+            DECLARE_MARKOBJECTS(VariantAssociationObject)
+
             enum class AssociationType: quint8 {
                 VariantMap,
                 VariantHash
@@ -62,14 +67,30 @@ namespace QV4 {
                 QV4::Heap::Object* container,
                 int property, Heap::ReferenceObject::Flags flags);
 
+            template<typename Association>
+            void createElementWrappers(const Association &association)
+            {
+                Q_ASSERT(!object());
+
+                QV4::Scope scope(internalClass->engine);
+                QV4::ScopedObject self(scope, this);
+                for (auto it = association.begin(), end = association.end(); it != end; ++it) {
+                    QV4::ScopedString key(scope, scope.engine->newString(it.key()));
+                    QV4::ScopedValue val(scope, scope.engine->fromVariant(*it));
+                    self->put(key, val);
+                }
+            }
+
+            QV4::ReturnedValue getElement(const QString &id, bool *hasProperty);
+
             void destroy();
 
             void *storagePointer() { return &m_variantAssociation; }
 
-            QVariant toVariant() const;
+            QVariant toVariant();
             bool setVariant(const QVariant &variant);
 
-            VariantAssociationObject *detached() const;
+            VariantAssociationObject *detached();
 
             // The alignment calculation needs to be out of the
             // `alignas` due to a GCC 8.3 bug (that at the time of
@@ -80,7 +101,6 @@ namespace QV4 {
             alignas(alignment)
             std::byte m_variantAssociation[std::max(sizeof(QVariantMap), sizeof(QVariantHash))];
 
-            std::vector<QString>* propertyIndexMapping;
             AssociationType m_type;
         };
 
@@ -105,12 +125,6 @@ namespace QV4 {
                                                         Property *p);
 
         static int virtualMetacall(Object *object, QMetaObject::Call call, int index, void **a);
-
-        QV4::ReturnedValue getElement(const QString& id, bool *hasProperty = nullptr) const;
-        bool putElement(const QString& key, const Value& value);
-        bool deleteElement(const QString& key);
-
-        QStringList keys() const;
     };
 
 } // namespace QV4

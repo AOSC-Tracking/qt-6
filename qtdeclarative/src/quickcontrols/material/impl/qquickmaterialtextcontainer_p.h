@@ -15,6 +15,8 @@
 // We mean it.
 //
 
+#include <QtCore/qpointer.h>
+#include <QtCore/qpropertyanimation.h>
 #include <QtCore/private/qglobal_p.h>
 #include <QtGui/qcolor.h>
 #include <QtQuick/qquickpainteditem.h>
@@ -98,9 +100,8 @@ private:
     QQuickItem *textControl() const;
     void controlGotActiveFocus();
     void controlLostActiveFocus();
-    void startFocusAnimation();
 
-    void maybeSetFocusAnimationProgress();
+    void updateFocusAnimation(bool createIfNeeded = false);
 
     void componentComplete() override;
 
@@ -115,6 +116,7 @@ private:
     bool m_placeholderHasText = false;
     int m_horizontalPadding = 0;
     PlaceHolderHAlignment m_placeholderTextHAlign;
+    QPointer<QPropertyAnimation> m_focusAnimation;
 };
 
 QT_END_NAMESPACE

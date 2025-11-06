@@ -26,7 +26,7 @@
 
 using namespace Qt::Literals::StringLiterals;
 
-static QList<QStandardPaths::StandardLocation> s_defaultPaths = {
+static std::initializer_list<QStandardPaths::StandardLocation> s_defaultPaths = {
    QStandardPaths::HomeLocation,     QStandardPaths::DesktopLocation,
    QStandardPaths::DownloadLocation, QStandardPaths::DocumentsLocation,
    QStandardPaths::MusicLocation,    QStandardPaths::PicturesLocation,
@@ -231,7 +231,7 @@ void QQuickSideBarPrivate::repopulate()
     if (repopulating || !buttonDelegate || !separatorDelegate || !addFavoriteDelegate || !q->contentItem())
         return;
 
-    QBoolBlocker repopulateGuard(repopulating);
+    QScopedValueRollback repopulateGuard(repopulating, true);
 
     auto updateIconSourceAndSize = [this](QQuickAbstractButton *button, const QUrl &iconUrl) {
         // we need to preserve the default binding on icon.color, so
@@ -275,21 +275,33 @@ void QQuickSideBarPrivate::repopulate()
     for (auto &folder : folders)
         createButtonDelegate(insertIndex++, QStandardPaths::displayName(folder), folderIconSource(folder));
 
-    if (showSeparator)
-        if (QQuickItem *separatorItem = createDelegateItem(separatorDelegate, {}))
-            insertItem(insertIndex++, separatorItem);
 
-    if (showAddFavoriteDelegate()) {
-        // the variant needs to be QString, not a QLatin1StringView
-        const QString labelText = QCoreApplication::translate("FileDialog", "Add Favorite");
-        QVariantMap initialProperties = {
-                                          { "labelText"_L1, QVariant::fromValue(labelText) },
-                                          { "dragHovering"_L1, QVariant::fromValue(addFavoriteDelegateHovered()) },
-                                        };
-        if (auto *addFavoriteDelegateItem = createDelegateItem(addFavoriteDelegate, initialProperties)) {
+    if (QQuickItem *separatorItem = createDelegateItem(separatorDelegate, {{"visible"_L1, false}})) {
+        separatorImplicitSize = separatorItem->implicitHeight();
+        if (showSeparator) {
+            separatorItem->setVisible(true);
+            insertItem(insertIndex++, separatorItem);
+        } else {
+            separatorItem->deleteLater();
+        }
+    }
+
+    // The variant needs to be QString, not a QLatin1StringView
+    const QString labelText = QCoreApplication::translate("FileDialog", "Add Favorite");
+    const QVariantMap initialProperties = {
+                                      { "labelText"_L1, QVariant::fromValue(labelText) },
+                                      { "dragHovering"_L1, QVariant::fromValue(addFavoriteDelegateHovered()) },
+                                      { "visible"_L1, false}
+                                      };
+    if (auto *addFavoriteDelegateItem = createDelegateItem(addFavoriteDelegate, initialProperties)) {
+        addFavoriteButtonImplicitSize = addFavoriteDelegateItem->implicitHeight();
+        if (showAddFavoriteDelegate()) {
+            addFavoriteDelegateItem->setVisible(true);
             if (QQuickAbstractButton *button = qobject_cast<QQuickAbstractButton *>(addFavoriteDelegateItem))
                 updateIconSourceAndSize(button, addFavoriteIconUrl());
             insertItem(insertIndex++, addFavoriteDelegateItem);
+        } else {
+            addFavoriteDelegateItem->deleteLater();
         }
     }
 
@@ -357,28 +369,28 @@ void QQuickSideBar::componentComplete()
 
 QUrl QQuickSideBarPrivate::folderIconSource() const
 {
-    return QUrl("../images/sidebar-folder.png"_L1);
+    return QUrl("qrc:/qt-project.org/imports/QtQuick/Dialogs/quickimpl/images/sidebar-folder.png"_L1);
 }
 
 QUrl QQuickSideBarPrivate::folderIconSource(QStandardPaths::StandardLocation stdLocation) const
 {
     switch (stdLocation) {
     case QStandardPaths::DesktopLocation:
-        return QUrl("../images/sidebar-desktop.png"_L1);
+        return QUrl("qrc:/qt-project.org/imports/QtQuick/Dialogs/quickimpl/images/sidebar-desktop.png"_L1);
     case QStandardPaths::DocumentsLocation:
-        return QUrl("../images/sidebar-documents.png"_L1);
+        return QUrl("qrc:/qt-project.org/imports/QtQuick/Dialogs/quickimpl/images/sidebar-documents.png"_L1);
     case QStandardPaths::MusicLocation:
-        return QUrl("../images/sidebar-music.png"_L1);
+        return QUrl("qrc:/qt-project.org/imports/QtQuick/Dialogs/quickimpl/images/sidebar-music.png"_L1);
     case QStandardPaths::MoviesLocation:
-        return QUrl("../images/sidebar-video.png"_L1);
+        return QUrl("qrc:/qt-project.org/imports/QtQuick/Dialogs/quickimpl/images/sidebar-video.png"_L1);
     case QStandardPaths::PicturesLocation:
-        return QUrl("../images/sidebar-photo.png"_L1);
+        return QUrl("qrc:/qt-project.org/imports/QtQuick/Dialogs/quickimpl/images/sidebar-photo.png"_L1);
     case QStandardPaths::HomeLocation:
-        return QUrl("../images/sidebar-home.png"_L1);
+        return QUrl("qrc:/qt-project.org/imports/QtQuick/Dialogs/quickimpl/images/sidebar-home.png"_L1);
     case QStandardPaths::DownloadLocation:
-        return QUrl("../images/sidebar-downloads.png"_L1);
+        return QUrl("qrc:/qt-project.org/imports/QtQuick/Dialogs/quickimpl/images/sidebar-downloads.png"_L1);
     default:
-        return QUrl("../images/sidebar-folder.png"_L1);
+        return QUrl("qrc:/qt-project.org/imports/QtQuick/Dialogs/quickimpl/images/sidebar-folder.png"_L1);
     }
 }
 
@@ -479,7 +491,7 @@ void QQuickSideBarPrivate::setAddFavoriteDelegateHovered(bool hovered)
 
 QUrl QQuickSideBarPrivate::addFavoriteIconUrl() const
 {
-    return QUrl("../images/sidebar-plus.png"_L1);
+    return QUrl("qrc:/qt-project.org/imports/QtQuick/Dialogs/quickimpl/images/sidebar-plus.png"_L1);
 }
 
 void QQuickSideBarPrivate::initContextMenu()
@@ -525,4 +537,75 @@ void QQuickSideBarPrivate::handleRemoveAction()
     if (!urlToBeRemoved.isEmpty())
         removeFavorite(urlToBeRemoved);
     urlToBeRemoved.clear();
+}
+
+qreal QQuickSideBarPrivate::getContentWidth() const
+{
+    Q_Q(const QQuickSideBar);
+    if (!contentModel)
+        return 0;
+
+    const int count = contentModel->count();
+    qreal maxWidth = 0;
+    for (int i = 0; i < count; ++i) {
+        QQuickItem *item = q->itemAt(i);
+        if (item)
+            maxWidth = qMax(maxWidth, item->implicitWidth());
+    }
+    return maxWidth;
+}
+
+qreal QQuickSideBarPrivate::getContentHeight() const
+{
+    Q_Q(const QQuickSideBar);
+    if (!contentModel)
+        return 0;
+    // All StandardPaths buttons + spacing + separator + AddFavoriteButton
+    const int modelCount = contentModel->count();
+    const int folderPathCount = q->effectiveFolderPaths().count();
+    qreal spacing = 0;
+    if (contentItem) {
+         QQuickListView *listView = contentItem->findChild<QQuickListView*>();
+        if (listView)
+            spacing = listView->spacing();
+    }
+    qreal totalHeight = 0;
+    int i = 0;
+    for (; i < qMin(modelCount, folderPathCount); ++i) {
+        QQuickItem *item = q->itemAt(i);
+        if (item) {
+            totalHeight += item->implicitHeight();
+        }
+    }
+    // Add spacing
+    if (i)
+        totalHeight += (i - 1) * spacing;
+
+    if (!qFuzzyIsNull(separatorImplicitSize))
+        totalHeight += separatorImplicitSize + spacing;
+    if (!qFuzzyIsNull(addFavoriteButtonImplicitSize))
+        totalHeight += addFavoriteButtonImplicitSize + spacing;
+
+    return totalHeight;
+}
+
+void QQuickSideBarPrivate::itemGeometryChanged(QQuickItem *item, QQuickGeometryChange change, const QRectF &diff)
+{
+    QQuickContainerPrivate::itemGeometryChanged(item, change, diff);
+    if (change.sizeChange())
+        updateImplicitContentSize();
+}
+
+void QQuickSideBarPrivate::itemImplicitWidthChanged(QQuickItem *item)
+{
+    QQuickContainerPrivate::itemImplicitWidthChanged(item);
+    if (item != contentItem)
+        updateImplicitContentWidth();
+}
+
+void QQuickSideBarPrivate::itemImplicitHeightChanged(QQuickItem *item)
+{
+    QQuickContainerPrivate::itemImplicitHeightChanged(item);
+    if (item != contentItem)
+        updateImplicitContentHeight();
 }

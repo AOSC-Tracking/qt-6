@@ -543,6 +543,13 @@ QMetaType QQmlValueTypeWrapper::type() const
 bool QQmlValueTypeWrapper::write(QObject *target, int propertyIndex) const
 {
     bool destructGadgetOnExit = false;
+    auto cleanup = qScopeGuard([&]() {
+        if (destructGadgetOnExit) {
+            d()->metaType().destruct(d()->gadgetPtr());
+            d()->setGadgetPtr(nullptr);
+        }
+    });
+
     Q_ALLOCA_DECLARE(void, gadget);
     if (d()->isReference()) {
         if (!d()->gadgetPtr()) {
@@ -559,11 +566,6 @@ bool QQmlValueTypeWrapper::write(QObject *target, int propertyIndex) const
     int status = -1;
     void *a[] = { d()->gadgetPtr(), nullptr, &status, &flags };
     QMetaObject::metacall(target, QMetaObject::WriteProperty, propertyIndex, a);
-
-    if (destructGadgetOnExit) {
-        d()->metaType().destruct(d()->gadgetPtr());
-        d()->setGadgetPtr(nullptr);
-    }
     return true;
 }
 
@@ -756,7 +758,10 @@ bool QQmlValueTypeWrapper::virtualPut(Managed *m, PropertyKey id, const Value &v
             return true;
         } else if (referenceObject) {
             if (Q_UNLIKELY(lcBuiltinsBindingRemoval().isInfoEnabled())) {
-                if (auto binding = QQmlPropertyPrivate::binding(referenceObject, QQmlPropertyIndex(referencePropertyIndex, pd.coreIndex()))) {
+                if (auto binding = QQmlPropertyPrivate::binding(
+                            referenceObject,
+                            QQmlPropertyIndex(referencePropertyIndex, pd.coreIndex()));
+                        binding && !binding->isSticky()) {
                     Q_ASSERT(binding->kind() == QQmlAbstractBinding::QmlBinding);
                     const auto qmlBinding = static_cast<const QQmlBinding*>(binding);
                     const auto stackFrame = v4->currentStackFrame;
@@ -768,7 +773,8 @@ bool QQmlValueTypeWrapper::virtualPut(Managed *m, PropertyKey id, const Value &v
                            qPrintable(stackFrame->source()), stackFrame->lineNumber());
                 }
             }
-            QQmlPropertyPrivate::removeBinding(referenceObject, QQmlPropertyIndex(referencePropertyIndex, pd.coreIndex()));
+            QQmlPropertyPrivate::removeBinding(
+                    referenceObject, QQmlPropertyIndex(referencePropertyIndex, pd.coreIndex()));
         }
     }
 

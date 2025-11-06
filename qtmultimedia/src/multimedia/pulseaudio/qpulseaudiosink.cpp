@@ -330,12 +330,12 @@ void QPulseAudioSinkStream::writeCallbackAudioCallback(size_t requestedBytes)
         qCWarning(qLcPulseAudioOut)
                 << "pa_stream_begin_write error:" << currentError(pulseEngine->context());
 
-        QMetaObject::invokeMethod(m_parent, [this] {
+        invokeOnAppThread([this] {
             handleIOError(m_parent);
         });
     }
     QSpan<std::byte> hostBuffer{ reinterpret_cast<std::byte *>(dest), qsizetype(nbytes) };
-    runAudioCallback(*m_audioCallback, hostBuffer, m_format);
+    runAudioCallback(*m_audioCallback, hostBuffer, m_format, volume());
 
     status = pa_stream_write(m_stream.get(), hostBuffer.data(), nbytes,
                              /*free_cb= */ nullptr, /*offset=*/0, PA_SEEK_RELATIVE);
@@ -343,7 +343,7 @@ void QPulseAudioSinkStream::writeCallbackAudioCallback(size_t requestedBytes)
         qCWarning(qLcPulseAudioOut)
                 << "pa_stream_begin_write error:" << currentError(pulseEngine->context());
 
-        QMetaObject::invokeMethod(m_parent, [this] {
+        invokeOnAppThread([this] {
             handleIOError(m_parent);
         });
     }

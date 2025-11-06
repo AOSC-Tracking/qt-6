@@ -160,9 +160,9 @@ void QWindowsUiaMainProvider::notifyValueChange(QAccessibleValueChangeEvent *eve
 void QWindowsUiaMainProvider::notifyNameChange(QAccessibleEvent *event)
 {
     if (QAccessibleInterface *accessible = event->accessibleInterface()) {
-        // Restrict notification to combo boxes, which need it for accessibility,
-        // in order to avoid slowdowns with unnecessary notifications.
-        if (accessible->role() == QAccessible::ComboBox) {
+        // Restrict notification to combo boxes and the currently focused element, which
+        // need it for accessibility, in order to avoid slowdowns with unnecessary notifications.
+        if (accessible->role() == QAccessible::ComboBox || accessible->state().focused) {
             if (auto provider = providerForAccessible(accessible)) {
                 QComVariant oldVal;
                 QComVariant newVal{ accessible->text(QAccessible::Name) };
@@ -371,6 +371,24 @@ HRESULT QWindowsUiaMainProvider::GetPatternProvider(PATTERNID idPattern, IUnknow
     return S_OK;
 }
 
+void QWindowsUiaMainProvider::setLabelledBy(QAccessibleInterface *accessible, VARIANT *pRetVal)
+{
+    Q_ASSERT(accessible);
+
+    typedef std::pair<QAccessibleInterface*, QAccessible::Relation> RelationPair;
+    const QList<RelationPair> relationInterfaces = accessible->relations(QAccessible::Label);
+    if (relationInterfaces.empty())
+        return;
+
+    // UIA_LabeledByPropertyId only supports one relation
+    ComPtr<IRawElementProviderSimple> provider = providerForAccessible(relationInterfaces.first().first);
+    if (!provider)
+        return;
+
+    pRetVal->vt = VT_UNKNOWN;
+    pRetVal->punkVal = provider.Detach();
+}
+
 void QWindowsUiaMainProvider::fillVariantArrayForRelation(QAccessibleInterface* accessible,
                                                           QAccessible::Relation relation, VARIANT *pRetVal)
 {
@@ -503,6 +521,10 @@ HRESULT QWindowsUiaMainProvider::GetPropertyValue(PROPERTYID idProp, VARIANT *pR
         // Accelerator key.
         *pRetVal = QComVariant{ accessible->text(QAccessible::Accelerator) }.release();
         break;
+    case UIA_AriaRolePropertyId:
+        if (accessible->role() == QAccessible::Heading)
+            *pRetVal = QComVariant{ QStringLiteral("heading") }.release();
+        break;
     case UIA_AriaPropertiesPropertyId:
         setAriaProperties(accessible, pRetVal);
         break;
@@ -517,6 +539,20 @@ HRESULT QWindowsUiaMainProvider::GetPropertyValue(PROPERTYID idProp, VARIANT *pR
             *pRetVal = QComVariant{ className }.release();
         }
         break;
+    case UIA_CulturePropertyId:
+    {
+        QLocale locale;
+        if (QAccessibleAttributesInterface *attributesIface = accessible->attributesInterface()) {
+            const QVariant localeVariant = attributesIface->attributeValue(QAccessible::Attribute::Locale);
+            if (localeVariant.isValid()) {
+                Q_ASSERT(localeVariant.canConvert<QLocale>());
+                locale = localeVariant.toLocale();
+            }
+        }
+        LCID lcid = LocaleNameToLCID(qUtf16Printable(locale.bcp47Name()), 0);
+        *pRetVal = QComVariant{ long(lcid) }.release();
+        break;
+    }
     case UIA_DescribedByPropertyId:
         fillVariantArrayForRelation(accessible, QAccessible::DescriptionFor, pRetVal);
         break;
@@ -525,6 +561,9 @@ HRESULT QWindowsUiaMainProvider::GetPropertyValue(PROPERTYID idProp, VARIANT *pR
         break;
     case UIA_FlowsToPropertyId:
         fillVariantArrayForRelation(accessible, QAccessible::FlowsFrom, pRetVal);
+        break;
+    case UIA_LabeledByPropertyId:
+        setLabelledBy(accessible, pRetVal);
         break;
     case UIA_FrameworkIdPropertyId:
         *pRetVal = QComVariant{ QStringLiteral("Qt") }.release();

@@ -81,7 +81,7 @@ struct QPropertyBindingDataPointer
         d = reinterpret_cast<quintptr>(observer);
     }
     static void fixupAfterMove(QtPrivate::QPropertyBindingData *ptr);
-    void Q_ALWAYS_INLINE addObserver(QPropertyObserver *observer);
+    Q_ALWAYS_INLINE void addObserver(QPropertyObserver *observer);
     inline void setFirstObserver(QPropertyObserver *observer);
     inline QPropertyObserverPointer firstObserver() const;
     static QPropertyProxyBindingData *proxyData(QtPrivate::QPropertyBindingData *ptr);
@@ -399,7 +399,7 @@ public:
 
     bool evaluateRecursive(PendingBindingObserverList &bindingObservers, QBindingStatus *status = nullptr);
 
-    bool Q_ALWAYS_INLINE evaluateRecursive_inline(PendingBindingObserverList &bindingObservers, QBindingStatus *status);
+    Q_ALWAYS_INLINE bool evaluateRecursive_inline(PendingBindingObserverList &bindingObservers, QBindingStatus *status);
 
     void notifyNonRecursive(const PendingBindingObserverList &bindingObservers);
     enum NotificationState : bool { Delayed, Sent };
@@ -662,8 +662,12 @@ public:
                         PendingBindingObserverList bindingObservers;
                         if (bd->notifyObserver_helper(this, storage, observer, bindingObservers)
                                 == QtPrivate::QPropertyBindingData::Evaluated) {
-                            // evaluateBindings() can trash the observers. We need to re-fetch here.
-                            if (QPropertyObserverPointer obs = d.firstObserver())
+                            // evaluateBindings() can trash the observers.
+                            // It can also reallocate binding data pointer.
+                            // So, we need to re-fetch here.
+                            bd = storage->bindingData(this, false);
+                            QPropertyBindingDataPointer dd{bd};
+                            if (QPropertyObserverPointer obs = dd.firstObserver())
                                 obs.notify(this);
                             for (auto&& bindingPtr: bindingObservers) {
                                 auto *binding = static_cast<QPropertyBindingPrivate *>(bindingPtr.get());

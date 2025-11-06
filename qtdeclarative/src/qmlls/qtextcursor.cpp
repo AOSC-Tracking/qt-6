@@ -5,6 +5,8 @@
 #include "qtextdocument_p.h"
 #include "qtextblock_p.h"
 
+QT_BEGIN_NAMESPACE
+
 namespace Utils {
 
 class TextFrame;
@@ -120,3 +122,5 @@ bool TextCursor::isNull() const
 }
 
 } // namespace Utils
+
+QT_END_NAMESPACE

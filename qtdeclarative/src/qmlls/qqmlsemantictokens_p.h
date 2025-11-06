@@ -68,8 +68,9 @@ enum class QmlHighlightModifier {
     None = 0,
     QmlPropertyDefinition = 1 << 0,
     QmlDefaultProperty = 1 << 1,
-    QmlRequiredProperty = 1 << 2,
-    QmlReadonlyProperty = 1 << 3,
+    QmlFinalProperty = 1 << 2,
+    QmlRequiredProperty = 1 << 3,
+    QmlReadonlyProperty = 1 << 4,
 };
 Q_DECLARE_FLAGS(QmlHighlightModifiers, QmlHighlightModifier)
 Q_DECLARE_OPERATORS_FOR_FLAGS(QmlHighlightModifiers)

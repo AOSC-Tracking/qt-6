@@ -65,8 +65,8 @@ struct Properties {
     ushort script              : 8;
 };
 
+Q_DECL_CONST_FUNCTION
 Q_CORE_EXPORT const Properties * QT_FASTCALL properties(char32_t ucs4) noexcept;
-Q_CORE_EXPORT const Properties * QT_FASTCALL properties(char16_t ucs2) noexcept;
 
 static_assert(sizeof(Properties) == 20);
 

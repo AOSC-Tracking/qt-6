@@ -8,14 +8,22 @@ It is supposed to be strictly declarative and only uses a subset of QML. If you 
 this file manually, you might introduce QML code that is not supported by Qt Design Studio.
 Check out https://doc.qt.io/qtcreator/creator-quick-ui-forms.html for details on .ui.qml files.
 */
+pragma ComponentBehavior: Bound
+
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import QtQuick.Effects
 import Thermostat
 import ThermostatCustomControls
 
 Pane {
+    id: root
+
+    required property var scheduleViewRoot
+    property alias saveButton: saveButton
+    property alias cancelButton: cancelButton
+
     width: 329
     height: 527
 
@@ -60,11 +68,16 @@ Pane {
         }
 
         CustomTextField {
-            width: 102
-            height: 40
+            id: customTextField
+            Layout.preferredWidth: 90
+            Layout.preferredHeight: 40
             font.pixelSize: 14
             text: slider.value
-            onAccepted: slider.value = +text
+            Connections {
+                function onAccepted() {
+                    slider.value = +customTextField.text
+                }
+            }
         }
 
         Item {
@@ -74,7 +87,13 @@ Pane {
             CustomSlider {
                 id: slider
                 width: parent.width
+                value: root.scheduleViewRoot.currentTemp
                 anchors.bottom: parent.bottom
+                Connections {
+                    function onValueChanged() {
+                        root.scheduleViewRoot.currentTemp = slider.value
+                    }
+                }
             }
         }
 
@@ -90,9 +109,19 @@ Pane {
             Repeater {
                 model: [qsTr("Heating"), qsTr("Cooling"), qsTr("Auto")]
                 CustomRadioButton {
+                    id: radioButton
+                    required property string modelData
+                    required property int index
+
                     text: modelData
                     font.pixelSize: 14
                     indicatorSize: 14
+                    checked: root.scheduleViewRoot.currentMode === index
+                    Connections {
+                        function onClicked() {
+                            root.scheduleViewRoot.currentMode = radioButton.index
+                        }
+                    }
                 }
             }
         }
@@ -117,7 +146,10 @@ Pane {
                             "TH"), qsTr("FR"), qsTr("SA"), qsTr("SU")]
 
                     Label {
-                        property bool checked: false
+                        id: weekdayLabel
+                        required property int index
+                        required property string modelData
+                        property bool checked: root.scheduleViewRoot.selectedDays[index]
 
                         text: modelData
                         Layout.fillWidth: true
@@ -126,7 +158,12 @@ Pane {
                         horizontalAlignment: Text.AlignHCenter
                         color: checked ? "#2CDE85" : Constants.primaryTextColor
                         TapHandler {
-                            onTapped: parent.checked = !parent.checked
+                            property Connections _: Connections {
+                                function onTapped() {
+                                    root.scheduleViewRoot.selectedDays[weekdayLabel.index]
+                                            = !root.scheduleViewRoot.selectedDays[weekdayLabel.index]
+                                }
+                            }
                         }
                     }
                 }
@@ -136,18 +173,28 @@ Pane {
             Layout.fillWidth: true
             spacing: 8
 
-            Repeater {
-                model: [qsTr("Cancel"), qsTr("Save")]
+            CustomRoundButton {
+                id: cancelButton
 
-                CustomRoundButton {
-                    height: 45
-                    Layout.fillWidth: true
-                    text: modelData
-                    radius: 12
-                    contentColor: "#2CDE85"
-                    checkable: false
-                    font.pixelSize: 14
-                }
+                Layout.preferredHeight: 45
+                Layout.fillWidth: true
+                text: qsTr("Cancel")
+                radius: 12
+                contentColor: "#2CDE85"
+                checkable: false
+                font.pixelSize: 14
+            }
+
+            CustomRoundButton {
+                id: saveButton
+
+                Layout.preferredHeight: 45
+                Layout.fillWidth: true
+                text: qsTr("Save")
+                radius: 12
+                contentColor: "#2CDE85"
+                checkable: false
+                font.pixelSize: 14
             }
         }
     }

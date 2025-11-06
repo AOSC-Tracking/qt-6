@@ -5,7 +5,7 @@ import QtCore
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Window
-import Assets.Downloader
+import Qt.labs.assetdownloader
 import CarRendering
 
 Window {
@@ -17,7 +17,7 @@ Window {
     visibility: Qt.platform.os === 'android' ? Window.FullScreen : Window.AutomaticVisibility
 
     visible: true
-    title: "CarRendering"
+    title: "Car Configurator"
 
     property url downloadBase
 

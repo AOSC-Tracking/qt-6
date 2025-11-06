@@ -176,40 +176,43 @@ QFFmpegMediaIntegration::QFFmpegMediaIntegration()
         qCDebug(qLcFFmpeg) << "    " << av_hwdevice_get_type_name(type);
 }
 
-QMaybe<QPlatformAudioDecoder *> QFFmpegMediaIntegration::createAudioDecoder(QAudioDecoder *decoder)
+q23::expected<QPlatformAudioDecoder *, QString>
+QFFmpegMediaIntegration::createAudioDecoder(QAudioDecoder *decoder)
 {
     return new QFFmpegAudioDecoder(decoder);
 }
 
-QMaybe<std::unique_ptr<QPlatformAudioResampler>>
+q23::expected<std::unique_ptr<QPlatformAudioResampler>, QString>
 QFFmpegMediaIntegration::createAudioResampler(const QAudioFormat &inputFormat,
                                               const QAudioFormat &outputFormat)
 {
     auto ffmpegResampler = QFFmpegResampler::createFromInputFormat(inputFormat, outputFormat);
     if (ffmpegResampler)
-        return QMaybe<std::unique_ptr<QPlatformAudioResampler>>{std::move(ffmpegResampler)};
+        return ffmpegResampler;
 
 #ifdef Q_OS_WINDOWS
     auto windowsResampler = std::make_unique<QWindowsResampler>();
     if (windowsResampler->setup(inputFormat, outputFormat))
-        return QMaybe<std::unique_ptr<QPlatformAudioResampler>>{std::move(windowsResampler)};
+        return std::move(windowsResampler);
 
 #endif
 
-    return QUnexpected{ notAvailable };
+    return q23::unexpected{ notAvailable };
 }
 
-QMaybe<QPlatformMediaCaptureSession *> QFFmpegMediaIntegration::createCaptureSession()
+q23::expected<QPlatformMediaCaptureSession *, QString>
+QFFmpegMediaIntegration::createCaptureSession()
 {
     return new QFFmpegMediaCaptureSession();
 }
 
-QMaybe<QPlatformMediaPlayer *> QFFmpegMediaIntegration::createPlayer(QMediaPlayer *player)
+q23::expected<QPlatformMediaPlayer *, QString>
+QFFmpegMediaIntegration::createPlayer(QMediaPlayer *player)
 {
     return new QFFmpegMediaPlayer(player);
 }
 
-QMaybe<QPlatformCamera *> QFFmpegMediaIntegration::createCamera(QCamera *camera)
+q23::expected<QPlatformCamera *, QString> QFFmpegMediaIntegration::createCamera(QCamera *camera)
 {
 #ifdef Q_OS_DARWIN
     return new QAVFCamera(camera);
@@ -221,7 +224,7 @@ QMaybe<QPlatformCamera *> QFFmpegMediaIntegration::createCamera(QCamera *camera)
     return new QWindowsCamera(camera);
 #else
     Q_UNUSED(camera);
-    return { unexpect, notAvailable };
+    return q23::unexpected{ notAvailable };
 #endif
 }
 
@@ -294,12 +297,14 @@ QPlatformSurfaceCapture *QFFmpegMediaIntegration::createWindowCapture(QWindowCap
 #endif
 }
 
-QMaybe<QPlatformMediaRecorder *> QFFmpegMediaIntegration::createRecorder(QMediaRecorder *recorder)
+q23::expected<QPlatformMediaRecorder *, QString>
+QFFmpegMediaIntegration::createRecorder(QMediaRecorder *recorder)
 {
     return new QFFmpegMediaRecorder(recorder);
 }
 
-QMaybe<QPlatformImageCapture *> QFFmpegMediaIntegration::createImageCapture(QImageCapture *imageCapture)
+q23::expected<QPlatformImageCapture *, QString>
+QFFmpegMediaIntegration::createImageCapture(QImageCapture *imageCapture)
 {
 #if defined(Q_OS_ANDROID)
     return new QFFmpeg::QAndroidImageCapture(imageCapture);
@@ -308,12 +313,14 @@ QMaybe<QPlatformImageCapture *> QFFmpegMediaIntegration::createImageCapture(QIma
 #endif
 }
 
-QMaybe<QPlatformVideoSink *> QFFmpegMediaIntegration::createVideoSink(QVideoSink *sink)
+q23::expected<QPlatformVideoSink *, QString>
+QFFmpegMediaIntegration::createVideoSink(QVideoSink *sink)
 {
     return new QFFmpegVideoSink(sink);
 }
 
-QMaybe<QPlatformAudioInput *> QFFmpegMediaIntegration::createAudioInput(QAudioInput *input)
+q23::expected<QPlatformAudioInput *, QString>
+QFFmpegMediaIntegration::createAudioInput(QAudioInput *input)
 {
     return new QFFmpegAudioInput(input);
 }

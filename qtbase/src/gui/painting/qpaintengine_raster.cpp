@@ -515,7 +515,7 @@ QRasterPaintEngineState::QRasterPaintEngineState()
     dirty = 0;
 }
 
-QRasterPaintEngineState::QRasterPaintEngineState(QRasterPaintEngineState &s)
+QRasterPaintEngineState::QRasterPaintEngineState(const QRasterPaintEngineState &s)
     : QPainterState(s)
     , lastPen(s.lastPen)
     , penData(s.penData)
@@ -3551,7 +3551,7 @@ void QRasterPaintEnginePrivate::rasterize(QT_FT_Outline *outline,
 }
 
 extern "C" {
-    int q_gray_rendered_spans(QT_FT_Raster raster);
+int QT_MANGLE_NAMESPACE(q_gray_rendered_spans)(QT_FT_Raster raster);
 }
 
 static inline uchar *alignAddress(uchar *address, quintptr alignmentMask)
@@ -3631,7 +3631,7 @@ void QRasterPaintEnginePrivate::rasterize(QT_FT_Outline *outline,
                 break;
             }
 
-            rendered_spans += q_gray_rendered_spans(*grayRaster.data());
+            rendered_spans += QT_MANGLE_NAMESPACE(q_gray_rendered_spans)(*grayRaster.data());
 
             free(rasterPoolOnHeap);
             rasterPoolOnHeap = (uchar *)malloc(rasterPoolSize + 0xf);

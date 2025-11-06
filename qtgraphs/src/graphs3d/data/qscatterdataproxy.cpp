@@ -4,6 +4,7 @@
 #include "qabstract3daxis_p.h"
 #include "qscatter3dseries_p.h"
 #include "qscatterdataproxy_p.h"
+#include "qgraphs3dlogging_p.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -99,7 +100,8 @@ QScatter3DSeries *QScatterDataProxy::series() const
 {
     Q_D(const QScatterDataProxy);
     if (!d->series())
-        qWarning("Series needs to be created to access data members");
+        qCWarning(lcGraphs3D, "%s series needs to be created to access data members",
+                  qUtf8Printable(QLatin1String(__FUNCTION__)));
     return static_cast<QScatter3DSeries *>(d->series());
 }
 
@@ -124,11 +126,27 @@ void QScatterDataProxy::resetArray(QScatterDataArray newArray)
     if (!series())
         return;
 
-    if (series()->dataArray().data() != newArray.data())
+    if (!series()->dataArray().isSharedWith(newArray))
         d->resetArray(std::move(newArray));
 
     emit arrayReset();
     emit itemCountChanged(itemCount());
+}
+
+/*!
+ * Sets the scale array from \a newArray. If the new array is equal to the
+ * existing one, this function simply triggers the scaleArrayReset() signal.
+ */
+void QScatterDataProxy::resetScaleArray(QList<QVector3D> newArray)
+{
+    Q_D(QScatterDataProxy);
+    if (!series())
+        return;
+
+    if (!series()->scaleArray().isSharedWith(newArray))
+        d->resetScaleArray(std::move(newArray));
+
+    emit scaleArrayReset();
 }
 
 /*!
@@ -243,6 +261,23 @@ const QScatterDataItem &QScatterDataProxy::itemAt(qsizetype index) const
 }
 
 /*!
+ * Returns the scale data at the index \a index. It is guaranteed to be
+ * valid only until the next call that modifies data.
+ */
+QVector3D QScatterDataProxy::scaleAt(qsizetype index) const
+{
+    QVector3D ret(1.0f, 1.0f, 1.0f);
+    if (series()->scaleArray().isEmpty())
+        return ret;
+    if (series()->scaleArray().size() <= index) {
+        qCWarning(lcGraphs3D, "Scale data size %" PRIdQSIZETYPE " does not match the access index %" PRIdQSIZETYPE
+            ". The default scale value will be returned.", series()->scaleArray().size(), index);
+        return ret;
+    }
+    return series()->scaleArray().at(index);
+}
+
+/*!
  * \fn void QScatterDataProxy::arrayReset()
  *
  * This signal is emitted when the data array is reset.
@@ -298,8 +333,15 @@ QScatterDataProxyPrivate::~QScatterDataProxyPrivate() {}
 void QScatterDataProxyPrivate::resetArray(QScatterDataArray &&newArray)
 {
     auto *scatterSeries = static_cast<QScatter3DSeries *>(series());
-    if (newArray.data() != scatterSeries->dataArray().data())
+    if (!newArray.isSharedWith(scatterSeries->dataArray()))
         scatterSeries->setDataArray(newArray);
+}
+
+void QScatterDataProxyPrivate::resetScaleArray(QList<QVector3D> &&newArray)
+{
+    auto *scatterSeries = static_cast<QScatter3DSeries *>(series());
+    if (!newArray.isSharedWith(scatterSeries->scaleArray()))
+        scatterSeries->setScaleArray(newArray);
 }
 
 void QScatterDataProxyPrivate::setItem(qsizetype index, QScatterDataItem &&item)

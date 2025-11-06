@@ -1,6 +1,7 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // Copyright (C) 2019 Alexey Edelev <semlanik@gmail.com>, Viktor Kopp <vifactor@gmail.com>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:critical reason:network-protocol
 
 #include <QtGrpc/private/qtgrpclogging_p.h>
 #include <QtGrpc/qgrpccalloptions.h>
@@ -67,6 +68,8 @@ using namespace QtGrpc;
     {serializationFormat}, or other options by constructing it with a
     QGrpcChannelOptions containing the required customizations.
 
+    \note \l{QGrpcChannelOptions::filterServerMetadata} is enabled by default.
+
     \section2 Transportation scheme
 
     The QGrpcHttp2Channel implementation prefers different transportation
@@ -98,6 +101,14 @@ using namespace QtGrpc;
         \li ✗
         \li QLocalSocket support \b{AND} scheme
         \li \c{unix:///tmp/grpc.socket}
+    \row
+        \li \c{unix-abstract}
+        \li Unix domain socket in abstract namespace
+        \li ✗
+        \li QLocalSocket support \b{AND}
+            \l{QLocalSocket::AbstractNamespaceOption}{AbstractNamespace}
+            support \b{AND} scheme
+        \li \c{unix-abstract:app_grpc_channel}
     \endtable
 
     \section2 Content-Type
@@ -156,10 +167,9 @@ Q_STATIC_LOGGING_CATEGORY(lcChannel, "qt.grpc.channel.http2")
 Q_STATIC_LOGGING_CATEGORY(lcStream, "qt.grpc.channel.http2.stream")
 
 constexpr QLatin1String UnixScheme("unix");
+constexpr QLatin1String UnixAbstractScheme("unix-abstract");
 constexpr QLatin1String HttpScheme("http");
-#if QT_CONFIG(ssl)
 constexpr QLatin1String HttpsScheme("https");
-#endif
 
 const QByteArray HttpStatusHeader(":status");
 const QByteArray ContentTypeHeader("content-type");
@@ -228,6 +238,16 @@ constexpr StatusCode http2StatusToStatusCode(const int status)
     default:
         return StatusCode::Unknown;
     }
+}
+
+bool hasSslConfiguration(const QGrpcChannelOptions &opts)
+{
+#if QT_CONFIG(ssl)
+    return opts.sslConfiguration().has_value();
+#else
+    Q_UNUSED(opts)
+    return false;
+#endif
 }
 
 } // namespace
@@ -305,6 +325,7 @@ public:
 
 private:
     [[nodiscard]] HPack::HttpHeader constructInitialHeaders() const;
+    [[nodiscard]] bool constructFilterServerMetadata() const;
     [[nodiscard]] QGrpcHttp2ChannelPrivate *channelPriv() const;
     [[nodiscard]] QGrpcHttp2Channel *channel() const;
     [[nodiscard]] bool handleContextExpired();
@@ -317,6 +338,7 @@ private:
     State m_state = State::Idle;
     const bool m_endStreamAtFirstData;
     bool m_writesDoneSent = false;
+    bool m_filterServerMetadata;
     QTimer m_deadlineTimer;
 
     Q_DISABLE_COPY_MOVE(Http2Handler)
@@ -326,50 +348,27 @@ class QGrpcHttp2ChannelPrivate : public QObject
 {
     Q_OBJECT
 public:
+    enum class SocketType : uint8_t { Tcp, Tls, Local, LocalAbstract };
+
     explicit QGrpcHttp2ChannelPrivate(const QUrl &uri, QGrpcHttp2Channel *q);
     ~QGrpcHttp2ChannelPrivate() override = default;
 
     void processOperation(QGrpcOperationContext *operationContext, bool endStream = false);
 
-    [[nodiscard]] bool isLocalSocket() const
-    {
-#if QT_CONFIG(localserver)
-        return m_isLocalSocket;
-#else
-        return false;
-#endif
-    }
-    [[nodiscard]] const QByteArray &contentType() const { return m_contentType; }
-
-    [[nodiscard]] const QByteArray &authorityHeader() const { return m_authorityHeader; }
-    [[nodiscard]] const QByteArray &schemeHeader() const { return m_schemeHeader; }
-
-    std::shared_ptr<QAbstractProtobufSerializer> serializer;
-    QUrl hostUri;
     QGrpcHttp2Channel *q_ptr = nullptr;
+    const SocketType socketType;
+    const QUrl hostUri;
+    const QByteArray contentType;
+    const QByteArray authorityHeader;
+    const QByteArray schemeHeader;
 
 private:
     enum ConnectionState { Connecting = 0, Connected, SettingsReceived, Error };
 
-    template <typename T>
-    void connectErrorHandler(T *socket, Http2Handler *handler)
-    {
-        connect(socket, &T::errorOccurred, handler, [this, handler](auto error) {
-            if (m_isInsideSocketErrorOccurred) {
-                qCCritical(lcChannel,
-                           "[%p] Socket errorOccurred signal triggered while "
-                           "already handling an error",
-                           this);
-                return;
-            }
-            m_isInsideSocketErrorOccurred = true;
-            auto reset = qScopeGuard([this]() { m_isInsideSocketErrorOccurred = false; });
-            emit handler->finish({ StatusCode::Unavailable,
-                                   tr("Network error occurred: %1").arg(error) });
-        });
-    }
-
-    void ensureSchemeIsValid(QLatin1String expected);
+    static SocketType constructSocketType(const QUrl &rawUri, const QGrpcChannelOptions &chOpts);
+    QUrl sanitizeHostUri(const QUrl &rawUri, const QGrpcChannelOptions &chOpts) const;
+    QByteArray setupContentTypeNegotiation(QGrpcHttp2Channel *qPtr) const;
+    static QByteArray constructAuthorityHeader(const QUrl &hostUri, SocketType socketType);
 
     bool createHttp2Stream(Http2Handler *handler);
     void createHttp2Connection();
@@ -385,15 +384,6 @@ private:
         handleSocketError(QDebug::toBytes(error));
     }
     void handleSocketError(const QByteArray &errorCode);
-
-    template <typename T>
-    T *initSocket()
-    {
-        auto p = std::make_unique<T>();
-        T *typedSocket = p.get();
-        m_socket = std::move(p);
-        return typedSocket;
-    }
 
     template <typename Projection = q20::identity>
     void for_each_non_expired_handler(Projection proj)
@@ -415,18 +405,14 @@ private:
         qDeleteAll(expiredHandler.crbegin(), expiredHandler.crend());
     }
 
+private:
     std::unique_ptr<QIODevice> m_socket = nullptr;
-    bool m_isInsideSocketErrorOccurred = false;
-    QHttp2Connection *m_connection = nullptr;
-#if QT_CONFIG(localserver)
-    bool m_isLocalSocket = false;
-#endif
-    QByteArray m_contentType;
-    ConnectionState m_state = Connecting;
     std::function<void()> m_reconnectFunction;
 
-    QByteArray m_authorityHeader;
-    QByteArray m_schemeHeader;
+    bool m_isInsideSocketErrorOccurred = false;
+    QHttp2Connection *m_connection = nullptr;
+    ConnectionState m_state = Connecting;
+
     Q_DISABLE_COPY_MOVE(QGrpcHttp2ChannelPrivate)
 };
 
@@ -437,7 +423,7 @@ private:
 Http2Handler::Http2Handler(QGrpcHttp2ChannelPrivate *parent, QGrpcOperationContext *context,
                            bool endStream)
     : QObject(parent), m_context(context), m_initialHeaders(constructInitialHeaders()),
-      m_endStreamAtFirstData(endStream)
+      m_endStreamAtFirstData(endStream), m_filterServerMetadata(constructFilterServerMetadata())
 {
     // If the context (lifetime bound to the user) is destroyed, this handler
     // can no longer perform any meaningful work. We allow it to be deleted;
@@ -450,7 +436,6 @@ Http2Handler::Http2Handler(QGrpcHttp2ChannelPrivate *parent, QGrpcOperationConte
                 &Http2Handler::writeMessage);
     }
 
-    connect(context, &QGrpcOperationContext::finished, &m_deadlineTimer, &QTimer::stop);
     m_deadlineTimer.setSingleShot(true);
 
     writeMessage(context->argument());
@@ -458,6 +443,8 @@ Http2Handler::Http2Handler(QGrpcHttp2ChannelPrivate *parent, QGrpcOperationConte
 
 Http2Handler::~Http2Handler()
 {
+    qCDebug(lcStream, "[%p] Destroying Http2Handler (state=%s, stream=%p)", this,
+            QDebug::toBytes(m_state).constData(), m_stream.get());
     if (m_stream) {
         QHttp2Stream *streamPtr = m_stream.get();
         m_stream.clear();
@@ -510,6 +497,8 @@ void Http2Handler::attachStream(QHttp2Stream *stream_)
     connect(
         m_stream.get(), &QHttp2Stream::errorOccurred, this,
         [this](quint32 http2ErrorCode, const QString &errorString) {
+            qCDebug(lcStream, "[%p] Stream errorOccurred (state=%s)", this,
+                    QDebug::toBytes(m_state).constData());
             finish({ http2ErrorToStatusCode(http2ErrorCode), errorString });
         },
         Qt::SingleShotConnection);
@@ -561,6 +550,10 @@ HPack::HttpHeader Http2Handler::constructInitialHeaders() const
     const static QByteArray TEValue("trailers");
     const static QByteArray GrpcServiceNameHeader("service-name");
     const static QByteArray GrpcAcceptEncodingValue("identity,deflate,gzip");
+    const static QByteArray UserAgentHeader("user-agent");
+    const static QByteArray UserAgentValue("grpc-c++-qtgrpc/"_ba + QT_VERSION_STR + " ("_ba
+                                    + QSysInfo::productType().toUtf8() + '/'
+                                    + QSysInfo::productVersion().toUtf8() + ')');
 
     const auto &channelOptions = channel()->channelOptions();
     const auto *channel = channelPriv();
@@ -568,13 +561,14 @@ HPack::HttpHeader Http2Handler::constructInitialHeaders() const
     QByteArray service{ m_context->service() };
     QByteArray method{ m_context->method() };
     auto headers = HPack::HttpHeader{
-        { AuthorityHeader,          channel->authorityHeader()               },
+        { AuthorityHeader,          channel->authorityHeader                 },
         { MethodHeader,             MethodValue                              },
         { PathHeader,               QByteArray('/' + service + '/' + method) },
-        { SchemeHeader,             channel->schemeHeader()                  },
-        { ContentTypeHeader,        channel->contentType()                   },
+        { SchemeHeader,             channel->schemeHeader                    },
+        { ContentTypeHeader,        channel->contentType                     },
         { GrpcServiceNameHeader,    service                                  },
         { GrpcAcceptEncodingHeader, GrpcAcceptEncodingValue                  },
+        { UserAgentHeader,          UserAgentValue                           },
         { TEHeader,                 TEValue                                  },
     };
 
@@ -589,10 +583,17 @@ HPack::HttpHeader Http2Handler::constructInitialHeaders() const
         }
     };
 
-    iterateMetadata(channelOptions.metadata());
-    iterateMetadata(m_context->callOptions().metadata());
+    iterateMetadata(channelOptions.metadata(QtGrpc::MultiValue));
+    iterateMetadata(m_context->callOptions().metadata(QtGrpc::MultiValue));
 
     return headers;
+}
+
+bool Http2Handler::constructFilterServerMetadata() const
+{
+    return m_context->callOptions()
+        .filterServerMetadata()
+        .value_or(channel()->channelOptions().filterServerMetadata().value_or(true));
 }
 
 QGrpcHttp2ChannelPrivate *Http2Handler::channelPriv() const
@@ -699,6 +700,7 @@ void Http2Handler::finish(const QGrpcStatus &status)
         return;
     if (m_state != State::Cancelled) // don't overwrite the Cancelled state
         m_state = State::Finished;
+    m_deadlineTimer.stop();
     emit m_context->finished(status);
     deleteLater();
 }
@@ -716,12 +718,10 @@ void Http2Handler::cancelWithStatus(const QGrpcStatus &status)
     qCDebug(lcStream, "[%p] Cancelling (state=%s)", this, QDebug::toBytes(m_state).data());
     m_state = State::Cancelled;
 
-    // Client cancelled the stream before the deadline exceeded.
-    m_deadlineTimer.stop();
-
     // Immediate cancellation by sending the RST_STREAM frame.
     if (m_stream && !m_stream->sendRST_STREAM(Http2::Http2Error::CANCEL)) {
-        qCDebug(lcStream, "[%p] Failed cancellation (stream=%p)", this, m_stream.get());
+        qCWarning(lcStream, "[%p] Failed cancellation (stream=%p, stream::state=%s)", this,
+                  m_stream.get(), QDebug::toBytes(m_stream->state()).constData());
     }
 
     finish(status);
@@ -776,7 +776,7 @@ void Http2Handler::handleHeaders(const HPack::HttpHeader &headers, HeaderPhase p
         false,
     };
 
-    QHash<QByteArray, QByteArray> metadata;
+    QMultiHash<QByteArray, QByteArray> metadata;
     std::optional<QtGrpc::StatusCode> statusCode;
     QString statusMessage;
 
@@ -822,9 +822,13 @@ void Http2Handler::handleHeaders(const HPack::HttpHeader &headers, HeaderPhase p
                       "[%p] Received unexcpected gRPC-reserved header: { key: %s, value: %s } "
                       "in phase: %s",
                       this, k.data(), v.data(), QDebug::toBytes(phase).data());
+        } else { // Custom-Metadata
+            metadata.insert(k, v);
+            continue;
         }
 
-        metadata.insert(k, v);
+        if (!m_filterServerMetadata)
+            metadata.insert(k, v);
     }
 
     if (validation.requireHttpStatus && !validation.hasHttpStatus) {
@@ -844,16 +848,14 @@ void Http2Handler::handleHeaders(const HPack::HttpHeader &headers, HeaderPhase p
 
     switch (phase) {
     case HeaderPhase::Initial:
-        m_context->setServerMetadata(std::move(metadata));
+        m_context->setServerInitialMetadata(std::move(metadata));
         break;
     case HeaderPhase::TrailersOnly:
         [[fallthrough]];
-    case HeaderPhase::Trailers: {
-        auto md = m_context->serverMetadata();
-        md.insert(metadata);
-        m_context->setServerMetadata(std::move(md));
+    case HeaderPhase::Trailers:
+        m_context->setServerTrailingMetadata(std::move(metadata));
         finish({ *statusCode, statusMessage });
-    } break;
+        break;
     default:
         Q_UNREACHABLE();
     }
@@ -864,138 +866,88 @@ void Http2Handler::handleHeaders(const HPack::HttpHeader &headers, HeaderPhase p
 ///
 
 QGrpcHttp2ChannelPrivate::QGrpcHttp2ChannelPrivate(const QUrl &uri, QGrpcHttp2Channel *q)
-    : hostUri(uri), q_ptr(q)
+    : q_ptr(q), socketType(constructSocketType(uri, q_ptr->channelOptions())),
+      hostUri(sanitizeHostUri(uri, q_ptr->channelOptions())),
+      contentType(setupContentTypeNegotiation(q_ptr)),
+      authorityHeader(constructAuthorityHeader(hostUri, socketType)),
+      schemeHeader(hostUri.scheme().toLatin1())
 {
-    auto channelOptions = q_ptr->channelOptions();
-    auto formatSuffix = channelOptions.serializationFormat().suffix();
-    const QByteArray defaultContentType = DefaultContentType;
-    const QByteArray contentTypeFromOptions = !formatSuffix.isEmpty()
-        ? defaultContentType + '+' + formatSuffix
-        : defaultContentType;
-    bool warnAboutFormatConflict = !formatSuffix.isEmpty();
-
-    const auto it = channelOptions.metadata().constFind(ContentTypeHeader.data());
-    if (it != channelOptions.metadata().cend()) {
-        if (formatSuffix.isEmpty() && it.value() != DefaultContentType) {
-            if (it.value() == "application/grpc+json") {
-                channelOptions.setSerializationFormat(SerializationFormat::Json);
-            } else if (it.value() == "application/grpc+proto" || it.value() == DefaultContentType) {
-                channelOptions.setSerializationFormat(SerializationFormat::Protobuf);
-            } else {
-                qCWarning(lcChannel,
-                          "[%p] Unable to determine serializer for entry { key: %s, value: %s }. "
-                          "Defaulting to format '%s'",
-                          this, it.key().data(), it.value().data(),
-                          QDebug::toBytes(SerializationFormat::Default).data());
-                channelOptions.setSerializationFormat(SerializationFormat::Default);
-            }
-            q_ptr->setChannelOptions(channelOptions);
-        } else if (it.value() != contentTypeFromOptions) {
-            warnAboutFormatConflict = true;
-        } else {
-            warnAboutFormatConflict = false;
-        }
-    } else {
-        warnAboutFormatConflict = false;
-    }
-
-    if (formatSuffix == channelOptions.serializationFormat().suffix()) { // no change
-        m_contentType = contentTypeFromOptions;
-    } else { // format has changed, update content type
-        m_contentType = !channelOptions.serializationFormat().suffix().isEmpty()
-            ? defaultContentType + '+' + channelOptions.serializationFormat().suffix()
-            : defaultContentType;
-    }
-
-    if (warnAboutFormatConflict) {
-        qCWarning(lcChannel,
-                  "[%p] Manually specified serialization format '%s' does not "
-                  "match metadata entry { key: %s, value: %s }",
-                  this, contentTypeFromOptions.data(), it.key().data(), it.value().data());
-    }
-
-    bool nonDefaultPort = false;
-#if QT_CONFIG(localserver)
-    if (hostUri.scheme() == UnixScheme) {
-        hostUri.setScheme(HttpScheme);
-        auto *localSocket = initSocket<QLocalSocket>();
-        m_isLocalSocket = true;
-
-        connect(localSocket, &QLocalSocket::connected, this,
+    switch (socketType) {
+    case SocketType::Tcp: {
+        auto socket = std::make_unique<QTcpSocket>();
+        connect(socket.get(), &QAbstractSocket::connected, this,
                 &QGrpcHttp2ChannelPrivate::createHttp2Connection);
-        connect(localSocket, &QLocalSocket::errorOccurred, this,
-                &QGrpcHttp2ChannelPrivate::handleLocalSocketError);
-
-        m_reconnectFunction = [localSocket, this] {
-            const auto name = hostUri.host() + hostUri.path();
-            qCDebug(lcChannel, "[%p] Connecting to local socket at: %s", this, qPrintable(name));
-            localSocket->connectToServer(name);
-        };
-    } else
-#endif
-#if QT_CONFIG(ssl)
-    if (hostUri.scheme() == HttpsScheme || channelOptions.sslConfiguration()) {
-        ensureSchemeIsValid(HttpsScheme);
-        auto *sslSocket = initSocket<QSslSocket>();
-        if (hostUri.port() < 0) {
-            hostUri.setPort(443);
-        } else {
-            nonDefaultPort = hostUri.port() != 443;
-        }
-
-        if (const auto userSslConfig = channelOptions.sslConfiguration(); userSslConfig) {
-            sslSocket->setSslConfiguration(*userSslConfig);
-        } else {
-            static const QByteArray h2NexProtocol = "h2"_ba;
-            auto defautlSslConfig = QSslConfiguration::defaultConfiguration();
-            auto allowedNextProtocols = defautlSslConfig.allowedNextProtocols();
-            if (!allowedNextProtocols.contains(h2NexProtocol))
-                allowedNextProtocols.append(h2NexProtocol);
-            defautlSslConfig.setAllowedNextProtocols(allowedNextProtocols);
-            sslSocket->setSslConfiguration(defautlSslConfig);
-        }
-
-        connect(sslSocket, &QSslSocket::encrypted, this,
-                &QGrpcHttp2ChannelPrivate::createHttp2Connection);
-        connect(sslSocket, &QAbstractSocket::errorOccurred, this,
+        connect(socket.get(), &QAbstractSocket::errorOccurred, this,
                 &QGrpcHttp2ChannelPrivate::handleAbstractSocketError);
-
-        m_reconnectFunction = [sslSocket, this] {
-            qCDebug(lcChannel, "[%p] Connecting to SSL endpoint at: %s:%d", this,
-                    qPrintable(hostUri.host()), hostUri.port());
-            sslSocket->connectToHostEncrypted(hostUri.host(), static_cast<quint16>(hostUri.port()));
-        };
-    } else
-#endif
-    {
-        ensureSchemeIsValid(HttpScheme);
-        auto *httpSocket = initSocket<QTcpSocket>();
-        if (hostUri.port() < 0) {
-            hostUri.setPort(80);
-        } else {
-            nonDefaultPort = hostUri.port() != 80;
-        }
-
-        connect(httpSocket, &QAbstractSocket::connected, this,
-                &QGrpcHttp2ChannelPrivate::createHttp2Connection);
-        connect(httpSocket, &QAbstractSocket::errorOccurred, this,
-                &QGrpcHttp2ChannelPrivate::handleAbstractSocketError);
-
-        m_reconnectFunction = [httpSocket, this] {
+        m_reconnectFunction = [this, socket = socket.get()] {
             qCDebug(lcChannel, "[%p] Connecting to TCP endpoint at: %s:%d", this,
                     qPrintable(hostUri.host()), hostUri.port());
-            httpSocket->connectToHost(hostUri.host(), static_cast<quint16>(hostUri.port()));
+            socket->connectToHost(hostUri.host(), hostUri.port());
         };
+        m_socket = std::move(socket);
+        break;
     }
 
-    m_authorityHeader = hostUri.authority(QUrl::FullyEncoded | QUrl::RemoveUserInfo |
-                                          QUrl::RemovePort).toLatin1();
-    if (nonDefaultPort) {
-        m_authorityHeader += ':';
-        m_authorityHeader += QByteArray::number(hostUri.port());
+    case SocketType::Tls: {
+#if QT_CONFIG(ssl)
+        auto socket = std::make_unique<QSslSocket>();
+        if (const auto &sslConfig = q_ptr->channelOptions().sslConfiguration()) {
+            socket->setSslConfiguration(*sslConfig);
+        } else {
+            static const QByteArray h2NexProtocol = "h2"_ba;
+            auto defaultSslConfig = QSslConfiguration::defaultConfiguration();
+            auto allowedNextProtocols = defaultSslConfig.allowedNextProtocols();
+            if (!allowedNextProtocols.contains(h2NexProtocol)) {
+                allowedNextProtocols.append(h2NexProtocol);
+                defaultSslConfig.setAllowedNextProtocols(allowedNextProtocols);
+            }
+            socket->setSslConfiguration(defaultSslConfig);
+        }
+        connect(socket.get(), &QSslSocket::encrypted, this,
+                &QGrpcHttp2ChannelPrivate::createHttp2Connection);
+        connect(socket.get(), &QAbstractSocket::errorOccurred, this,
+                &QGrpcHttp2ChannelPrivate::handleAbstractSocketError);
+        m_reconnectFunction = [this, socket = socket.get()] {
+            qCDebug(lcChannel, "[%p] Connecting to SSL endpoint at: %s:%d", this,
+                    qPrintable(hostUri.host()), hostUri.port());
+            socket->connectToHostEncrypted(hostUri.host(), hostUri.port());
+        };
+        m_socket = std::move(socket);
+#else
+        m_reconnectFunction = [this] {
+            qCFatal(lcChannel, "[%p] QSslSocket support needed for TLS transportation", this);
+        };
+#endif
+        break;
     }
 
-    m_schemeHeader = hostUri.scheme().toLatin1();
+    case SocketType::Local:
+    case SocketType::LocalAbstract: {
+#if QT_CONFIG(localserver)
+        auto socket = std::make_unique<QLocalSocket>();
+        if (socketType == SocketType::LocalAbstract)
+            socket->setSocketOptions(QLocalSocket::AbstractNamespaceOption);
+        connect(socket.get(), &QLocalSocket::connected, this,
+                &QGrpcHttp2ChannelPrivate::createHttp2Connection);
+        connect(socket.get(), &QLocalSocket::errorOccurred, this,
+                &QGrpcHttp2ChannelPrivate::handleLocalSocketError);
+        m_reconnectFunction = [this, socket = socket.get()] {
+            const auto name = hostUri.host() + hostUri.path();
+            qCDebug(lcChannel, "[%p] Connecting to local socket at: %s", this, qPrintable(name));
+            socket->connectToServer(name);
+        };
+        m_socket = std::move(socket);
+#else
+        m_reconnectFunction = [this] {
+            qCFatal(lcChannel,
+                    "[%p] QLocalSocket support needed for 'unix' or 'unix-abstract' transportation",
+                    this);
+        };
+#endif
+        break;
+    }
+
+    } // switch (socketType)
 
     m_reconnectFunction();
 }
@@ -1018,17 +970,6 @@ void QGrpcHttp2ChannelPrivate::processOperation(QGrpcOperationContext *operation
     }
 
     auto *handler = new Http2Handler(this, operationContext, endStream);
-
-#if QT_CONFIG(localserver)
-    if (m_isLocalSocket) {
-        connectErrorHandler<QLocalSocket>(static_cast<QLocalSocket *>(m_socket.get()), handler);
-    } else
-#endif
-    {
-        connectErrorHandler<QAbstractSocket>(static_cast<QAbstractSocket *>(m_socket.get()),
-                                             handler);
-    }
-
     if (m_connection && !createHttp2Stream(handler))
         return;
 
@@ -1077,12 +1018,8 @@ void QGrpcHttp2ChannelPrivate::createHttp2Connection()
             qPrintable(hostUri.toString()));
 
     connect(m_connection, &QHttp2Connection::settingsFrameReceived, this, [this] {
-        if (m_state == ConnectionState::SettingsReceived) {
-            qCWarning(lcChannel,
-                      "[%p] Unexpected SETTINGS frame received multiple times in this session.",
-                      this);
+        if (m_state == ConnectionState::SettingsReceived)
             return;
-        }
         m_state = ConnectionState::SettingsReceived;
         qCDebug(lcChannel, "[%p] SETTINGS frame received. Connection ready for use.", this);
         for_each_non_expired_handler([](Http2Handler *handler) { handler->sendInitialRequest(); });
@@ -1093,6 +1030,20 @@ void QGrpcHttp2ChannelPrivate::createHttp2Connection()
 
 void QGrpcHttp2ChannelPrivate::handleSocketError(const QByteArray &errorCode)
 {
+    for_each_non_expired_handler([this, &errorCode](Http2Handler *handler) {
+        if (m_isInsideSocketErrorOccurred) {
+            qCCritical(lcChannel,
+                        "[%p] Socket errorOccurred signal triggered while "
+                        "already handling an error",
+                        this);
+            return;
+        }
+        m_isInsideSocketErrorOccurred = true;
+        auto reset = qScopeGuard([this]() { m_isInsideSocketErrorOccurred = false; });
+        emit handler->finish({ StatusCode::Unavailable,
+                                tr("Network error occurred: %1").arg(errorCode) });
+    });
+
     qCDebug(lcChannel, "[%p] Socket error occurred (code=%s, details=%s, hostUri=%s)", this,
             errorCode.constData(), qPrintable(m_socket->errorString()),
             qPrintable(hostUri.toString()));
@@ -1101,13 +1052,115 @@ void QGrpcHttp2ChannelPrivate::handleSocketError(const QByteArray &errorCode)
     m_state = ConnectionState::Error;
 }
 
-void QGrpcHttp2ChannelPrivate::ensureSchemeIsValid(QLatin1String expected)
+QUrl QGrpcHttp2ChannelPrivate::sanitizeHostUri(const QUrl &rawUri,
+                                               const QGrpcChannelOptions &chOpts) const
 {
-    if (hostUri.scheme() != expected) {
-        qCWarning(lcChannel, "[%p] Unsupported transport protocol scheme '%s'. Fall back to '%s'.",
-                  this, qPrintable(hostUri.scheme()), qPrintable(expected));
-        hostUri.setScheme(expected);
+    QUrl sanitizedUri(rawUri);
+    auto check = [&](QLatin1StringView expected) {
+        if (rawUri.scheme() != expected) {
+            qCWarning(lcChannel,
+                      "[%p] Unsupported transport protocol scheme '%s'. Fall back to '%s'.", this,
+                      qPrintable(hostUri.scheme()), qPrintable(expected));
+            sanitizedUri.setScheme(expected);
+        }
+    };
+    const auto scheme = rawUri.scheme();
+    if (scheme == UnixScheme || scheme == UnixAbstractScheme) {
+        sanitizedUri.setScheme(HttpScheme);
+    } else if (scheme == HttpsScheme || hasSslConfiguration(chOpts)) {
+        check(HttpsScheme);
+        if (rawUri.port() < 0)
+            sanitizedUri.setPort(443);
+    } else {
+        check(HttpScheme);
+        if (rawUri.port() < 0)
+            sanitizedUri.setPort(80);
     }
+    return sanitizedUri;
+}
+
+QGrpcHttp2ChannelPrivate::SocketType
+QGrpcHttp2ChannelPrivate::constructSocketType(const QUrl &rawUri, const QGrpcChannelOptions &chOpts)
+{
+    const auto scheme = rawUri.scheme();
+    if (scheme == UnixScheme)
+        return SocketType::Local;
+    if (scheme == UnixAbstractScheme)
+        return SocketType::LocalAbstract;
+    if (scheme == HttpsScheme || hasSslConfiguration(chOpts))
+        return SocketType::Tls;
+    return SocketType::Tcp;
+}
+
+QByteArray QGrpcHttp2ChannelPrivate::setupContentTypeNegotiation(QGrpcHttp2Channel *qPtr) const
+{
+    auto channelOptions = qPtr->channelOptions();
+    auto formatSuffix = channelOptions.serializationFormat().suffix();
+    const QByteArray defaultContentType = DefaultContentType;
+    const QByteArray contentTypeFromOptions = !formatSuffix.isEmpty()
+        ? defaultContentType + '+' + formatSuffix
+        : defaultContentType;
+
+    bool warnAboutFormatConflict = !formatSuffix.isEmpty();
+    QByteArray finalContentType = contentTypeFromOptions;
+
+    const auto it = channelOptions.metadata(QtGrpc::MultiValue).constFind(ContentTypeHeader.data());
+    if (it != channelOptions.metadata(QtGrpc::MultiValue).cend()) {
+        if (formatSuffix.isEmpty() && it.value() != DefaultContentType) {
+            // Auto-detect format from content-type header
+            if (it.value() == "application/grpc+json") {
+                channelOptions.setSerializationFormat(SerializationFormat::Json);
+            } else if (it.value() == "application/grpc+proto" || it.value() == DefaultContentType) {
+                channelOptions.setSerializationFormat(SerializationFormat::Protobuf);
+            } else {
+                qCWarning(lcChannel,
+                          "[%p] Unable to determine serializer for entry { key: %s, value: %s }. "
+                          "Defaulting to format '%s'",
+                          this, it.key().data(), it.value().data(),
+                          QDebug::toBytes(SerializationFormat::Default).data());
+                channelOptions.setSerializationFormat(SerializationFormat::Default);
+            }
+            qPtr->setChannelOptions(channelOptions);
+            warnAboutFormatConflict = false;
+        } else if (it.value() != contentTypeFromOptions) {
+            warnAboutFormatConflict = true;
+        } else {
+            warnAboutFormatConflict = false;
+        }
+    } else {
+        warnAboutFormatConflict = false;
+    }
+
+    // Update final content type if format changed
+    if (formatSuffix != channelOptions.serializationFormat().suffix()) {
+        finalContentType = !channelOptions.serializationFormat().suffix().isEmpty()
+            ? defaultContentType + '+' + channelOptions.serializationFormat().suffix()
+            : defaultContentType;
+    }
+
+    if (warnAboutFormatConflict) {
+        qCWarning(lcChannel,
+                  "[%p] Manually specified serialization format '%s' does not "
+                  "match metadata entry { key: %s, value: %s }",
+                  this, contentTypeFromOptions.data(), it.key().data(), it.value().data());
+    }
+
+    return finalContentType;
+}
+
+QByteArray QGrpcHttp2ChannelPrivate::constructAuthorityHeader(const QUrl &hostUri,
+                                                              SocketType socketType)
+{
+    auto authority = hostUri.authority(QUrl::FullyEncoded | QUrl::RemoveUserInfo | QUrl::RemovePort)
+                         .toLatin1();
+    const int port = hostUri.port();
+    if ((socketType == SocketType::Tcp && port != 80)
+        || (socketType == SocketType::Tls && port != 443)) {
+        authority += ':';
+        authority += QByteArray::number(port);
+    }
+
+    return authority;
 }
 
 bool QGrpcHttp2ChannelPrivate::createHttp2Stream(Http2Handler *handler)

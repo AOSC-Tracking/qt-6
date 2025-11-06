@@ -12,7 +12,7 @@
 %token T_DEFAULT "default"      T_DELETE "delete"           T_DIVIDE_ "/"
 %token T_DIVIDE_EQ "/="         T_DO "do"                   T_DOT "."
 %token T_ELSE "else"            T_EQ "="                    T_EQ_EQ "=="
-%token T_EQ_EQ_EQ "==="         T_FINALLY "finally"         T_FOR "for"
+%token T_EQ_EQ_EQ "==="         T_FINAL "final"             T_FINALLY "finally"         T_FOR "for"
 %token T_FUNCTION "function"    T_GE ">="                   T_GT ">"
 %token T_GT_GT ">>"             T_GT_GT_EQ ">>="            T_GT_GT_GT ">>>"
 %token T_GT_GT_GT_EQ ">>>="     T_IDENTIFIER "identifier"   T_IF "if"
@@ -1180,6 +1180,8 @@ UiPropertyType: T_VAR;
 /.  case $rule_number: Q_FALLTHROUGH(); ./
 UiPropertyType: T_RESERVED_WORD;
 /.  case $rule_number: Q_FALLTHROUGH(); ./
+UiPropertyType: T_FINAL;
+/.  case $rule_number: Q_FALLTHROUGH(); ./
 UiPropertyType: T_IDENTIFIER;
 /.
     case $rule_number: {
@@ -1297,6 +1299,7 @@ UiObjectMember: T_SIGNAL T_IDENTIFIER Semicolon;
 AttrRequired:  T_REQUIRED %prec REDUCE_HERE;
 AttrReadonly:  T_READONLY %prec REDUCE_HERE;
 AttrDefault:  T_DEFAULT %prec REDUCE_HERE;
+AttrFinal: T_FINAL %prec REDUCE_HERE;
 
 UiPropertyAttributes: AttrRequired UiPropertyAttributes;
 /.
@@ -1327,6 +1330,17 @@ UiPropertyAttributes: AttrReadonly UiPropertyAttributes;
         if (node->isReadonly())
             diagnostic_messages.append(compileError(node->requiredToken(), QLatin1String("Duplicated 'readonly' attribute is not allowed."), QtCriticalMsg));
         node->m_readonlyToken = loc(1);
+        sym(1).UiPropertyAttributes = node;
+    } break;
+./
+
+UiPropertyAttributes: AttrFinal UiPropertyAttributes;
+/.
+    case $rule_number: {
+        AST::UiPropertyAttributes *node = sym(2).UiPropertyAttributes;
+        if (node->isFinal())
+            diagnostic_messages.append(compileError(node->finalToken(), QLatin1String("Duplicated 'final' attribute is not allowed."), QtCriticalMsg));
+        node->m_finalToken = loc(1);
         sym(1).UiPropertyAttributes = node;
     } break;
 ./
@@ -1675,6 +1689,12 @@ Type: UiQualifiedId T_LT SimpleType T_GT;
 
 Type: SimpleType;
 
+SimpleType: T_VAR;
+/.  case $rule_number: Q_FALLTHROUGH(); ./
+SimpleType: T_VOID;
+/.  case $rule_number: Q_FALLTHROUGH(); ./
+SimpleType: T_FINAL;
+/.  case $rule_number: Q_FALLTHROUGH(); ./
 SimpleType: T_RESERVED_WORD;
 /.
     case $rule_number: {
@@ -1688,18 +1708,6 @@ SimpleType: UiQualifiedId;
 /.
     case $rule_number: {
         sym(1).Type = new (pool) AST::Type(sym(1).UiQualifiedId);
-    } break;
-./
-
-SimpleType: T_VAR;
-/.  case $rule_number: Q_FALLTHROUGH(); ./
-
-SimpleType: T_VOID;
-/.
-    case $rule_number: {
-        AST::UiQualifiedId *id = new (pool) AST::UiQualifiedId(stringRef(1));
-        id->identifierToken = loc(1);
-        sym(1).Type = new (pool) AST::Type(id->finish());
     } break;
 ./
 
@@ -2201,6 +2209,7 @@ ReservedIdentifier: T_CONST;
 ReservedIdentifier: T_LET;
 ReservedIdentifier: T_DEBUGGER;
 ReservedIdentifier: T_RESERVED_WORD;
+ReservedIdentifier: T_FINAL;
 ReservedIdentifier: T_SUPER;
 ReservedIdentifier: T_WITH;
 ReservedIdentifier: T_CLASS;

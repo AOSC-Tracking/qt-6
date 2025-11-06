@@ -25,6 +25,14 @@ static QJSValue myQJSValueQObjectSingleton(QQmlEngine *engine, QJSEngine *script
     return value;
 }
 
+static QObject *readCounterSingleton(QQmlEngine *engine, QJSEngine *scriptEngine)
+{
+    Q_UNUSED(engine);
+    Q_UNUSED(scriptEngine);
+
+    return new ReadCounter();
+}
+
 void registerTypes()
 {
     qmlRegisterInterface<MyInterface>("MyInterface", 1);
@@ -157,6 +165,9 @@ void registerTypes()
 
     qmlRegisterTypesAndRevisions<BaseValueType>("ValueTypes", 1);
     qmlRegisterTypesAndRevisions<DerivedValueType>("ValueTypes", 1);
+    qmlRegisterTypesAndRevisions<CustomIdentifier>("ValueTypes", 1);
+    qmlRegisterTypesAndRevisions<IdProvider>("ValueTypes", 1);
+
     qmlRegisterTypesAndRevisions<GetterObject>("Test", 1);
 
     qmlRegisterNamespaceAndRevisions(&TypedEnums::staticMetaObject, "TypedEnums", 1);
@@ -187,6 +198,8 @@ void registerTypes()
     >("Test", 1);
     qmlRegisterTypesAndRevisions<NestedVectors>("Test", 1);
     qmlRegisterTypesAndRevisions<VariantAssociationProvider>("Test", 1);
+    qmlRegisterTypesAndRevisions<ReadCounter>("Test", 1);
+    qmlRegisterSingletonType<ReadCounter>("Test", 1, 0, "ReadCounterSingleton", readCounterSingleton);
 
     qmlRegisterTypesAndRevisions<BindablePoint>("Test", 1);
 

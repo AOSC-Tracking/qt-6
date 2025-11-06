@@ -24,6 +24,8 @@
 
 #include <optional>
 
+QT_BEGIN_NAMESPACE
+
 namespace Utils {
 
 class TextBlockUserData;
@@ -74,5 +76,7 @@ private:
     mutable QMutex m_mutex;
 };
 } // namespace Utils
+
+QT_END_NAMESPACE
 
 #endif // TEXTDOCUMENT_P_H

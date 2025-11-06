@@ -65,6 +65,9 @@ public:
     }
 
     QColor outline(const QPalette &pal) const {
+        if (isHighContrast()) {
+            return pal.text().color();
+        }
         if (pal.window().style() == Qt::TexturePattern)
             return QColor(0, 0, 0, 160);
         return pal.window().color().darker(140);
@@ -102,6 +105,12 @@ private:
     Qt::ColorScheme colorScheme() const
     {
         return QGuiApplicationPrivate::platformTheme()->colorScheme();
+    }
+
+    bool isHighContrast() const
+    {
+        return QGuiApplicationPrivate::platformTheme()->contrastPreference()
+                == Qt::ContrastPreference::HighContrast;
     }
 };
 

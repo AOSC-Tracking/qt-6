@@ -215,7 +215,7 @@ void QCocoaWindow::setGeometry(const QRect &rectIn)
 {
     qCDebug(lcQpaWindow) << "QCocoaWindow::setGeometry" << window() << rectIn;
 
-    QBoolBlocker inSetGeometry(m_inSetGeometry, true);
+    QScopedValueRollback inSetGeometry(m_inSetGeometry, true);
 
     QRect rect = rectIn;
     // This means it is a call from QWindow::setFramePosition() and
@@ -642,9 +642,9 @@ NSUInteger QCocoaWindow::windowStyleMask(Qt::WindowFlags flags)
     if (type == Qt::Tool)
         styleMask |= NSWindowStyleMaskUtilityWindow;
 
-    // FIXME: Remove use of deprecated style mask
+    // FIXME (QTBUG-138829)
     if (m_drawContentBorderGradient)
-        styleMask |= NSWindowStyleMaskTexturedBackground;
+        styleMask |= QT_IGNORE_DEPRECATIONS(NSWindowStyleMaskTexturedBackground);
 
     if (flags & Qt::ExpandedClientAreaHint)
         styleMask |= NSWindowStyleMaskFullSizeContentView;
@@ -768,6 +768,7 @@ void QCocoaWindow::setWindowFlags(Qt::WindowFlags flags)
     if (m_view.window.ignoresMouseEvents != ignoreMouse)
         m_view.window.ignoresMouseEvents = ignoreMouse;
 
+    // FIXME (QTBUG-138829)
     m_view.window.titlebarAppearsTransparent = (flags & Qt::NoTitleBarBackgroundHint)
         || (m_view.window.styleMask & QT_IGNORE_DEPRECATIONS(NSWindowStyleMaskTexturedBackground));
 }
@@ -1732,7 +1733,7 @@ void QCocoaWindow::deliverUpdateRequest()
 {
     qCDebug(lcQpaDrawing) << "Delivering update request to" << window();
 
-    if (auto *qtMetalLayer = qt_objc_cast<QMetalLayer*>(m_view.layer)) {
+    if (auto *qtMetalLayer = qt_objc_cast<QMetalLayer*>(contentLayer())) {
         // We attempt a read lock here, so that the animation/render thread is
         // prioritized lower than the main thread's displayLayer processing.
         // Without this the two threads might fight over the next drawable,
@@ -2055,7 +2056,8 @@ void QCocoaWindow::applyContentBorderThickness(NSWindow *window)
         return;
 
     if (!m_drawContentBorderGradient) {
-        window.styleMask = window.styleMask & ~NSWindowStyleMaskTexturedBackground;
+        // FIXME (QTBUG-138829)
+        window.styleMask = window.styleMask & QT_IGNORE_DEPRECATIONS(~NSWindowStyleMaskTexturedBackground);
         setWindowFlags(QPlatformWindow::window()->flags());
         [window.contentView.superview setNeedsDisplay:YES];
         return;
@@ -2081,7 +2083,8 @@ void QCocoaWindow::applyContentBorderThickness(NSWindow *window)
 
     int effectiveBottomContentBorderThickness = 0;
 
-    [window setStyleMask:[window styleMask] | NSWindowStyleMaskTexturedBackground];
+    // FIXME (QTBUG-138829)
+    [window setStyleMask:[window styleMask] | QT_IGNORE_DEPRECATIONS(NSWindowStyleMaskTexturedBackground)];
     setWindowFlags(QPlatformWindow::window()->flags());
 
     // Setting titlebarAppearsTransparent to YES means that the border thickness has to account
@@ -2214,6 +2217,55 @@ QMargins QCocoaWindow::frameMargins() const
 void QCocoaWindow::setFrameStrutEventsEnabled(bool enabled)
 {
     m_frameStrutEventsEnabled = enabled;
+}
+
+CALayer *QCocoaWindow::contentLayer() const
+{
+    auto *layer = m_view.layer;
+    if (auto *containerLayer = qt_objc_cast<QContainerLayer*>(layer))
+        layer = containerLayer.contentLayer;
+    return layer;
+}
+
+void QCocoaWindow::manageVisualEffectArea(quintptr identifier, const QRect &rect,
+    NSVisualEffectMaterial material, NSVisualEffectBlendingMode blendMode,
+    NSVisualEffectState activationState)
+{
+    if (!qt_objc_cast<QContainerLayer*>(m_view.layer)) {
+        qCWarning(lcQpaWindow) << "Can not manage visual effect areas"
+            << "in views without a container layer";
+        return;
+    }
+
+    qCDebug(lcQpaWindow) << "Updating visual effect area" << identifier
+        << "to" << rect << "with material" << material << "blend mode"
+        << blendMode << "and activation state" << activationState;
+
+    NSVisualEffectView *effectView = nullptr;
+    if (m_effectViews.contains(identifier)) {
+        effectView = m_effectViews.value(identifier);
+        if (rect.isEmpty()) {
+            [effectView removeFromSuperview];
+            m_effectViews.remove(identifier);
+            return;
+        }
+    } else if (!rect.isEmpty()) {
+        effectView = [NSVisualEffectView new];
+        // Ensure that the visual effect layer is stacked well
+        // below our content layer (which defaults to a z of 0).
+        effectView.wantsLayer = YES;
+        effectView.layer.zPosition = -FLT_MAX;
+        [m_view addSubview:effectView];
+        m_effectViews.insert(identifier, effectView);
+    }
+
+    if (!effectView)
+        return;
+
+    effectView.frame = rect.toCGRect();
+    effectView.material = material;
+    effectView.blendingMode = blendMode;
+    effectView.state = activationState;
 }
 
 #ifndef QT_NO_DEBUG_STREAM

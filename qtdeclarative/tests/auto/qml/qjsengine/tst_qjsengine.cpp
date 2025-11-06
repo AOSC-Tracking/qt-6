@@ -354,10 +354,13 @@ private slots:
     void toLocaleUpperStringWithQLocale();
 #endif
 
+    void evalInGlobalContext();
+
 public:
     Q_INVOKABLE QJSValue throwingCppMethod1();
     Q_INVOKABLE void throwingCppMethod2();
     Q_INVOKABLE QJSValue throwingCppMethod3();
+    Q_INVOKABLE QJSValue throwingCppMethod4();
 
 signals:
     void testSignal();
@@ -957,7 +960,7 @@ void tst_QJSEngine::newQObjectRace()
         void run() override
         {
             int newObjectCount = 1000;
-#if defined(Q_OS_QNX)
+#if defined(Q_OS_QNX) || defined(Q_OS_VXWORKS)
             newObjectCount = 128;
 #endif
             for (int i=0;i<newObjectCount;++i)
@@ -5127,6 +5130,14 @@ void tst_QJSEngine::returnError()
     QCOMPARE(result.property("lineNumber").toString(), "1");
     QCOMPARE(result.property("message").toString(), "Something is wrong");
     QVERIFY(!result.property("stack").isUndefined());
+
+    // NB: evaluate() does not return an ErrorObject if the exception is not an ErrorObject.
+    //     This is documented.
+    QStringList exceptionStackTrace;
+    result = engine.evaluate("testCase.throwingCppMethod4()", "foo.js", 1, &exceptionStackTrace);
+    QVERIFY(!exceptionStackTrace.isEmpty());
+    QVERIFY(result.isString());
+    QCOMPARE(result.toString(), "JSValue from string");
 }
 
 void tst_QJSEngine::catchError()
@@ -5158,6 +5169,13 @@ QJSValue tst_QJSEngine::throwingCppMethod3()
     QJSEngine *engine = qjsEngine(this);
     engine->throwError(engine->newErrorObject(QJSValue::EvalError, "Something is wrong"));
     return QJSValue(31);
+}
+
+QJSValue tst_QJSEngine::throwingCppMethod4()
+{
+    QJSEngine *engine = qjsEngine(this);
+    engine->throwError(QJSValue("JSValue from string"));
+    return QJSValue(32);
 }
 
 void tst_QJSEngine::mathMinMax()
@@ -6888,6 +6906,14 @@ void tst_QJSEngine::toLocaleUpperStringWithQLocale()
     QCOMPARE(root->property("upperedCaseArray").toString(), QLatin1String("ABCSS"));
 }
 #endif
+
+void tst_QJSEngine::evalInGlobalContext()
+{
+    QJSEngine myEngine;
+    const QJSValue fun = myEngine.globalObject().property(QLatin1String("eval"));
+    const QJSValue ret = fun.call({ QLatin1String("99") });
+    QCOMPARE(ret.toString(), QLatin1String("99"));
+}
 
 QTEST_MAIN(tst_QJSEngine)
 

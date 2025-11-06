@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include <qwebengineloadinginfo.h>
 
@@ -63,6 +64,10 @@ QWebEngineLoadingInfo::QWebEngineLoadingInfo(const QUrl& url, LoadStatus status,
                                              bool isDownload)
     : d_ptr(new QWebEngineLoadingInfoPrivate(url, status, isErrorPage, errorString, errorCode, errorDomain,
                                              responseHeaders, isDownload))
+{
+}
+
+QWebEngineLoadingInfo::QWebEngineLoadingInfo() : QWebEngineLoadingInfo(QUrl(), QWebEngineLoadingInfo::LoadStartedStatus)
 {
 }
 

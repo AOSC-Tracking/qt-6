@@ -466,6 +466,7 @@ class ScalarRepeatedNoPackedTypes : public QProtobufMessage
     Q_PROPERTY(QtProtobuf::doubleList field12 READ field12 WRITE setField12 SCRIPTABLE true)
     Q_PROPERTY(QStringList field13 READ field13 WRITE setField13 SCRIPTABLE true)
     Q_PROPERTY(QByteArrayList field14 READ field14 WRITE setField14 SCRIPTABLE true)
+    Q_PROPERTY(QList<qt::protobuf::GlobalEnumGadget::GlobalEnum> field15 READ field15 WRITE setField15 SCRIPTABLE true)
 
 public:
     using QtProtobufFieldEnum = ScalarRepeatedNoPackedTypes_QtProtobufNested::QtProtobufFieldEnum;
@@ -513,6 +514,8 @@ public:
     const QStringList &field13() const &;
 
     const QByteArrayList &field14() const &;
+
+    const QList<GlobalEnumGadget::GlobalEnum> &field15() const &;
     void setField1(const QtProtobuf::int32List &field1);
     void setField1(QtProtobuf::int32List &&field1);
     void setField2(const QtProtobuf::uint32List &field2);
@@ -541,6 +544,8 @@ public:
     void setField13(QStringList &&field13);
     void setField14(const QByteArrayList &field14);
     void setField14(QByteArrayList &&field14);
+    void setField15(const QList<GlobalEnumGadget::GlobalEnum> &field15);
+    void setField15(QList<GlobalEnumGadget::GlobalEnum> &&field15);
     static void registerTypes();
 
 private:
@@ -574,6 +579,7 @@ enum class QtProtobufFieldEnum {
     Field12ProtoFieldNumber = 12,
     Field13ProtoFieldNumber = 13,
     Field14ProtoFieldNumber = 14,
+    Field15ProtoFieldNumber = 15,
 };
 Q_ENUM_NS(QtProtobufFieldEnum)
 
@@ -1139,12 +1145,14 @@ public:
 
     bool hasField1() const;
     const ScalarTypes &field1() const &;
+    ScalarTypes &mutField1() &;
     Q_INVOKABLE void clearField1();
 
     const QList<ScalarTypes> &field2() const &;
 
     bool hasField3() const;
     const ScalarTypes &field3() const &;
+    ScalarTypes &mutField3() &;
     Q_INVOKABLE void clearField3();
 
     EnumTypes_QtProtobufNested::NestedEnum field4() const;
@@ -1257,6 +1265,7 @@ public:
 
     bool hasField1() const;
     const MessageNestedTypes_QtProtobufNested::NestedMessage &field1() const &;
+    MessageNestedTypes_QtProtobufNested::NestedMessage &mutField1() &;
     Q_INVOKABLE void clearField1();
     void setField1(const MessageNestedTypes_QtProtobufNested::NestedMessage &field1);
     void setField1(MessageNestedTypes_QtProtobufNested::NestedMessage &&field1);
@@ -1319,6 +1328,7 @@ public:
 
     bool hasField2() const;
     const MessageTypes &field2() const &;
+    MessageTypes &mutField2() &;
     Q_INVOKABLE void clearField2();
     void setField1(QtProtobuf::int32 field1);
     void setField2(const MessageTypes &field2);

@@ -1,5 +1,6 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef WGL_HELPER_H
 #define WGL_HELPER_H
@@ -18,6 +19,9 @@
 #undef wglDXUnlockObjectsNV
 
 QT_BEGIN_NAMESPACE
+
+class QOpenGLContext;
+class QSurface;
 
 class WGLHelper
 {
@@ -87,6 +91,8 @@ private:
     HANDLE m_interopDevice;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> m_d3dTexture;
 
+    QOpenGLContext *m_createContext = nullptr;
+    QSurface *m_createSurface = nullptr;
     GLuint m_glTexture = 0;
     HANDLE m_glTextureHandle = INVALID_HANDLE_VALUE;
 

@@ -8,12 +8,20 @@ this file manually, you might introduce QML code that is not supported by Qt Des
 Check out https://doc.qt.io/qtcreator/creator-quick-ui-forms.html for details on .ui.qml files.
 */
 import QtQuick
-import QtQuick.Controls
-import QtQuick.Layouts
+import QtQuick.Controls.Basic
 import Thermostat
-import ThermostatCustomControls
 
 Pane {
+    id: root
+
+    required property var scheduleViewRoot
+    property alias saveButtonDesktop: desktopView.saveButton
+    property alias saveButtonMobile: mobileView.saveButton
+    property alias saveButtonSmall: smallView.saveButton
+    property alias cancelButtonDesktop: desktopView.cancelButton
+    property alias cancelButtonMobile: mobileView.cancelButton
+    property alias cancelButtonSmall: smallView.cancelButton
+
     width: 1087
     height: 361
 
@@ -26,16 +34,19 @@ Pane {
 
     TemperatureSetterDesktopView {
         id: desktopView
+        scheduleViewRoot: root.scheduleViewRoot
     }
 
     TemperatureSetterMobileView {
         id: mobileView
         visible: false
+        scheduleViewRoot: root.scheduleViewRoot
     }
 
     TemperatureSetterSmallView {
         id: smallView
         visible: false
+        scheduleViewRoot: root.scheduleViewRoot
     }
 
     states: [

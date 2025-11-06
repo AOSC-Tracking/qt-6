@@ -29,7 +29,7 @@
 #include <QtQuick3DRuntimeRender/private/qssgrhicontext_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgperframeallocator_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgshadermapkey_p.h>
-#include <QtQuick3DRuntimeRender/private/qssglightmapper_p.h>
+#include <QtQuick3DRuntimeRender/private/qssglightmapbaker_p.h>
 #include <ssg/qssgrenderextensions.h>
 
 #include <QtQuick3DUtils/private/qssgrenderbasetypes_p.h>
@@ -38,12 +38,13 @@
 #include <unordered_map>
 
 #include "qssgrenderpass_p.h"
-
-#define QSSG_RENDER_MINIMUM_RENDER_OPACITY .01f
+#include "qssgrenderdata_p.h"
 
 QT_BEGIN_NAMESPACE
 
-struct QSSGRenderableObject;
+class QSSGRenderableObject;
+
+class QSGRenderer;
 
 enum class QSSGLayerRenderPreparationResultFlag
 {
@@ -163,7 +164,6 @@ struct QSSGLayerRenderPreparationResult
     bool isNull() const { return !layer; }
     bool isLayerVisible() const;
     QSize textureDimensions() const;
-    QSSGCameraGlobalCalculationResult setupCameraForRender(QSSGRenderCamera &inCamera, float dpr = 1.0f);
 };
 
 struct QSSGDefaultMaterialPreparationResult
@@ -209,6 +209,17 @@ public:
         MAX_TEMPORAL_AA_LEVELS = 2,
     };
 
+    using InstanceTransforms = QSSGGlobalRenderNodeData::InstanceTransforms;
+    using ModelViewProjections = QSSGRenderModelData::ModelViewProjections;
+
+    using QSSGModelsView = QSSGDataView<QSSGRenderModel *>;
+    using QSSGParticlesView = QSSGDataView<QSSGRenderParticles *>;
+    using QSSGItem2DsView = QSSGDataView<QSSGRenderItem2D *>;
+    using QSSGCamerasView = QSSGDataView<QSSGRenderCamera *>;
+    using QSSGLightsView = QSSGDataView<QSSGRenderLight *>;
+    using QSSGReflectionProbesView = QSSGDataView<QSSGRenderReflectionProbe *>;
+    using QSSGNonCategorizedView = QSSGDataView<QSSGRenderNode *>;
+
     using RenderableFilter = std::function<bool(QSSGModelContext *)>;
 
     QSSGLayerRenderData(QSSGRenderLayer &inLayer, QSSGRenderer &inRenderer);
@@ -249,7 +260,7 @@ public:
                                 float lodThreshold = 0.0f);
     bool prepareParticlesForRender(const RenderableNodeEntries &renderableParticles, const QSSGRenderCameraData &cameraData, QSSGLayerRenderPreparationResultFlags &ioFlags);
     bool prepareItem2DsForRender(const QSSGRenderContextInterface &ctxIfc,
-                                 const RenderableItem2DEntries &renderableItem2Ds);
+                                 const QSSGItem2DsView &renderableItem2Ds);
 
     void prepareResourceLoaders();
 
@@ -272,8 +283,6 @@ public:
     const QSSGRenderableObjectList &getSortedrenderedOpaqueDepthPrepassObjects(const QSSGRenderCamera &camera, size_t index = 0);
 
     void resetForFrame();
-
-    void maybeBakeLightmap();
 
     QSSGFrameData &getFrameData();
 
@@ -305,13 +314,22 @@ public:
     // List of nodes we can render, not all may be active.  Found by doing a depth-first
     // search through m_FirstChild if length is zero.
 
+    using LayerNodes = std::vector<QSSGRenderNode *>;
+    QSSGGlobalRenderNodeData::LayerNodeView layerNodes;
+    LayerNodes layerNodesCategorized;
+
     // renderableNodes have all lights, but properties configured for specific node
     RenderableNodeEntries renderableModels;
     RenderableNodeEntries renderableParticles;
-    QVector<QSSGRenderItem2D *> renderableItem2Ds;
-    QVector<QSSGRenderCamera *> cameras;
-    QVector<QSSGRenderLight *> lights;
-    QVector<QSSGRenderReflectionProbe *> reflectionProbes;
+
+    // Views into the collected nodes (unsorted)
+    QSSGModelsView modelsView;
+    QSSGParticlesView particlesView;
+    QSSGItem2DsView item2DsView;
+    QSSGCamerasView camerasView;
+    QSSGLightsView lightsView;
+    QSSGReflectionProbesView reflectionProbesView;
+    QSSGNonCategorizedView nonCategorizedView;
 
     // Results of prepare for render.
     QSSGRenderCameraList renderedCameras; // multiple items with multiview, one otherwise (or zero if no cameras at all)
@@ -322,6 +340,9 @@ public:
     // it is simplest to duplicate the lists.
     QVector<QSSGBakedLightingModel> renderedBakedLightingModels;
     RenderableItem2DEntries renderedItem2Ds;
+    // Temporary look-up map for Item2D data (for use in prepareItem2DsForRender()).
+    QSSGRenderer::Item2DDataMap item2DDataMap;
+    QPointer<QSGRenderContext> item2DRenderContext;
 
     QSSGLayerRenderPreparationResult layerPrepResult;
     std::optional<QSSGRenderCameraDataList> renderedCameraData;
@@ -335,13 +356,13 @@ public:
     bool oitWarningInvalidBlendModeShown = false;
     bool orderIndependentTransparencyEnabled = false;
 
-    QSSGLightmapper *m_lightmapper = nullptr;
+    std::unique_ptr<QSSGLightmapBaker> lightmapBaker = nullptr;
 
     QSSGShaderFeatures getShaderFeatures() const { return features; }
     QSSGRhiGraphicsPipelineState getPipelineState() const { return ps; }
 
-    bool interactiveLightmapBakingRequested = false;
-    QSSGLightmapper::Callback lightmapBakingOutputCallback;
+    void initializeLightmapBaking(QSSGLightmapBaker::Context &ctx);
+    void maybeProcessLightmapBaking();
 
     [[nodiscard]] QSSGRenderGraphObject *getCamera(QSSGCameraId id) const;
     [[nodiscard]] QSSGRenderCamera *activeCamera() const { return !renderedCameras.isEmpty() ? renderedCameras[0] : nullptr; }
@@ -422,7 +443,7 @@ public:
     QMatrix4x4 getGlobalTransform(QSSGPrepContextId prepId, const QSSGRenderModel &model);
     void setGlobalOpacity(QSSGRenderablesId renderablesId, const QSSGRenderModel &model, float opacity);
     float getGlobalOpacity(QSSGPrepContextId prepId, const QSSGRenderModel &model);
-    [[nodiscard]] QMatrix4x4 getModelMvp(QSSGPrepContextId prepId, const QSSGRenderModel &model) const;
+    [[nodiscard]] QMatrix4x4 getModelMvps(QSSGPrepContextId prepId, const QSSGRenderModel &model) const;
     void setModelMaterials(QSSGRenderablesId renderablesId, const QSSGRenderModel &model, const QList<QSSGResourceId> &materials);
     void setModelMaterials(const QSSGRenderablesId renderablesId, const QList<QSSGResourceId> &materials);
     [[nodiscard]] QSSGPrepResultId prepareModelsForRender(QSSGRenderContextInterface &contextInterface,
@@ -430,6 +451,22 @@ public:
                                                                QSSGRenderablesId renderablesId,
                                                                float lodThreshold);
 
+    // Convenience wrappers for getting values from the node, model store.
+    [[nodiscard]] QMatrix4x4 getGlobalTransform(QSSGRenderNodeHandle h, QMatrix4x4 defaultValue) const;
+    [[nodiscard]] QMatrix4x4 getGlobalTransform(QSSGRenderNodeHandle h) const;
+    [[nodiscard]] QMatrix4x4 getGlobalTransform(const QSSGRenderNode &node) const;
+
+    [[nodiscard]] QMatrix3x3 getNormalMatrix(QSSGRenderModelHandle h) const;
+    [[nodiscard]] QMatrix3x3 getNormalMatrix(const QSSGRenderModel &model) const;
+
+    [[nodiscard]] ModelViewProjections getModelMvps(QSSGRenderModelHandle h) const;
+    [[nodiscard]] ModelViewProjections getModelMvps(const QSSGRenderModel &model) const;
+
+    [[nodiscard]] InstanceTransforms getInstanceTransforms(QSSGRenderNodeHandle h) const;
+    [[nodiscard]] InstanceTransforms getInstanceTransforms(const QSSGRenderNode &node) const;
+
+    [[nodiscard]] float getGlobalOpacity(QSSGRenderNodeHandle h, float defaultValue = 1.0f) const;
+    [[nodiscard]] float getGlobalOpacity(const QSSGRenderNode &node) const;
 
     //
     void prepareRenderables(QSSGRenderContextInterface &ctx,
@@ -439,6 +476,12 @@ public:
                             QSSGRenderablesFilters filter);
     void renderRenderables(QSSGRenderContextInterface &ctx,
                            QSSGPrepResultId prepId);
+
+    static bool calculateGlobalVariables(QSSGRenderNode &node,
+                                         std::vector<QMatrix4x4> &globalTransforms,
+                                         std::vector<float> &globalOpacities);
+
+    QSSGRenderCameraData getCameraDataImpl(const QSSGRenderCamera *camera) const;
 
 private:
     friend class QSSGRenderer;
@@ -470,6 +513,9 @@ private:
     std::vector<QSSGRenderableObjectList> transparentObjectStore { QSSGRenderableObjectList{ /* 0 - Always available */ }};
     std::vector<QSSGRenderableObjectList> screenTextureObjectStore { QSSGRenderableObjectList{ /* 0 - Always available */ }};
 
+    std::shared_ptr<QSSGGlobalRenderNodeData> nodeData;
+    std::unique_ptr<QSSGRenderModelData> modelData;
+
     // Soreted cache (per camera and extension)
     using PerCameraCache = std::unordered_map<const QSSGRenderCamera *, QSSGRenderableObjectList>;
     std::vector<PerCameraCache> sortedOpaqueObjectCache { PerCameraCache{ /* 0 - Always available */ } };
@@ -498,14 +544,6 @@ private:
     static void prepareModelMaterials(RenderableNodeEntries &renderableModels, bool cullUnrenderables);
     static void prepareModelMaterials(const RenderableNodeEntries::ConstIterator &begin,
                                       const RenderableNodeEntries::ConstIterator &end);
-    // Load meshes as needed
-    static void prepareModelMeshes(const QSSGRenderContextInterface &contextInterface,
-                                   RenderableNodeEntries &renderableModels,
-                                   bool globalPickingEnabled);
-    static void prepareModelMeshes(const QSSGRenderContextInterface &contextInterface,
-                                   const RenderableNodeEntries::ConstIterator begin,
-                                   const RenderableNodeEntries::ConstIterator end,
-                                   bool globalPickingEnabled);
 
     // Persistent data
     QHash<QSSGShaderMapKey, QSSGRhiShaderPipelinePtr> shaderMap;
@@ -529,9 +567,14 @@ private:
     QSSGFrameData frameData;
     QSSGRhiGraphicsPipelineState ps; // Base pipleline state
     QSSGShaderFeatures features; // Base feature set
+    quint32 version = 0;
     bool particlesEnabled = true;
     bool hasDepthWriteObjects = false;
     bool zPrePassActive = false;
+    // NOTE: For the time being we need to keep track of extensions modifying the renderables
+    // because then we need to reset the lists.
+    // FIXME: This should be revisited, as we can do better (hence the verbose name).
+    bool renderablesModifiedByExtension = false;
     enum class DepthPrepassObject : quint8
     {
         None = 0x0,

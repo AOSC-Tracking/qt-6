@@ -74,8 +74,8 @@ public:
 
     operator QDeferredSharedPointer<const T>() const { return { m_data, m_factory }; }
 
-    [[nodiscard]] T &operator*() const { return QSharedPointer<T>(*this).operator*(); }
-    [[nodiscard]] T *operator->() const { return QSharedPointer<T>(*this).operator->(); }
+    [[nodiscard]] T &operator*() const { lazyLoad(); return m_data.operator*(); }
+    [[nodiscard]] T *operator->() const { lazyLoad(); return m_data.operator->(); }
 
     bool isNull() const
     {
@@ -85,7 +85,7 @@ public:
     explicit operator bool() const noexcept { return !isNull(); }
     bool operator !() const noexcept { return isNull(); }
 
-    [[nodiscard]] T *data() const { return QSharedPointer<T>(*this).data(); }
+    [[nodiscard]] T *data() const { lazyLoad(); return m_data.data(); }
     [[nodiscard]] T *get() const { return data(); }
 
     friend size_t qHash(const QDeferredSharedPointer &ptr, size_t seed = 0)

@@ -35,7 +35,7 @@ public:
 private:
     void formatDetailedStats(QTextStream &) const;
     void formatSummary(QTextStream &) const;
-    QString formatSuccessRate(int codegens, int successes) const;
+    QString formatSuccessRate(int codegens, int successes, int skips) const;
 
     const AotStats &m_aotstats;
     const QStringList &m_emptyModules;
@@ -44,6 +44,7 @@ private:
     struct Counters
     {
         int successes = 0;
+        int skips = 0;
         int codegens = 0;
     };
 

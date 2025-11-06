@@ -5,11 +5,24 @@
 
 #include <QtQuick3DRuntimeRender/private/qssgrenderlayer_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrendereffect_p.h>
-#include <QtQuick3DRuntimeRender/private/qssglayerrenderdata_p.h>
+#include "../rendererimpl/qssglayerrenderdata_p.h"
+#include "qssgrenderroot_p.h"
 
 #include <QtGui/qquaternion.h>
 
 QT_BEGIN_NAMESPACE
+
+void QSSGRenderLayer::markDirty(DirtyFlag dirtyFlag)
+{
+    m_layerDirtyFlags |= FlagT(dirtyFlag);
+    QSSGRenderNode::markDirty(QSSGRenderNode::DirtyFlag::SubNodeDirty);
+}
+
+void QSSGRenderLayer::clearDirty(DirtyFlag dirtyFlag)
+{
+    m_layerDirtyFlags &= ~FlagT(dirtyFlag);
+    QSSGRenderNode::clearDirty(QSSGRenderNode::DirtyFlag::SubNodeDirty);
+}
 
 QSSGRenderLayer::QSSGRenderLayer()
     : QSSGRenderNode(QSSGRenderNode::Type::Layer)
@@ -29,9 +42,17 @@ QSSGRenderLayer::QSSGRenderLayer()
 
 QSSGRenderLayer::~QSSGRenderLayer()
 {
+    rootNode = nullptr;
+    rootNodeRef = nullptr;
+
     delete importSceneNode;
     importSceneNode = nullptr;
+
+    if (renderData && renderData->renderer)
+        renderData->renderer->releaseItem2DData(*this);
+
     delete renderData;
+    renderData = nullptr;
 }
 
 void QSSGRenderLayer::setProbeOrientation(const QVector3D &angles)

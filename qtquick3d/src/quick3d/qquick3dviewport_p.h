@@ -115,6 +115,7 @@ public:
     QQuick3DLightmapBaker *lightmapBaker();
 
     Q_INVOKABLE void bakeLightmap();
+    Q_REVISION(6, 10) Q_INVOKABLE void denoiseLightmap();
 
     QQmlListProperty<QQuick3DObject> extensions();
 
@@ -218,6 +219,7 @@ private:
     QQuick3DPickResult processPickResult(const QSSGRenderPickResult &pickResult) const;
     QQuick3DObject *findFrontendNode(const QSSGRenderGraphObject *backendObject) const;
     QQuick3DSceneManager *findChildSceneManager(QQuick3DObject *inObject, QQuick3DSceneManager *manager = nullptr);
+    void updateSceneManagerForImportScene();
     QQuick3DCamera *m_camera = nullptr;
     QVarLengthArray<QQuick3DCamera *, 2> m_multiViewCameras;
     QQuick3DSceneEnvironment *m_environment = nullptr;

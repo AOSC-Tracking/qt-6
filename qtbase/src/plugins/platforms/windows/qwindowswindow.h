@@ -126,6 +126,8 @@ public:
     static QWindowsBaseWindow *baseWindowOf(const QWindow *w);
     static HWND handleOf(const QWindow *w);
 
+    bool windowEvent(QEvent *event) override;
+
 protected:
     HWND parentHwnd() const { return GetAncestor(handle(), GA_PARENT); }
     bool isTopLevel_sys() const;
@@ -305,7 +307,6 @@ public:
     static QWindow *topLevelOf(QWindow *w);
     static inline void *userDataOf(HWND hwnd);
     static inline void setUserDataOf(HWND hwnd, void *ud);
-    static bool isWindowArranged(HWND hwnd);
 
     static bool hasNoNativeFrame(HWND hwnd, Qt::WindowFlags flags);
     static bool setWindowLayered(HWND hwnd, Qt::WindowFlags flags, bool hasAlpha, qreal opacity);
@@ -315,6 +316,7 @@ public:
     void releaseDC();
     void getSizeHints(MINMAXINFO *mmi) const;
     bool handleNonClientHitTest(const QPoint &globalPos, LRESULT *result) const;
+    bool handleNonClientActivate(LRESULT *result) const;
     void updateCustomTitlebar();
 
 #ifndef QT_NO_CURSOR
@@ -356,11 +358,9 @@ public:
     int savedDpi() const { return m_savedDpi; }
     qreal dpiRelativeScale(const UINT dpi) const;
 
-    bool isFrameless() const { return m_data.flags.testFlag(Qt::FramelessWindowHint); }
+    bool isClientAreaExpanded() const { return m_data.flags.testFlag(Qt::ExpandedClientAreaHint); }
 
     void requestUpdate() override;
-
-    void transitionAnimatedCustomTitleBar();
 
 private:
     inline void show_sys() const;

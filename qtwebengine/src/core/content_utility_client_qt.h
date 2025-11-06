@@ -18,6 +18,7 @@ public:
 
     // content::ContentUtilityClient:
     void RegisterIOThreadServices(mojo::ServiceFactory &services) override;
+    void RegisterMainThreadServices(mojo::ServiceFactory &services) override;
 };
 
 } // namespace

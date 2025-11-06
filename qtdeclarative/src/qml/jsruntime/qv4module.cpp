@@ -183,6 +183,7 @@ bool Module::virtualDeleteProperty(Managed *m, PropertyKey id)
     return true;
 }
 
+namespace {
 struct ModuleNamespaceIterator : ObjectOwnPropertyKeyIterator
 {
     QStringList exportedNames;
@@ -190,8 +191,8 @@ struct ModuleNamespaceIterator : ObjectOwnPropertyKeyIterator
     ModuleNamespaceIterator(const QStringList &names) : exportedNames(names) {}
     ~ModuleNamespaceIterator() override = default;
     PropertyKey next(const Object *o, Property *pd = nullptr, PropertyAttributes *attrs = nullptr) override;
-
 };
+} // namespace
 
 PropertyKey ModuleNamespaceIterator::next(const Object *o, Property *pd, PropertyAttributes *attrs)
 {

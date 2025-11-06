@@ -96,6 +96,7 @@ public:
     bool hasObject() const;
     Element objectType() const;
     bool hasUndefinedScriptValue() const;
+    bool hasFunctionScriptValue() const;
 
     friend bool operator==(const Binding &lhs, const Binding &rhs)
     {
@@ -234,6 +235,7 @@ public:
     Method::Methods ownMethods() const;
 
     QQmlSA::SourceLocation sourceLocation() const;
+    QQmlSA::SourceLocation idSourceLocation() const;
     QString filePath() const;
 
     bool hasPropertyBindings(const QString &name) const;

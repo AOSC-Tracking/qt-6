@@ -76,12 +76,8 @@ qt_internal_add_module(FFmpegMediaPluginImplPrivate
         recordingengine/qffmpegvideoframeencoder.cpp
     NO_GENERATE_CPP_EXPORTS
     DEFINES
-        QT_COMPILING_FFMPEG
         QT_NO_CAST_FROM_ASCII
         QT_NO_CAST_TO_ASCII
-        QT_NO_CONTEXTLESS_CONNECT
-        QT_NO_QPAIR
-        QT_USE_NODISCARD_FILE_OPEN
     PUBLIC_LIBRARIES
         Qt::MultimediaPrivate
         Qt::CorePrivate
@@ -162,19 +158,17 @@ qt_internal_extend_target(FFmpegMediaPluginImplPrivate CONDITION WIN32
         qgdiwindowcapture.cpp qgdiwindowcapture_p.h
         qffmpegscreencapture_dxgi.cpp qffmpegscreencapture_dxgi_p.h
         qwincapturablewindows.cpp qwincapturablewindows_p.h
-    INCLUDE_DIRECTORIES
-        ../windows
     LIBRARIES
         Qt::MultimediaPrivate
-        WMF::WMF
+        mf
+        mfplat
         mfreadwrite
+        mfuuid
 )
 
 qt_internal_extend_target(FFmpegMediaPluginImplPrivate CONDITION QT_FEATURE_cpp_winrt
     SOURCES
         qffmpegwindowcapture_uwp.cpp qffmpegwindowcapture_uwp_p.h
-    INCLUDE_DIRECTORIES
-        ../windows
     LIBRARIES
         Dwmapi
         Dxva2
@@ -249,7 +243,6 @@ if (ANDROID)
             ${FFMPEG_DIR}/include
             ../android/wrappers/jni/
         LIBRARIES
-            OpenSLES
             mediandk
             android
     )

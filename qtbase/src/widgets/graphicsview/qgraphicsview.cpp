@@ -389,6 +389,8 @@ void QGraphicsViewPrivate::recalculateContentSize()
     const qreal oldLeftIndent = leftIndent;
     const qreal oldTopIndent = topIndent;
 
+    const auto singleStep = defaultSingleStep();
+
     // If the whole scene fits horizontally, we center the scene horizontally,
     // and ignore the horizontal scroll bars.
     const int left =  q_round_bound(viewRect.left());
@@ -413,7 +415,7 @@ void QGraphicsViewPrivate::recalculateContentSize()
 
         hbar->setRange(left, right);
         hbar->setPageStep(width);
-        hbar->setSingleStep(width / 20);
+        hbar->setSingleStep(width / singleStep);
 
         if (oldLeftIndent != 0)
             hbar->setValue(-oldLeftIndent);
@@ -443,7 +445,7 @@ void QGraphicsViewPrivate::recalculateContentSize()
 
         vbar->setRange(top, bottom);
         vbar->setPageStep(height);
-        vbar->setSingleStep(height / 20);
+        vbar->setSingleStep(height / singleStep);
 
         if (oldTopIndent != 0)
             vbar->setValue(-oldTopIndent);
@@ -1113,7 +1115,7 @@ void QGraphicsViewPrivate::freeStyleOptionsArray(QStyleOptionGraphicsItem *array
         delete [] array;
 }
 
-extern QPainterPath qt_regionToPath(const QRegion &region);
+Q_GUI_EXPORT extern QPainterPath qt_regionToPath(const QRegion &region);
 
 /*!
     ### Adjustments in findItems: mapToScene(QRect) forces us to adjust the
@@ -2212,7 +2214,7 @@ QList<QGraphicsItem *> QGraphicsView::items() const
 
     This function is most commonly called from within mouse event handlers in
     a subclass in QGraphicsView. \a pos is in untransformed viewport
-    coordinates, just like QMouseEvent::pos().
+    coordinates, just like QMouseEvent::position().
 
     \snippet code/src_gui_graphicsview_qgraphicsview.cpp 5
 

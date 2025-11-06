@@ -301,6 +301,7 @@ private slots:
     void moveToTrashSymlinkToFile();
     void moveToTrashSymlinkToDirectory_data();
     void moveToTrashSymlinkToDirectory();
+    void moveToTrashXdgHomeTrashIsSymlink();
     void moveToTrashXdgSafety();
 
     void stdfilesystem();
@@ -2276,6 +2277,7 @@ void tst_QFile::longFileName_data()
     QTest::newRow( "148 chars" ) << QString::fromLatin1("longFileNamelongFileNamelongFileNamelongFileName"
                                                      "longFileNamelongFileNamelongFileNamelongFileName"
                                                      "longFileNamelongFileNamelongFileNamelongFileName.txt");
+#ifndef Q_OS_VXWORKS
     QTest::newRow( "244 chars" ) << QString::fromLatin1("longFileNamelongFileNamelongFileNamelongFileName"
                                                      "longFileNamelongFileNamelongFileNamelongFileName"
                                                      "longFileNamelongFileNamelongFileNamelongFileName"
@@ -2292,6 +2294,7 @@ void tst_QFile::longFileName_data()
                                                      "longFileNamelongFileNamelongFileNamelongFileName"
                                                      "longFileNamelongFileNamelongFileNamelongFileName"
                                                      "longFileNamelongFileNamelongFileNamelongFileName.txt");*/
+#endif
 }
 
 void tst_QFile::longFileName()
@@ -3056,6 +3059,11 @@ void tst_QFile::renameFallback()
     QFile::remove("file-rename-destination.txt");
 
     QVERIFY(!file.rename("file-rename-destination.txt"));
+#ifdef Q_OS_WIN
+    // wait for the file to disappear
+    QTRY_VERIFY_WITH_TIMEOUT(!QFile::exists("file-rename-destination.txt"),
+                             std::chrono::seconds(1));
+#endif
     QVERIFY(!QFile::exists("file-rename-destination.txt"));
     QVERIFY(!file.isOpen());
 }
@@ -4034,6 +4042,10 @@ void tst_QFile::supportsMoveToTrash()
 #elif !defined(AT_FDCWD)
     // Unix platforms without the POSIX atfile support: not supported
     QVERIFY(!QFile::supportsMoveToTrash());
+#elif defined(Q_OS_VXWORKS)
+    // AT_FDCWD exists in VxWorks 25.03,
+    // but required POSIX APIs for trash support are missing
+    QVERIFY(!QFile::supportsMoveToTrash());
 #else
     QVERIFY(QFile::supportsMoveToTrash());
 #endif
@@ -4381,6 +4393,53 @@ void tst_QFile::moveToTrashSymlinkToDirectory()
     QVERIFY(QFile::exists(temp.path()));
     QVERIFY(!QFile::exists(linkName));
     cleanLink.dismiss();
+}
+
+void tst_QFile::moveToTrashXdgHomeTrashIsSymlink()
+{
+    if (!QFile::supportsMoveToTrash())
+        QSKIP("This platform doesn't implement a trash bin");
+
+#if defined(Q_OS_WIN) || defined(Q_OS_DARWIN) || defined(Q_OS_ANDROID) || defined(Q_OS_WEBOS)
+    QSKIP("This test is specific to XDG Unix systems");
+#else
+    if (!QStandardPaths::isTestModeEnabled())
+        QFAIL("Constructor should have enabled test mode");
+
+    QString xdgDataHome = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+    Q_ASSERT(xdgDataHome.contains("qttest/"));
+    QString xdgHomeTrash = xdgDataHome + "/Trash"_L1;
+    QString tempPattern = xdgDataHome + "/tst_qfile_moveToTrashXdgHomeTrashIsSymlink.XXXXXX";
+    auto removeTrashAsSymlink = [&xdgHomeTrash] {
+        QFile::remove(xdgHomeTrash);
+    };
+
+    // create a file for us to trash
+    QTemporaryFile fileToTrash(tempPattern);
+    QVERIFY2(fileToTrash.open(), qPrintable(fileToTrash.errorString()));
+
+    // obliterate the test-mode home trash and create a symlink in its place
+    if (QFileInfo fi(xdgHomeTrash); fi.isSymLink() || !fi.isDir())
+        removeTrashAsSymlink();
+    else
+        QDir(xdgHomeTrash).removeRecursively();
+
+    QTemporaryDir otherTrash(tempPattern);
+    QVERIFY2(otherTrash.isValid(), qPrintable(otherTrash.errorString()));
+    if (QFile src(otherTrash.path()); true)
+        QVERIFY2(src.link(xdgHomeTrash), qPrintable(src.errorString()));
+    auto deleteSymlink = qScopeGuard(removeTrashAsSymlink);
+
+    // we should be able to trash an open file in XDG platforms (test above)
+
+    QFile f(fileToTrash.fileName());
+    QVERIFY2(f.moveToTrash(), qPrintable(f.errorString()));
+    QVERIFY(f.exists());
+
+    QVERIFY(!QFileInfo(fileToTrash.fileName()).exists());
+    QVERIFY(QFile(otherTrash.filePath("files")).exists());
+    QVERIFY(QFile(otherTrash.filePath("info")).exists());
+#endif
 }
 
 void tst_QFile::moveToTrashXdgSafety()

@@ -3438,11 +3438,14 @@ public:
     bool isRequired() const { return requiredToken().isValid(); }
     SourceLocation readonlyToken() const { return m_readonlyToken; }
     bool isReadonly() const { return readonlyToken().isValid(); }
+    SourceLocation finalToken() const { return m_finalToken; }
+    bool isFinal() const { return finalToken().isValid(); }
 
     SourceLocation propertyToken() const { return m_propertyToken; }
 
     template <bool InvalidIsLargest = true>
-    static bool compareLocationsByBegin(const SourceLocation *& lhs, const SourceLocation *& rhs)
+    static bool compareLocationsByBegin(const SourceLocation * const &lhs,
+                                        const SourceLocation * const &rhs)
     {
         if (lhs->isValid() && rhs->isValid())
             return lhs->begin() < rhs->begin();
@@ -3464,6 +3467,7 @@ private:
     SourceLocation m_readonlyToken;
     SourceLocation m_requiredToken;
     SourceLocation m_propertyToken;
+    SourceLocation m_finalToken;
 };
 
 class QML_PARSER_EXPORT UiPublicMember: public UiObjectMember
@@ -3519,6 +3523,12 @@ public:
         return hasAttributes ? m_attributes->readonlyToken() : SourceLocation {};
     }
     bool isReadonly() const { return readonlyToken().isValid(); }
+
+    SourceLocation finalToken() const
+    {
+        return hasAttributes ? m_attributes->finalToken() : SourceLocation {};
+    }
+    bool isFinal() const { return finalToken().isValid(); }
 
     void setAttributes(UiPropertyAttributes *attributes)
     {

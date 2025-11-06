@@ -18,6 +18,7 @@
 #include <QDebug>
 #include <QTimer>
 #include <QQmlEngine>
+#include <QtQuickTest/quicktest.h>
 #include <QtQuickTestUtils/private/qmlutils_p.h>
 #include <QtQuickTestUtils/private/viewtestutils_p.h>
 #include <QSignalSpy>
@@ -811,13 +812,13 @@ void tst_qquickitem::focusSubItemInNonFocusScope()
 
     QVERIFY(dummyItem->hasFocus());
     QVERIFY(!textInput->hasFocus());
-    QVERIFY(dummyItem->hasActiveFocus());
+    QVERIFY_ACTIVE_FOCUS(dummyItem);
 
     QVERIFY(QMetaObject::invokeMethod(textInput, "forceActiveFocus"));
 
     QVERIFY(!dummyItem->hasFocus());
     QVERIFY(textInput->hasFocus());
-    QVERIFY(textInput->hasActiveFocus());
+    QVERIFY_ACTIVE_FOCUS(textInput);
 }
 
 void tst_qquickitem::parentItemWithFocus()
@@ -2312,7 +2313,7 @@ void tst_qquickitem::shortcutOverride()
 
     QQuickItem *escapeItem = view.rootObject()->property("escapeItem").value<QQuickItem*>();
     QVERIFY(escapeItem);
-    QVERIFY(escapeItem->hasActiveFocus());
+    QVERIFY_ACTIVE_FOCUS(escapeItem);
 
     // escapeItem's onEscapePressed handler should accept the first escape press event.
     QTest::keyPress(&view, Qt::Key_Escape);

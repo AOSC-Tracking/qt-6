@@ -35,10 +35,6 @@ QPrinterInfoPrivate::QPrinterInfoPrivate(const QString &id)
     }
 }
 
-QPrinterInfoPrivate::~QPrinterInfoPrivate()
-{
-}
-
 /*!
     \class QPrinterInfo
 

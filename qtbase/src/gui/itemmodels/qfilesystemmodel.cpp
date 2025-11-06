@@ -402,8 +402,6 @@ QFileSystemModelPrivate::QFileSystemNode *QFileSystemModelPrivate::node(const QS
             QString rootPath = QDir(longPath).rootPath();
             pathElements.prepend(rootPath);
         }
-        if (pathElements.at(0).endsWith(u'/'))
-            pathElements[0].chop(1);
     }
 #else
     // add the "/" item, since it is a valid path element on Unix

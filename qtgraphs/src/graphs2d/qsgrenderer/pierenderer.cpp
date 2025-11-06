@@ -13,13 +13,15 @@
 #include <private/qquickshape_p.h>
 #include <private/qquicksvgparser_p.h>
 
-PieRenderer::PieRenderer(QGraphsView *graph)
+QT_BEGIN_NAMESPACE
+
+PieRenderer::PieRenderer(QGraphsView *graph, bool clipPlotArea)
     : QQuickItem(graph)
     , m_graph(graph)
     , m_painterPath()
 {
     setFlag(QQuickItem::ItemHasContents);
-    setClip(true);
+    setClip(clipPlotArea);
 
     m_shape = new QQuickShape(this);
     m_shape->setParentItem(this);
@@ -91,8 +93,10 @@ void PieRenderer::handlePolish(QPieSeries *series)
 
     QGraphsTheme *theme = m_graph->theme();
 
-    if (!theme)
+    if (!theme) {
+        qCCritical(lcCritical2D, "Theme not found.");
         return;
+    }
 
     if (m_colorIndex < 0)
         m_colorIndex = m_graph->graphSeriesCount();
@@ -330,9 +334,11 @@ bool PieRenderer::handleHoverMove(QHoverEvent *event)
 
             if (!m_currentHoverSlice) {
                 m_currentHoverSlice = slice;
+                slice->series()->setHovered(true);
                 emit slice->series()->hoverEnter(name, position, value);
             }
             if (m_currentHoverSlice != slice) {
+                slice->series()->setHovered(true);
                 emit m_currentHoverSlice->series()->hoverExit(name, position);
                 emit slice->series()->hoverEnter(name, position, value);
                 m_currentHoverSlice = slice;
@@ -345,6 +351,7 @@ bool PieRenderer::handleHoverMove(QHoverEvent *event)
     }
 
     if (!hovering && m_currentHoverSlice) {
+        m_currentHoverSlice->series()->setHovered(false);
         emit m_currentHoverSlice->series()->
             hoverExit(m_currentHoverSlice->series()->name(), position);
         m_currentHoverSlice = nullptr;
@@ -401,3 +408,5 @@ void PieRenderer::onPressedChanged()
         }
     }
 }
+
+QT_END_NAMESPACE

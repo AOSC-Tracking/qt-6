@@ -17,14 +17,9 @@
 #include <QtQmlCompiler/private/qqmljsutils_p.h>
 
 #include <algorithm>
-#include <iterator>
 #include <memory>
 #include <optional>
-#include <set>
-#include <stack>
-#include <type_traits>
 #include <utility>
-#include <variant>
 
 QT_BEGIN_NAMESPACE
 
@@ -829,9 +824,9 @@ static FieldFilter filterForFindUsages()
 {
     FieldFilter filter{ {},
                         {
-                                { QString(), QString::fromUtf16(Fields::propertyInfos) },
-                                { QString(), QString::fromUtf16(Fields::defaultPropertyName) },
-                                { QString(), QString::fromUtf16(Fields::get) },
+                                { QString(), Fields::propertyInfos.toString() },
+                                { QString(), Fields::defaultPropertyName.toString() },
+                                { QString(), Fields::get.toString() },
                         } };
     return filter;
 };
@@ -2409,9 +2404,9 @@ https://doc.qt.io/qt-6/windows-building.html#step-2-install-build-requirements c
 to have CMake in your path to build Qt. So a developer machine running qmlls has a high chance of
 having CMake in their path, if CMake is installed and used.
 */
-QPair<QString, QStringList> cmakeBuildCommand(const QString &path)
+std::pair<QString, QStringList> cmakeBuildCommand(const QString &path)
 {
-    const QPair<QString, QStringList> result{
+    const std::pair<QString, QStringList> result{
         u"cmake"_s, { u"--build"_s, path, u"-t"_s, u"all_qmltyperegistrations"_s }
     };
     return result;

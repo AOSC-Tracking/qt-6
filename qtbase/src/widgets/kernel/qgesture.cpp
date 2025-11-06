@@ -1080,6 +1080,10 @@ Q_WIDGETS_EXPORT QDebug operator<<(QDebug d, const QGesture *gesture)
 {
     QDebugStateSaver saver(d);
     d.nospace();
+
+    if (!gesture)
+        return d << "QGesture(0x0)";
+
     switch (gesture->gestureType()) {
     case Qt::TapGesture:
         formatGestureHeader(d, "QTapGesture", gesture);
@@ -1148,8 +1152,12 @@ Q_WIDGETS_EXPORT QDebug operator<<(QDebug d, const QGestureEvent *gestureEvent)
 {
     QDebugStateSaver saver(d);
     d.nospace();
-    d << "QGestureEvent(" << gestureEvent->gestures() << ')';
-    return d;
+    d << "QGestureEvent(";
+    if (gestureEvent)
+        d << gestureEvent->gestures();
+    else
+        d << "0x0";
+    return d << ')';
 }
 
 #endif // !QT_NO_DEBUG_STREAM

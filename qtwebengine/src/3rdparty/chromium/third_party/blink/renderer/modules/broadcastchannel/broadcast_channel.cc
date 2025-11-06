@@ -179,7 +179,8 @@ void BroadcastChannel::OnMessage(BlinkCloneableMessage message) {
        context->IsSameAgentCluster(message.sender_agent_cluster_id)) &&
       message.message->CanDeserializeIn(context)) {
     event = MessageEvent::Create(nullptr, std::move(message.message),
-                                 context->GetSecurityOrigin()->ToString());
+                                 context->GetSecurityOrigin()->ToString(),
+                                 MessageEvent::kMessageIsSameOrigin);
   } else {
     event = MessageEvent::CreateError(context->GetSecurityOrigin()->ToString());
   }
@@ -330,7 +331,7 @@ BroadcastChannel::BroadcastChannel(
         name_, receiver_.BindNewEndpointAndPassRemote(receiver_task_runner),
         remote_client_.BindNewEndpointAndPassReceiver(client_task_runner));
   } else {
-    NOTREACHED_IN_MIGRATION();
+    NOTREACHED();
   }
 
   SetupDisconnectHandlers();

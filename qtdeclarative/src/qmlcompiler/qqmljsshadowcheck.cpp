@@ -40,11 +40,11 @@ QQmlJSCompilePass::BlocksAndAnnotations QQmlJSShadowCheck::run(const Function *f
     m_state = initialState(function);
     decode(m_function->code.constData(), static_cast<uint>(m_function->code.size()));
 
-    for (const auto &store : m_resettableStores)
+    for (const auto &store : std::as_const(m_resettableStores))
         checkResettable(store.accumulatorIn, store.instructionOffset);
 
     // Re-check all base types. We may have made them var after detecting them.
-    for (const auto &base : m_baseTypes) {
+    for (const auto &base : std::as_const(m_baseTypes)) {
         if (checkBaseType(base) == Shadowable)
             break;
     }

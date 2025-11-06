@@ -232,6 +232,9 @@ void QQuickPdfSelection::inputMethodEvent(QInputMethodEvent *event)
         case QInputMethodEvent::Language:
         case QInputMethodEvent::Ruby:
         case QInputMethodEvent::TextFormat:
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+        case QInputMethodEvent::MimeData:
+#endif
             break;
         }
     }

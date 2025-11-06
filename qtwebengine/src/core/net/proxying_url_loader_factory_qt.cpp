@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:network-protocol
 
 #include "proxying_url_loader_factory_qt.h"
 
@@ -126,8 +127,6 @@ public:
                         const net::HttpRequestHeaders &modified_cors_exempt_headers,
                         const std::optional<GURL> &new_url) override;
     void SetPriority(net::RequestPriority priority, int32_t intra_priority_value) override;
-    void PauseReadingBodyFromNet() override;
-    void ResumeReadingBodyFromNet() override;
 
 private:
     void InterceptOnUIThread();
@@ -298,7 +297,7 @@ void InterceptedRequest::Restart()
     if (!allow_local_ && local_access_) {
         // Check for specifically granted file access:
         if (auto *frame_tree = content::FrameTreeNode::GloballyFindByID(frame_tree_node_id_)) {
-            const int renderer_id = frame_tree->current_frame_host()->GetProcess()->GetID();
+            const int renderer_id = frame_tree->current_frame_host()->GetProcess()->GetDeprecatedID();
             base::FilePath file_path;
             if (net::FileURLToFilePath(request_.url, &file_path)) {
                 if (content::ChildProcessSecurityPolicy::GetInstance()->CanReadFile(renderer_id, file_path))
@@ -480,18 +479,6 @@ void InterceptedRequest::SetPriority(net::RequestPriority priority, int32_t intr
 {
     if (target_loader_)
         target_loader_->SetPriority(priority, intra_priority_value);
-}
-
-void InterceptedRequest::PauseReadingBodyFromNet()
-{
-    if (target_loader_)
-        target_loader_->PauseReadingBodyFromNet();
-}
-
-void InterceptedRequest::ResumeReadingBodyFromNet()
-{
-    if (target_loader_)
-        target_loader_->ResumeReadingBodyFromNet();
 }
 
 void InterceptedRequest::OnURLLoaderClientError()

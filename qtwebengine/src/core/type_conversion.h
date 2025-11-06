@@ -191,6 +191,11 @@ inline QColor toQt(const SkColor &c)
     return QColor(SkColorGetR(c), SkColorGetG(c), SkColorGetB(c), SkColorGetA(c));
 }
 
+inline QString toQt(const base::FilePath &path)
+{
+    return toQt(path.value());
+}
+
 inline SkColor toSk(const QColor &c)
 {
     return c.rgba();

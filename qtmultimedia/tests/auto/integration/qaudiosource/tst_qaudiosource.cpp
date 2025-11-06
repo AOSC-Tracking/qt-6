@@ -1,7 +1,10 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#include <QtTest/QtTest>
+#include <QtTest/qtest.h>
+#include <QtTest/qsignalspy.h>
+#include <QtCore/qbuffer.h>
+#include <QtCore/qsemaphore.h>
 #include <QtCore/qtemporarydir.h>
 
 #include <QtMultimedia/qaudio.h>
@@ -47,6 +50,7 @@ private slots:
     void format();
     void invalidFormat_data();
     void invalidFormat();
+    void nullFormat();
 
     void bufferSize();
     void bufferSize_getValidDefault();
@@ -128,15 +132,6 @@ QString tst_QAudioSource::formatToFileName(const QAudioFormat &format)
 
 void tst_QAudioSource::initTestCase()
 {
-#ifdef Q_OS_ANDROID
-    // The test might fail because libOpenSLES cannot create AudioRecorder for that emulator. The
-    // Android documentation states that the emulator doesn't support this at all all
-    // https://developer.android.com/media/platform/mediarecorder. However, in practice this test
-    // fails only prior to Android 10.
-    if (QNativeInterface::QAndroidApplication::sdkVersion() < __ANDROID_API_Q__)
-        QSKIP("Emulated Android version doesn't support audio recording");
-#endif
-
     if (m_inCISystem)
         QSKIP("SKIP initTestCase on CI. To be fixed");
 
@@ -220,9 +215,6 @@ void tst_QAudioSource::invalidFormat_data()
 
     QAudioFormat format;
 
-    QTest::newRow("Null Format")
-            << format;
-
     format = audioDevice.preferredFormat();
     format.setChannelCount(0);
     QTest::newRow("Channel count 0")
@@ -260,6 +252,22 @@ void tst_QAudioSource::invalidFormat()
     // Check that error is raised
     QTRY_VERIFY2((audioSource.error() == QAudio::OpenError),
                  "error() was not set to QAudio::OpenError after start()");
+}
+
+void tst_QAudioSource::nullFormat()
+{
+    QAudioDevice audioDevice = QMediaDevices::defaultAudioInput();
+    if (audioDevice.isNull())
+        QSKIP("No audio inputs found");
+
+    {
+        QAudioSource audioSource;
+        QCOMPARE(audioSource.format(), audioDevice.preferredFormat());
+    }
+    {
+        QAudioSource audioSource(audioDevice);
+        QCOMPARE(audioSource.format(), audioDevice.preferredFormat());
+    }
 }
 
 void tst_QAudioSource::bufferSize()
@@ -1013,7 +1021,7 @@ void tst_QAudioSource::stateChanged_stringBasedConnect()
 {
     const QAudioDevice defaultAudioInputDevice = QMediaDevices::defaultAudioInput();
 
-    QAudioSource audioSource(defaultAudioInputDevice, defaultAudioInputDevice.preferredFormat());
+    QAudioSource audioSource(defaultAudioInputDevice);
 
     QSignalSpy stateSignal(&audioSource, SIGNAL(stateChanged(QAudio::State)));
 

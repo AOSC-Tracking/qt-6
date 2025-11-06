@@ -1,6 +1,7 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
+#include "graphs2d/qabstractseries_p.h"
 #include <QtGraphs/qabstractseries.h>
 #include <QtGraphs/qbarseries.h>
 #include <QtGraphs/qbarset.h>
@@ -537,8 +538,18 @@ QList<QColor> QBarSeries::seriesColors() const
 void QBarSeries::setSeriesColors(const QList<QColor> &newSeriesColors)
 {
     Q_D(QBarSeries);
-    if (d->m_seriesColors == newSeriesColors)
+    for (const QColor &color : newSeriesColors) {
+        if (!color.isValid()) {
+            qCWarning(lcProperties2D, "QBarSeries::setSeriesColors. Tried to use invalid color value.");
+            break;
+        }
+    }
+
+    if (d->m_seriesColors == newSeriesColors) {
+        qCDebug(lcProperties2D) << "QBarSeries::setSeriesColors. Set value of" << newSeriesColors << "is the same as it already was.";
         return;
+    }
+
     d->m_seriesColors = newSeriesColors;
     emit seriesColorsChanged();
     emit update();
@@ -569,8 +580,18 @@ QList<QColor> QBarSeries::borderColors() const
 void QBarSeries::setBorderColors(const QList<QColor> &newBorderColors)
 {
     Q_D(QBarSeries);
-    if (d->m_borderColors == newBorderColors)
+    for (const QColor &color : newBorderColors) {
+        if (!color.isValid()) {
+            qCWarning(lcProperties2D, "QBarSeries::setBorderColors. Tried to use invalid color value.");
+            break;
+        }
+    }
+
+    if (d->m_borderColors == newBorderColors) {
+        qCDebug(lcProperties2D) << "QBarSeries::setBorderColors. Set value of:" << newBorderColors << "is the same than it already was.";
         return;
+    }
+
     d->m_borderColors = newBorderColors;
     emit borderColorsChanged();
     emit update();
@@ -583,6 +604,8 @@ void QBarSeries::setBarsType(QBarSeries::BarsType type)
         d->m_barsType = type;
         emit barsTypeChanged(type);
         emit update();
+    } else {
+        qCDebug(lcProperties2D) << "QBarSeries::setBarsType. Set value of:" << type << "is the same than it already was.";
     }
 }
 
@@ -601,6 +624,9 @@ void QBarSeries::setBarWidth(qreal width)
     if (d->barWidth() != width) {
         d->setBarWidth(width);
         emit barWidthChanged();
+    } else {
+        qCDebug(lcProperties2D, "QBarSeries::setBarWidth. Set value of: %f is the same than it already was.",
+                width);
     }
 }
 
@@ -811,9 +837,7 @@ void QBarSeries::removeMultiple(qsizetype index, qsizetype count)
 {
     Q_D(QBarSeries);
 
-    if (index + count >= d->m_barSets.size())
-        return;
-    if (index < 0 || count < 0)
+    if (index < 0 || count < 1 || index + count > d->m_barSets.size())
         return;
 
     for (qsizetype i = index; i < index + count; ++i)
@@ -920,6 +944,8 @@ void QBarSeries::setLabelsVisible(bool visible)
         d->setLabelsVisible(visible);
         emit labelsVisibleChanged(visible);
         emit update();
+    } else {
+        qCDebug(lcProperties2D) << "QBarSeries::setLabelsVisible. Label visibility is already set to:" << visible;
     }
 }
 
@@ -940,6 +966,9 @@ void QBarSeries::setLabelsFormat(const QString &format)
         d->setLabelsDirty(true);
         emit labelsFormatChanged(format);
         emit update();
+    } else {
+        qCDebug(lcProperties2D) << "QBarSeries::setLabelsFormat. Format is already set to value:"
+                                << format;
     }
 }
 
@@ -957,6 +986,9 @@ void QBarSeries::setLabelsMargin(qreal margin)
         d->setLabelsDirty(true);
         emit labelsMarginChanged(margin);
         emit update();
+    } else {
+        qCDebug(lcProperties2D, "QBarSeries::setLabelsMargin. Margin is already set to value: %f",
+                margin);
     }
 }
 
@@ -974,6 +1006,9 @@ void QBarSeries::setLabelsAngle(qreal angle)
         d->setLabelsDirty(true);
         emit labelsAngleChanged(angle);
         emit update();
+    } else {
+        qCDebug(lcProperties2D, "QBarSeries::setLabelsAngle. Label angle is already set to value: %f",
+                angle);
     }
 }
 
@@ -990,6 +1025,9 @@ void QBarSeries::setLabelsPosition(QBarSeries::LabelsPosition position)
         d->m_labelsPosition = position;
         emit labelsPositionChanged(position);
         emit update();
+    } else {
+        qCDebug(lcProperties2D) << "QBarSeries::setLabelsPosition. Position is already set to:"
+                                << position;
     }
 }
 
@@ -1007,6 +1045,9 @@ void QBarSeries::setLabelsPrecision(int precision)
         d->setLabelsDirty(true);
         emit labelsPrecisionChanged(precision);
         emit update();
+    } else {
+        qCDebug(lcProperties2D, "QBarSeries::setLabelsPrecision. Precision is already set to: %d",
+                precision);
     }
 }
 
@@ -1025,8 +1066,12 @@ QQmlComponent *QBarSeries::barDelegate() const
 void QBarSeries::setBarDelegate(QQmlComponent *newBarDelegate)
 {
     Q_D(QBarSeries);
-    if (d->m_barDelegate == newBarDelegate)
+    if (d->m_barDelegate == newBarDelegate) {
+        qCDebug(lcProperties2D) << "QBarSeries::setBarDelegate. BarDelegate is already set to:"
+                                << newBarDelegate;
         return;
+    }
+
     d->m_barDelegate = newBarDelegate;
     d->m_barDelegateDirty = true;
     emit barDelegateChanged();
@@ -1054,9 +1099,14 @@ void QBarSeries::deselectAll()
 void QBarSeries::componentComplete()
 {
     for (auto *child : children()) {
-        if (auto bs = qobject_cast<QBarSet *>(child))
+        if (auto bs = qobject_cast<QBarSet *>(child)) {
             append(bs);
+            qCDebug(lcSeries2D) << "append barset" << bs << "to barseries. barset values:" << bs->values();
+        }
     }
+
+    qCDebug(lcEvents2D) << "QBarSeries::componentComplete.";
+
     QAbstractSeries::componentComplete();
 }
 
@@ -1097,16 +1147,17 @@ void QBarSeries::setBarDelegateDirty(bool dirty)
 }
 
 QBarSeriesPrivate::QBarSeriesPrivate()
-    : m_barWidth(0.5) // Default value is 50% of category width
-      , m_labelsVisible(false)
-      , m_visible(true)
-      , m_blockBarUpdate(false)
-      , m_labelsFormat()
-      , m_labelsMargin(0)
-      , m_labelsAngle(0)
-      , m_labelsPrecision(6)
-      , m_labelsDirty(true)
-      , m_barDelegateDirty(false)
+    : QAbstractSeriesPrivate(QAbstractSeries::SeriesType::Bar)
+    , m_barWidth(0.5) // Default value is 50% of category width
+    , m_labelsVisible(false)
+    , m_visible(true)
+    , m_blockBarUpdate(false)
+    , m_labelsFormat()
+    , m_labelsMargin(0)
+    , m_labelsAngle(0)
+    , m_labelsPrecision(6)
+    , m_labelsDirty(true)
+    , m_barDelegateDirty(false)
 {
 }
 
@@ -1128,7 +1179,7 @@ void QBarSeriesPrivate::setBarWidth(qreal width)
     width = std::clamp<qreal>(width, 0.0, 1.0);
     if (!qFuzzyCompare(width, m_barWidth)) {
         m_barWidth = width;
-        q->update();
+        emit q->update();
     }
 }
 

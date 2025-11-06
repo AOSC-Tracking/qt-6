@@ -41,15 +41,12 @@ int QQmlDMAbstractItemModelData::metaCall(QMetaObject::Call call, int id, void *
                 m_cachedData[0] = *static_cast<QVariant *>(arguments[0]);
                 QMetaObject::activate(this, meta, 0, nullptr);
             }
-        } else if (*m_type->model) {
-            QQmlGuard<QQmlDMAbstractItemModelData> guard(this);
-            setValue(m_type->propertyRoles.at(propertyIndex), *static_cast<QVariant *>(arguments[0]));
-            if (guard.isNull())
-              return -1;
 
-            QMetaObject::activate(this, meta, propertyIndex, nullptr);
+            emit modelDataChanged();
+        } else if (*m_type->model) {
+            setValue(m_type->propertyRoles.at(propertyIndex),
+                     *static_cast<QVariant *>(arguments[0]));
         }
-        emit modelDataChanged();
         return -1;
     } else {
         return qt_metacall(call, id, arguments);
@@ -105,7 +102,7 @@ QV4::ReturnedValue QQmlDMAbstractItemModelData::get_property(const QV4::Function
     const qsizetype propertyId = static_cast<const QV4::IndexedBuiltinFunction *>(b)->d()->index;
 
     QQmlDMAbstractItemModelData *modelData = static_cast<QQmlDMAbstractItemModelData *>(o->d()->item);
-    if (o->d()->item->index == -1) {
+    if (o->d()->item->modelIndex() == -1) {
         if (!modelData->m_cachedData.isEmpty())
             return scope.engine->fromVariant(modelData->m_cachedData.at(propertyId));
     } else if (*modelData->m_type->model) {
@@ -126,7 +123,7 @@ QV4::ReturnedValue QQmlDMAbstractItemModelData::set_property(const QV4::Function
 
     const qsizetype propertyId = static_cast<const QV4::IndexedBuiltinFunction *>(b)->d()->index;
 
-    if (o->d()->item->index == -1) {
+    if (o->d()->item->modelIndex() == -1) {
         QQmlDMAbstractItemModelData *modelData = static_cast<QQmlDMAbstractItemModelData *>(o->d()->item);
         if (!modelData->m_cachedData.isEmpty()) {
             if (modelData->m_cachedData.size() > 1) {
@@ -186,11 +183,9 @@ QVariant QQmlDMAbstractItemModelData::modelData() const
                 : value(m_type->propertyRoles[0]);
     }
 
-    // If we're using context properties, the model object is also the context object.
-    // In that case we cannot provide modelData. Otherwise return the object itself as modelData.
-    return (contextData->contextObject() == this)
-            ? QVariant()
-            : QVariant::fromValue(this);
+    return useStructuredModelData
+            ? QVariant::fromValue(this)
+            : QVariant();
 }
 
 void QQmlDMAbstractItemModelData::setModelData(const QVariant &modelData)
@@ -238,11 +233,11 @@ void QQmlDMAbstractItemModelData::setValue(int role, const QVariant &value)
 
 QV4::ReturnedValue QQmlDMAbstractItemModelData::get()
 {
+    QV4::Scope scope(metaType->v4Engine);
     if (m_type->prototype.isUndefined()) {
-        QQmlAdaptorModelEngineData * const data = QQmlAdaptorModelEngineData::get(v4);
+        QQmlAdaptorModelEngineData *const data = QQmlAdaptorModelEngineData::get(scope.engine);
         m_type->initializeConstructor(data);
     }
-    QV4::Scope scope(v4);
     QV4::ScopedObject proto(scope, m_type->prototype.value());
     QV4::ScopedObject o(scope, proto->engine()->memoryManager->allocate<QQmlDelegateModelItemObject>(this));
     o->setPrototypeOf(proto);

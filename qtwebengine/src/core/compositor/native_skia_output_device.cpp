@@ -1,5 +1,6 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "native_skia_output_device.h"
 
@@ -13,13 +14,14 @@
 #include "gpu/command_buffer/service/shared_image/shared_image_factory.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_representation.h"
 #include "gpu/command_buffer/service/skia_utils.h"
-#include "third_party/skia/include/gpu/GrDirectContext.h"
 #include "third_party/skia/include/core/SkSurfaceProps.h"
 #include "ui/gfx/native_pixmap.h"
 #include "ui/gfx/gpu_fence.h"
 #include "ui/gl/gl_fence.h"
 
 #if BUILDFLAG(IS_OZONE)
+#include "ozone/gl_ozone_qt.h"
+
 #include "ui/ozone/public/ozone_platform.h"
 #endif
 
@@ -63,6 +65,19 @@ NativeSkiaOutputDevice::NativeSkiaOutputDevice(
                                         .supports_native_pixmaps;
     qCDebug(lcWebEngineCompositor, "Native Buffer Supported: %s",
             m_isNativeBufferSupported ? "yes" : "no");
+
+    auto typeToString = [](ui::NativePixmapSupportType type) -> const char * {
+        switch (type) {
+        case ui::NativePixmapSupportType::kDMABuf:
+            return "DMABuf";
+        case ui::NativePixmapSupportType::kX11Pixmap:
+            return "X11Pixmap";
+        default:
+            return "None";
+        }
+    };
+    qCDebug(lcWebEngineCompositor, "Native Pixmap Support Type: %s",
+            typeToString(ui::GLOzoneQt::getNativePixmapSupportType()));
 #endif
 }
 
@@ -165,6 +180,11 @@ void NativeSkiaOutputDevice::releaseTexture()
     }
 }
 
+bool NativeSkiaOutputDevice::hasResources()
+{
+    return m_frontBuffer && m_frontBuffer->textureCleanupCallback;
+}
+
 void NativeSkiaOutputDevice::releaseResources()
 {
     if (m_frontBuffer)
@@ -210,7 +230,10 @@ NativeSkiaOutputDevice::Buffer::Buffer(NativeSkiaOutputDevice *parent)
 
 NativeSkiaOutputDevice::Buffer::~Buffer()
 {
-    DCHECK(!textureCleanupCallback);
+    // FIXME: Can't be called in case of threaded rendering with unexposed window.
+    //DCHECK(!textureCleanupCallback);
+    if (textureCleanupCallback)
+        qWarning("NativeSkiaOutputDevice: Leaking graphics resources.");
 
     if (m_scopedSkiaWriteAccess)
         endWriteSkia(false);

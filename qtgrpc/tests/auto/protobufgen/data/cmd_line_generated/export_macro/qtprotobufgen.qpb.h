@@ -457,6 +457,7 @@ class ScalarRepeatedNoPackedTypes : public QProtobufMessage
     Q_PROPERTY(QtProtobuf::doubleList field12 READ field12 WRITE setField12 SCRIPTABLE true)
     Q_PROPERTY(QStringList field13 READ field13 WRITE setField13 SCRIPTABLE true)
     Q_PROPERTY(QByteArrayList field14 READ field14 WRITE setField14 SCRIPTABLE true)
+    Q_PROPERTY(QList<qt::protobuf::GlobalEnumGadget::GlobalEnum> field15 READ field15 WRITE setField15 SCRIPTABLE true)
 
 public:
     using QtProtobufFieldEnum = ScalarRepeatedNoPackedTypes_QtProtobufNested::QtProtobufFieldEnum;
@@ -504,6 +505,8 @@ public:
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT const QStringList &field13() const &;
 
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT const QByteArrayList &field14() const &;
+
+    QPB_TST_QTPROTOBUFGEN_GEN_EXPORT const QList<GlobalEnumGadget::GlobalEnum> &field15() const &;
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT void setField1(const QtProtobuf::int32List &field1);
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT void setField1(QtProtobuf::int32List &&field1);
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT void setField2(const QtProtobuf::uint32List &field2);
@@ -532,6 +535,8 @@ public:
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT void setField13(QStringList &&field13);
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT void setField14(const QByteArrayList &field14);
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT void setField14(QByteArrayList &&field14);
+    QPB_TST_QTPROTOBUFGEN_GEN_EXPORT void setField15(const QList<GlobalEnumGadget::GlobalEnum> &field15);
+    QPB_TST_QTPROTOBUFGEN_GEN_EXPORT void setField15(QList<GlobalEnumGadget::GlobalEnum> &&field15);
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT static void registerTypes();
 
 private:
@@ -564,6 +569,7 @@ enum class QtProtobufFieldEnum {
     Field12ProtoFieldNumber = 12,
     Field13ProtoFieldNumber = 13,
     Field14ProtoFieldNumber = 14,
+    Field15ProtoFieldNumber = 15,
 };
 Q_ENUM_NS(QtProtobufFieldEnum)
 
@@ -1117,12 +1123,14 @@ public:
 
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT bool hasField1() const;
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT const ScalarTypes &field1() const &;
+    QPB_TST_QTPROTOBUFGEN_GEN_EXPORT ScalarTypes &mutField1() &;
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT void clearField1();
 
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT const QList<ScalarTypes> &field2() const &;
 
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT bool hasField3() const;
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT const ScalarTypes &field3() const &;
+    QPB_TST_QTPROTOBUFGEN_GEN_EXPORT ScalarTypes &mutField3() &;
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT void clearField3();
 
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT EnumTypes_QtProtobufNested::NestedEnum field4() const;
@@ -1232,6 +1240,7 @@ public:
 
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT bool hasField1() const;
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT const MessageNestedTypes_QtProtobufNested::NestedMessage &field1() const &;
+    QPB_TST_QTPROTOBUFGEN_GEN_EXPORT MessageNestedTypes_QtProtobufNested::NestedMessage &mutField1() &;
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT void clearField1();
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT void setField1(const MessageNestedTypes_QtProtobufNested::NestedMessage &field1);
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT void setField1(MessageNestedTypes_QtProtobufNested::NestedMessage &&field1);
@@ -1291,6 +1300,7 @@ public:
 
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT bool hasField2() const;
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT const MessageTypes &field2() const &;
+    QPB_TST_QTPROTOBUFGEN_GEN_EXPORT MessageTypes &mutField2() &;
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT void clearField2();
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT void setField1(QtProtobuf::int32 field1);
     QPB_TST_QTPROTOBUFGEN_GEN_EXPORT void setField2(const MessageTypes &field2);

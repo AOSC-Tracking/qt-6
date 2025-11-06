@@ -8,6 +8,11 @@ The changes are relative to the previous release, unless the baseline is specifi
 
 ## [Unreleased]
 
+### Added since 1.1.1
+* Add the properties and numProperties fields to avifImage. They are filled by
+  the avifDecoder instance with the properties unrecognized by libavif. They are
+  written by the avifEncoder.
+
 ### Changed since 1.1.1
 * avifenc: Allow large images to be encoded.
 * Fix empty CMAKE_CXX_FLAGS_RELEASE if -DAVIF_CODEC_AOM=LOCAL -DAVIF_LIBYUV=OFF
@@ -17,13 +22,34 @@ The changes are relative to the previous release, unless the baseline is specifi
   draft.
 * Ignore gain maps with unsupported metadata. Handle gain maps with
   writer_version > 0 correctly.
-  The combination of settings enableParsingGainMapMetadata=false with
-  enableDecodingGainMap=true is no longer allowed and returns an invalid argument
-  error.
-  The `gainMapPresent` field is now only populated if enableParsingGainMapMetadata
-  is true.
+  Simplify gain map API: remove the enableParsingGainMapMetadata setting, now gain
+  map metadata is always parsed if present and if this feature is compiled in.
+  Replace enableDecodingGainMap and ignoreColorAndAlpha with a bit field to choose
+  image content to decode. Remove gainMapPresent: users can check if
+  decoder->image->gainMap != NULL instead.
 * Write an empty HandlerBox name field instead of "libavif" (saves 7 bytes).
-* Update svt.cmd/svt.sh/LocalSvt.cmake: v2.2.0
+* Update aom.cmd/LocalAom.cmake: v3.11.0
+* Update avm.cmd: research-v8.1.0
+* Update dav1d.cmd/dav1d_android.sh/LocalDav1d.cmake: 1.5.0
+* Update libjpeg.cmd/LocalJpeg.cmake: v3.0.4
+* Update libxml2.cmd/LocalLibXml2.cmake: v2.13.5
+* Update svt.cmd/svt.sh/LocalSvt.cmake: v2.3.0
+* Change experimental gainmap API: remove avifGainMapMetadata and
+  avifGainMapMetadataDouble structs.
+* Add avif(Un)SignedFraction structs and avifDoubleTo(Un)SignedFraction
+  utility functions.
+* Turn on the gain map API. Remove the
+  AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP compile flag.
+* Remove AVIF_ENABLE_GTEST CMake option. It's now implied by
+  AVIF_GTEST=LOCAL/SYSTEM.
+* Add 'avifgainmaputil' command line tool to installed apps.
+* Deprecate `avifEncoder`'s `minQuantizer`, `maxQuantizer`, `minQuantizerAlpha`,
+  and `maxQuantizerAlpha` fields. `quality` and `qualityAlpha` should be used
+  instead. Deprecate `avifenc`'s `--min`, `--max`, `--minalpha` and `--maxalpha`
+  flags. `-q` or `--qcolor` and `--qalpha` should be used instead.
+* For dependencies, the deprecated way of setting AVIF_LOCAL_* to ON is
+  removed. Dependency options can now only be set to OFF/LOCAL/SYSTEM.
+* Change the default quality for alpha to be the same as the quality for color.
 
 ## [1.1.1] - 2024-07-30
 

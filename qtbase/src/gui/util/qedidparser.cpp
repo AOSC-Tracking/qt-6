@@ -124,20 +124,20 @@ bool QEdidParser::parse(const QByteArray &blob)
 
     if (manufacturer.isEmpty()) {
         // Find the manufacturer from the vendor lookup table
-        const auto compareVendorId = [](const VendorTable &vendor, const char *str)
+        const auto compareVendorId = [](const QEdidVendorId &vendor, const char *str)
         {
             return strncmp(vendor.id, str, 3) < 0;
         };
 
-        const auto b = std::begin(q_edidVendorTable);
-        const auto e = std::end(q_edidVendorTable);
+        const auto b = std::begin(q_edidVendorIds);
+        const auto e = std::end(q_edidVendorIds);
         auto it = std::lower_bound(b,
                                    e,
                                    pnpId,
                                    compareVendorId);
 
         if (it != e && strncmp(it->id, pnpId, 3) == 0)
-            manufacturer = QString::fromUtf8(it->name);
+            manufacturer = QString::fromUtf8(q_edidVendorNames + q_edidVendorNamesOffsets[it - b]);
     }
 
     // If we don't know the manufacturer, fallback to PNP ID

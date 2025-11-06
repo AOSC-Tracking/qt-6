@@ -161,7 +161,6 @@ QQmlDelegateModelParts::QQmlDelegateModelParts(QQmlDelegateModel *parent)
 
 QQmlDelegateModelPrivate::QQmlDelegateModelPrivate(QQmlContext *ctxt)
     : m_delegateChooser(nullptr)
-    , m_cacheMetaType(nullptr)
     , m_context(ctxt)
     , m_parts(nullptr)
     , m_filterGroup(QStringLiteral("items"))
@@ -186,9 +185,6 @@ QQmlDelegateModelPrivate::~QQmlDelegateModelPrivate()
 
     // Free up all items in the pool
     drainReusableItemsPool(0);
-
-    if (m_cacheMetaType)
-        m_cacheMetaType->release();
 }
 
 int QQmlDelegateModelPrivate::adaptorModelCount() const
@@ -306,7 +302,7 @@ void QQmlDelegateModel::componentComplete()
         }
     }
 
-    d->m_cacheMetaType = new QQmlDelegateModelItemMetaType(
+    d->m_cacheMetaType = QQml::makeRefPointer<QQmlDelegateModelItemMetaType>(
                 d->m_context->engine()->handle(), this, groupNames);
 
     d->m_compositor.setGroupCount(d->m_groupCount);
@@ -538,6 +534,42 @@ void QQmlDelegateModel::setRootIndex(const QVariant &root)
 }
 
 /*!
+    \qmlproperty enumeration QtQml.Models::DelegateModel::delegateModelAccess
+
+    \include delegatemodelaccess.qdocinc
+*/
+QQmlDelegateModel::DelegateModelAccess QQmlDelegateModel::delegateModelAccess() const
+{
+    Q_D(const QQmlDelegateModel);
+    return d->m_adaptorModel.delegateModelAccess;
+}
+
+void QQmlDelegateModel::setDelegateModelAccess(
+        QQmlDelegateModel::DelegateModelAccess delegateModelAccess)
+{
+    Q_D(QQmlDelegateModel);
+    if (d->m_adaptorModel.delegateModelAccess == delegateModelAccess)
+        return;
+
+    if (d->m_transaction) {
+        qmlWarning(this) << tr("The delegateModelAccess of a DelegateModel "
+                               "cannot be changed within onUpdated.");
+        return;
+    }
+
+    if (d->m_complete) {
+        _q_itemsRemoved(0, d->m_count);
+        d->m_adaptorModel.delegateModelAccess = delegateModelAccess;
+        _q_itemsInserted(0, d->adaptorModelCount());
+        d->requestMoreIfNecessary();
+    } else {
+        d->m_adaptorModel.delegateModelAccess = delegateModelAccess;
+    }
+
+    emit delegateModelAccessChanged();
+}
+
+/*!
     \qmlmethod QModelIndex QtQml.Models::DelegateModel::modelIndex(int index)
 
     QAbstractItemModel provides a hierarchical tree of data, whereas
@@ -597,10 +629,9 @@ QQmlDelegateModel::ReleaseFlags QQmlDelegateModelPrivate::release(QObject *objec
     if (!cacheItem->releaseObject())
         return QQmlDelegateModel::Referenced;
 
-    if (reusableFlag == QQmlInstanceModel::Reusable) {
+    if (reusableFlag == QQmlInstanceModel::Reusable && m_reusableItemsPool.insertItem(cacheItem)) {
         removeCacheItem(cacheItem);
-        m_reusableItemsPool.insertItem(cacheItem);
-        emit q_func()->itemPooled(cacheItem->index, cacheItem->object);
+        emit q_func()->itemPooled(cacheItem->modelIndex(), cacheItem->object);
         return QQmlInstanceModel::Pooled;
     }
 
@@ -616,7 +647,7 @@ void QQmlDelegateModelPrivate::destroyCacheItem(QQmlDelegateModelItem *cacheItem
         releaseIncubator(cacheItem->incubationTask);
         cacheItem->incubationTask = nullptr;
     }
-    cacheItem->Dispose();
+    cacheItem->dispose();
 }
 
 /*
@@ -909,7 +940,9 @@ static bool isDoneIncubating(QQmlIncubator::Status status)
      return status == QQmlIncubator::Ready || status == QQmlIncubator::Error;
 }
 
-void QQDMIncubationTask::initializeRequiredProperties(QQmlDelegateModelItem *modelItemToIncubate, QObject *object)
+void QQDMIncubationTask::initializeRequiredProperties(
+        QQmlDelegateModelItem *modelItemToIncubate, QObject *object,
+        QQmlDelegateModel::DelegateModelAccess access)
 {
     // QQmlObjectCreator produces a private internal context.
     // We can always attach the extra object there.
@@ -947,20 +980,20 @@ void QQDMIncubationTask::initializeRequiredProperties(QQmlDelegateModelItem *mod
         // column, model and more
         // the most derived subclasses of QQmlDelegateModelItem are QQmlDMAbstractItemModelData and
         // QQmlDMObjectData at depth 2, so 4 should be plenty
-        QVarLengthArray<QPair<const QMetaObject *, QObject *>, 4> mos;
+        QVarLengthArray<std::pair<const QMetaObject *, QObject *>, 4> mos;
         // we first check the dynamic meta object for properties originating from the model
         // contains abstractitemmodelproperties
-        mos.push_back(qMakePair(qmlMetaObject, modelItemToIncubate));
+        mos.push_back(std::make_pair(qmlMetaObject, modelItemToIncubate));
         auto delegateModelItemSubclassMO = qmlMetaObject->superClass();
-        mos.push_back(qMakePair(delegateModelItemSubclassMO, modelItemToIncubate));
+        mos.push_back(std::make_pair(delegateModelItemSubclassMO, modelItemToIncubate));
 
         while (strcmp(delegateModelItemSubclassMO->className(),
                       modelItemToIncubate->staticMetaObject.className())) {
             delegateModelItemSubclassMO = delegateModelItemSubclassMO->superClass();
-            mos.push_back(qMakePair(delegateModelItemSubclassMO, modelItemToIncubate));
+            mos.push_back(std::make_pair(delegateModelItemSubclassMO, modelItemToIncubate));
         }
         if (proxiedObject)
-            mos.push_back(qMakePair(proxiedObject->metaObject(), proxiedObject));
+            mos.push_back(std::make_pair(proxiedObject->metaObject(), proxiedObject));
 
         QQmlEngine *engine = QQmlEnginePrivate::get(incubatorPriv->enginePriv);
         QV4::ExecutionEngine *v4 = engine->handle();
@@ -981,15 +1014,26 @@ void QQDMIncubationTask::initializeRequiredProperties(QQmlDelegateModelItem *mod
                             object, propName, requiredProperties,
                             engine, &wasInRequired);
                 if (wasInRequired) {
-                    QQmlAnyBinding binding;
-                    binding = new QQmlPropertyToPropertyBinding(
-                            engine, itemOrProxy, QQmlPropertyIndex(i),
-                            targetProp.object(), targetProp.index());
-                    binding.installOn(targetProp);
+                    QQmlProperty sourceProp(itemOrProxy, propName);
+                    QQmlAnyBinding forward = QQmlPropertyToPropertyBinding::create(
+                            engine, sourceProp, targetProp);
+                    if (access != QQmlDelegateModel::Qt5ReadWrite)
+                        forward.setSticky();
+                    forward.installOn(targetProp);
+                    if (access == QQmlDelegateModel::ReadWrite && sourceProp.isWritable()) {
+                        QQmlAnyBinding reverse = QQmlPropertyToPropertyBinding::create(
+                                engine, targetProp, sourceProp);
+                        reverse.setSticky();
+                        reverse.installOn(sourceProp);
+                    }
                 }
             }
         }
     } else {
+        // To retain compatibility, we cannot enable structured model data if the data is passed
+        // via context properties.
+        modelItemToIncubate->disableStructuredModelData();
+
         if (!isBound)
             modelItemToIncubate->contextData->setContextObject(modelItemToIncubate);
         if (proxiedObject)
@@ -1158,34 +1202,22 @@ void QQDMIncubationTask::setInitialState(QObject *o)
     vdm->setInitialState(this, o);
 }
 
+QQmlDelegateModelGroupEmitter::~QQmlDelegateModelGroupEmitter() = default;
+void QQmlDelegateModelGroupEmitter::createdPackage(int, QQuickPackage *) {}
+void QQmlDelegateModelGroupEmitter::initPackage(int, QQuickPackage *) {}
+void QQmlDelegateModelGroupEmitter::destroyingPackage(QQuickPackage *) {}
+
 void QQmlDelegateModelPrivate::setInitialState(QQDMIncubationTask *incubationTask, QObject *o)
 {
     QQmlDelegateModelItem *cacheItem = incubationTask->incubating;
-    incubationTask->initializeRequiredProperties(incubationTask->incubating, o);
+    incubationTask->initializeRequiredProperties(
+            incubationTask->incubating, o, m_adaptorModel.delegateModelAccess);
     cacheItem->object = o;
 
     if (QQuickPackage *package = qmlobject_cast<QQuickPackage *>(cacheItem->object))
         emitInitPackage(incubationTask, package);
     else
         emitInitItem(incubationTask, cacheItem->object);
-}
-
-static QQmlRefPointer<QQmlContextData> initProxy(QQmlDelegateModelItem *cacheItem)
-{
-    QQmlAdaptorModelProxyInterface *proxy
-            = qobject_cast<QQmlAdaptorModelProxyInterface *>(cacheItem);
-    if (!proxy)
-        return cacheItem->contextData;
-
-    QQmlRefPointer<QQmlContextData> ctxt = QQmlContextData::createChild(cacheItem->contextData);
-    QObject *proxied = proxy->proxiedObject();
-    cacheItem->incubationTask->proxiedObject = proxied;
-    cacheItem->incubationTask->proxyContext = ctxt;
-    ctxt->setContextObject(cacheItem);
-    // We don't own the proxied object. We need to clear it if it goes away.
-    QObject::connect(proxied, &QObject::destroyed,
-                     cacheItem, &QQmlDelegateModelItem::childContextObjectDestroyed);
-    return ctxt;
 }
 
 QObject *QQmlDelegateModelPrivate::object(Compositor::Group group, int index, QQmlIncubator::IncubationMode incubationMode)
@@ -1268,7 +1300,7 @@ QObject *QQmlDelegateModelPrivate::object(Compositor::Group group, int index, QQ
             // Ignore return value of initProxy. We want to know the proxy when assigning required
             // properties, but we don't want it to pollute our context. The context is bound.
             if (m_adaptorModel.hasProxyObject())
-                initProxy(cacheItem);
+                cacheItem->initProxy();
 
             cp->incubateObject(
                         cacheItem->incubationTask,
@@ -1282,8 +1314,14 @@ QObject *QQmlDelegateModelPrivate::object(Compositor::Group group, int index, QQ
             ctxt->setContextObject(cacheItem);
             cacheItem->contextData = ctxt;
 
-            if (m_adaptorModel.hasProxyObject())
-                ctxt = initProxy(cacheItem);
+            // If the model is read-only we cannot just expose the object as context
+            // We actually need a separate model object to moderate access.
+            if (m_adaptorModel.hasProxyObject()) {
+                if (m_adaptorModel.delegateModelAccess == QQmlDelegateModel::ReadOnly)
+                    cacheItem->initProxy();
+                else
+                    ctxt = cacheItem->initProxy();
+            }
 
             cp->incubateObject(
                         cacheItem->incubationTask,
@@ -1528,7 +1566,7 @@ static void incrementIndexes(QQmlDelegateModelItem *cacheItem, int count, const 
         for (int i = 1; i < count; ++i)
             incubationTask->index[i] += deltas[i];
     }
-    if (QQmlDelegateModelAttached *attached = cacheItem->attached) {
+    if (QQmlDelegateModelAttached *attached = cacheItem->attached()) {
         for (int i = 1; i < qMin<int>(count, Compositor::MaximumGroupCount); ++i)
             attached->m_currentIndex[i] += deltas[i];
     }
@@ -1578,7 +1616,7 @@ void QQmlDelegateModelPrivate::itemsInserted(
                                 ? insert.index[i] + offset
                                 : insert.index[i];
                 }
-                if (QQmlDelegateModelAttached *attached = cacheItem->attached) {
+                if (QQmlDelegateModelAttached *attached = cacheItem->attached()) {
                     for (int i = 1; i < m_groupCount; ++i)
                         attached->m_currentIndex[i] = cacheItem->groups & (1 << i)
                                 ? insert.index[i] + offset
@@ -1700,7 +1738,7 @@ void QQmlDelegateModelPrivate::itemsRemoved(
                         for (int i = 1; i < m_groupCount; ++i)
                             incubationTask->index[i] = -1;
                     }
-                    if (QQmlDelegateModelAttached *attached = cacheItem->attached) {
+                    if (QQmlDelegateModelAttached *attached = cacheItem->attached()) {
                         for (int i = 1; i < m_groupCount; ++i)
                             attached->m_currentIndex[i] = -1;
                     }
@@ -1725,7 +1763,7 @@ void QQmlDelegateModelPrivate::itemsRemoved(
                             }
                         }
                     }
-                    if (QQmlDelegateModelAttached *attached = cacheItem->attached) {
+                    if (QQmlDelegateModelAttached *attached = cacheItem->attached()) {
                         for (int i = 1; i < m_groupCount; ++i) {
                             if (remove.inGroup(i))
                                 attached->m_currentIndex[i] = remove.index[i];
@@ -1907,7 +1945,7 @@ void QQmlDelegateModelPrivate::emitChanges()
     QVarLengthArray<QPointer<QQmlDelegateModelAttached>> attachedObjects;
     attachedObjects.reserve(m_cache.length());
     for (const QQmlDelegateModelItem *cacheItem : std::as_const(m_cache))
-        attachedObjects.append(cacheItem->attached);
+        attachedObjects.append(cacheItem->attached());
 
     for (const QPointer<QQmlDelegateModelAttached> &attached : std::as_const(attachedObjects)) {
         if (attached && attached->m_cacheItem)
@@ -2112,10 +2150,8 @@ void QQmlDelegateModel::_q_layoutChanged(const QList<QPersistentModelIndex> &par
 
 QQmlDelegateModelAttached *QQmlDelegateModel::qmlAttachedProperties(QObject *obj)
 {
-    if (QQmlDelegateModelItem *cacheItem = QQmlDelegateModelItem::dataForObject(obj)) {
-        cacheItem->attached = new QQmlDelegateModelAttached(cacheItem, obj);
-        return cacheItem->attached;
-    }
+    if (QQmlDelegateModelItem *cacheItem = QQmlDelegateModelItem::dataForObject(obj))
+        return new QQmlDelegateModelAttached(cacheItem, obj);
     return new QQmlDelegateModelAttached(obj);
 }
 
@@ -2171,18 +2207,13 @@ QQmlDelegateModelItemMetaType::QQmlDelegateModelItemMetaType(
     : model(model)
     , groupCount(groupNames.size() + 1)
     , v4Engine(engine)
-    , metaObject(nullptr)
     , groupNames(groupNames)
 {
 }
 
-QQmlDelegateModelItemMetaType::~QQmlDelegateModelItemMetaType()
-{
-    if (metaObject)
-        metaObject->release();
-}
+QQmlDelegateModelItemMetaType::~QQmlDelegateModelItemMetaType() = default;
 
-void QQmlDelegateModelItemMetaType::initializeMetaObject()
+void QQmlDelegateModelItemMetaType::initializeAttachedMetaObject()
 {
     QMetaObjectBuilder builder;
     builder.setFlags(DynamicMetaObject);
@@ -2206,7 +2237,8 @@ void QQmlDelegateModelItemMetaType::initializeMetaObject()
         propertyBuilder.setWritable(true);
     }
 
-    metaObject = new QQmlDelegateModelAttachedMetaObject(this, builder.toMetaObject());
+    attachedMetaObject = QQml::makeRefPointer<QQmlDelegateModelAttachedMetaObject>(
+            this, builder.toMetaObject());
 }
 
 void QQmlDelegateModelItemMetaType::initializePrototype()
@@ -2401,7 +2433,7 @@ DEFINE_OBJECT_VTABLE(QQmlDelegateModelItemObject);
 
 void QV4::Heap::QQmlDelegateModelItemObject::destroy()
 {
-    item->Dispose();
+    item->dispose();
     Object::destroy();
 }
 
@@ -2410,17 +2442,7 @@ QQmlDelegateModelItem::QQmlDelegateModelItem(
         const QQmlRefPointer<QQmlDelegateModelItemMetaType> &metaType,
         QQmlAdaptorModel::Accessors *accessor,
         int modelIndex, int row, int column)
-    : v4(metaType->v4Engine)
-    , metaType(metaType)
-    , contextData(nullptr)
-    , object(nullptr)
-    , attached(nullptr)
-    , incubationTask(nullptr)
-    , delegate(nullptr)
-    , poolTime(0)
-    , objectRef(0)
-    , scriptRef(0)
-    , groups(0)
+    : metaType(metaType)
     , index(modelIndex)
     , row(row)
     , column(column)
@@ -2451,7 +2473,7 @@ QQmlDelegateModelItem::~QQmlDelegateModelItem()
     }
 }
 
-void QQmlDelegateModelItem::Dispose()
+void QQmlDelegateModelItem::dispose()
 {
     --scriptRef;
     if (isReferenced())
@@ -2508,10 +2530,8 @@ void QQmlDelegateModelItem::destroyObject()
     }
     object->deleteLater();
 
-    if (attached) {
-        attached->m_cacheItem = nullptr;
-        attached = nullptr;
-    }
+    if (QQmlDelegateModelAttached *attachedObject = attached())
+        attachedObject->m_cacheItem = nullptr;
 
     contextData.reset();
     object = nullptr;
@@ -2634,12 +2654,14 @@ QQmlDelegateModelAttached::QQmlDelegateModelAttached(
     // Let m_previousIndex be equal to m_currentIndex
     std::copy(std::begin(m_currentIndex), std::end(m_currentIndex), std::begin(m_previousIndex));
 
-    if (!cacheItem->metaType->metaObject)
-        cacheItem->metaType->initializeMetaObject();
+    if (!cacheItem->metaType->attachedMetaObject)
+        cacheItem->metaType->initializeAttachedMetaObject();
 
-    QObjectPrivate::get(this)->metaObject = cacheItem->metaType->metaObject;
-    cacheItem->metaType->metaObject->addref();
+    QObjectPrivate::get(this)->metaObject = cacheItem->metaType->attachedMetaObject.data();
+    cacheItem->metaType->attachedMetaObject->addref();
 }
+
+QQmlDelegateModelAttached::~QQmlDelegateModelAttached() = default;
 
 void QQmlDelegateModelAttached::resetCurrentIndex()
 {
@@ -2957,9 +2979,7 @@ QQmlDelegateModelGroup::QQmlDelegateModelGroup(
     d->setModel(model, Compositor::Group(index));
 }
 
-QQmlDelegateModelGroup::~QQmlDelegateModelGroup()
-{
-}
+QQmlDelegateModelGroup::~QQmlDelegateModelGroup() = default;
 
 /*!
     \qmlproperty string QtQml.Models::DelegateModelGroup::name
@@ -3370,8 +3390,8 @@ void QQmlDelegateModelGroup::resolve(QQmlV4FunctionPtr args)
         Q_ASSERT(model->m_cache.size() == model->m_compositor.count(Compositor::Cache));
     } else {
         cacheItem->resolveIndex(model->m_adaptorModel, resolvedIndex);
-        if (cacheItem->attached)
-            cacheItem->attached->emitUnresolvedChanged();
+        if (QQmlDelegateModelAttached *attached = cacheItem->attached())
+            attached->emitUnresolvedChanged();
     }
 
     model->emitChanges();
@@ -3861,8 +3881,14 @@ void QQmlPartsModel::emitModelUpdated(const QQmlChangeSet &changeSet, bool reset
     }
 }
 
-void QQmlReusableDelegateModelItemsPool::insertItem(QQmlDelegateModelItem *modelItem)
+bool QQmlReusableDelegateModelItemsPool::insertItem(QQmlDelegateModelItem *modelItem)
 {
+    // We can only hold INT_MAX items, due to the return type of size().
+    if (Q_UNLIKELY(m_reusableItemsPool.size() == QQmlReusableDelegateModelItemsPool::MaxSize))
+        return false;
+
+    Q_ASSERT(m_reusableItemsPool.size() < QQmlReusableDelegateModelItemsPool::MaxSize);
+
     // Currently, the only way for a view to reuse items is to call release()
     // in the model class with the second argument explicitly set to
     // QQmlReuseableDelegateModelItemsPool::Reusable. If the released item is
@@ -3910,8 +3936,7 @@ void QQmlReusableDelegateModelItemsPool::insertItem(QQmlDelegateModelItem *model
     Q_ASSERT(modelItem->object);
     Q_ASSERT(modelItem->delegate);
 
-    modelItem->poolTime = 0;
-    m_reusableItemsPool.append(modelItem);
+    m_reusableItemsPool.push_back({modelItem, 0});
 
     qCDebug(lcItemViewDelegateRecycling)
             << "item:" << modelItem
@@ -3920,16 +3945,18 @@ void QQmlReusableDelegateModelItemsPool::insertItem(QQmlDelegateModelItem *model
             << "row:" << modelItem->modelRow()
             << "column:" << modelItem->modelColumn()
             << "pool size:" << m_reusableItemsPool.size();
+
+    return true;
 }
 
 QQmlDelegateModelItem *QQmlReusableDelegateModelItemsPool::takeItem(const QQmlComponent *delegate, int newIndexHint)
 {
     // Find the oldest item in the pool that was made from the same delegate as
     // the given argument, remove it from the pool, and return it.
-    for (auto it = m_reusableItemsPool.begin(); it != m_reusableItemsPool.end(); ++it) {
-        if ((*it)->delegate != delegate)
+    for (auto it = m_reusableItemsPool.cbegin(); it != m_reusableItemsPool.cend(); ++it) {
+        QQmlDelegateModelItem *modelItem = it->item;
+        if (modelItem->delegate != delegate)
             continue;
-        auto modelItem = *it;
         m_reusableItemsPool.erase(it);
 
         qCDebug(lcItemViewDelegateRecycling)
@@ -3963,13 +3990,11 @@ void QQmlReusableDelegateModelItemsPool::drain(int maxPoolTime, std::function<vo
     qCDebug(lcItemViewDelegateRecycling) << "pool size before drain:" << m_reusableItemsPool.size();
 
     for (auto it = m_reusableItemsPool.begin(); it != m_reusableItemsPool.end();) {
-        auto modelItem = *it;
-        modelItem->poolTime++;
-        if (modelItem->poolTime <= maxPoolTime) {
+        if (++(it->poolTime) <= maxPoolTime) {
             ++it;
         } else {
+            releaseItem(it->item);
             it = m_reusableItemsPool.erase(it);
-            releaseItem(modelItem);
         }
     }
 

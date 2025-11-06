@@ -51,6 +51,7 @@ bool QQmlJSTypeReader::operator ()(const QSharedPointer<QQmlJSScope> &scope)
     logger.setFilePath(m_file);
     logger.setCode(code);
     logger.setSilent(true);
+    logger.setIsDisabled(true);
 
     m_importer->runImportVisitor(rootNode,
                                  { scope,

@@ -614,6 +614,9 @@ void QGestureManager::deliverEvents(const QSet<QGesture *> &gestures,
             if (gesture->hasHotSpot()) {
                 // guess the target widget using the hotspot of the gesture
                 QPoint pt = gesture->hotSpot().toPoint();
+                qCDebug(lcGestureManager) << __FUNCTION__ << gesture
+                                          << "doesn't have a target yet."
+                                          << "Trying hotspot at" << pt;
                 if (QWidget *topLevel = QApplication::topLevelAt(pt)) {
                     QWidget *child = topLevel->childAt(topLevel->mapFromGlobal(pt));
                     target = child ? child : topLevel;
@@ -623,6 +626,9 @@ void QGestureManager::deliverEvents(const QSet<QGesture *> &gestures,
                 QObject *context = m_gestureOwners.value(gesture, 0);
                 if (context->isWidgetType())
                     target = static_cast<QWidget *>(context);
+                qCDebug(lcGestureManager) << __FUNCTION__ << gesture
+                                          << "doesn't have a target yet."
+                                          << "Trying context" << context;
             }
             if (target)
                 m_gestureTargets.insert(gesture, target);
@@ -633,9 +639,9 @@ void QGestureManager::deliverEvents(const QSet<QGesture *> &gestures,
         Q_UNUSED(gestureType);
 
         if (Q_UNLIKELY(!target)) {
-            qCDebug(lcGestureManager) << "QGestureManager::deliverEvent: could not find the target for gesture"
+            qCDebug(lcGestureManager) << __FUNCTION__ << "could not find the target for gesture"
                     << gesture->gestureType();
-            qWarning("QGestureManager::deliverEvent: could not find the target for gesture");
+            qWarning("QGestureManager::deliverEvents: could not find the target for gesture");
             undeliveredGestures->insert(gesture);
         } else {
             if (gesture->state() == Qt::GestureStarted) {
@@ -647,7 +653,7 @@ void QGestureManager::deliverEvents(const QSet<QGesture *> &gestures,
     }
 
     getGestureTargets(startedGestures, &conflictedGestures, &normalStartedGestures);
-    qCDebug(lcGestureManager) << "QGestureManager::deliverEvents:"
+    qCDebug(lcGestureManager) << __FUNCTION__
             << "\nstarted: " << startedGestures
             << "\nconflicted: " << conflictedGestures
             << "\nnormal: " << normalStartedGestures
@@ -658,7 +664,7 @@ void QGestureManager::deliverEvents(const QSet<QGesture *> &gestures,
         e = conflictedGestures.constEnd(); it != e; ++it) {
         QWidget *receiver = it.key();
         const QList<QGesture *> &gestures = it.value();
-        qCDebug(lcGestureManager) << "QGestureManager::deliverEvents: sending GestureOverride to"
+        qCDebug(lcGestureManager) << __FUNCTION__ << "sending GestureOverride to"
                 << receiver
                 << "gestures:" << gestures;
         QGestureEvent event(gestures);
@@ -692,8 +698,8 @@ void QGestureManager::deliverEvents(const QSet<QGesture *> &gestures,
     for (GesturesPerWidget::const_iterator it = normalStartedGestures.constBegin(),
         e = normalStartedGestures.constEnd(); it != e; ++it) {
         if (!it.value().isEmpty()) {
-            qCDebug(lcGestureManager) << "QGestureManager::deliverEvents: sending to" << it.key()
-                    << "gestures:" << it.value();
+            qCDebug(lcGestureManager) << __FUNCTION__ << "sending to" << it.key()
+                                      << "gestures:" << it.value();
             QGestureEvent event(it.value());
             QCoreApplication::sendEvent(it.key(), &event);
             bool eventAccepted = event.isAccepted();

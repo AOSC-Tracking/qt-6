@@ -1232,9 +1232,19 @@ bool QStateMachinePrivate::isInFinalState(QAbstractState* s) const
                 return false;
         }
         return true;
-    }
-    else
+    } else {
+        // we don't treat the machine as compound if it's a sub-state of this machine
+        // see isCompound() implementation
+        // but that machine still can be in a final state (Finished)
+        QState *grp = toStandardState(s);
+        if (QStatePrivate::get(grp)->isMachine && (grp != rootState())) {
+            QStateMachine *stateMachine = static_cast<QStateMachine*>(grp);
+            if (stateMachine->d_func()->stopProcessingReason == Finished) {
+                return true;
+            }
+        }
         return false;
+    }
 }
 
 #ifndef QT_NO_PROPERTIES

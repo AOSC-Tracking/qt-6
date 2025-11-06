@@ -10,6 +10,7 @@
 #include <QtQuick/qquickview.h>
 #include <QtQuick/private/qquickitem_p.h>
 #include <QtQuick/private/qquickmousearea_p.h>
+#include <QtQuickTest/quicktest.h>
 #include <QtQuickTestUtils/private/qmlutils_p.h>
 #include <QtQuickTestUtils/private/visualtestutils_p.h>
 #include <QtGui/private/qguiapplication_p.h>
@@ -58,6 +59,7 @@ private slots:
     void backgroundSize();
     void explicitBackgroundSizeBinding();
     void safeArea();
+    void safeAreaLayout();
     void paintOrderChildItems();
 #if QT_CONFIG(quicktemplates2_hover)
     void hoverInBackground();
@@ -115,7 +117,7 @@ void tst_QQuickApplicationWindow::activeFocusOnTab1()
 
     QQuickItem* contentItem = window->contentItem();
     QVERIFY(contentItem);
-    QVERIFY(contentItem->hasActiveFocus());
+    QVERIFY_ACTIVE_FOCUS(contentItem);
 
     QQuickItem* item = findItem<QQuickItem>(window->contentItem(), "sub1");
     QVERIFY(item);
@@ -129,7 +131,7 @@ void tst_QQuickApplicationWindow::activeFocusOnTab1()
 
         item = qobject_cast<QQuickApplicationWindow *>(window)->menuBar();
         QVERIFY(item);
-        QVERIFY(item->hasActiveFocus());
+        QVERIFY_ACTIVE_FOCUS(item);
     }
 
     // Tab: menuBar->header
@@ -140,7 +142,7 @@ void tst_QQuickApplicationWindow::activeFocusOnTab1()
 
         item = qobject_cast<QQuickApplicationWindow *>(window)->header();
         QVERIFY(item);
-        QVERIFY(item->hasActiveFocus());
+        QVERIFY_ACTIVE_FOCUS(item);
     }
 
     // Tab: header->sub1
@@ -151,7 +153,7 @@ void tst_QQuickApplicationWindow::activeFocusOnTab1()
 
         item = findItem<QQuickItem>(window->contentItem(), "sub1");
         QVERIFY(item);
-        QVERIFY(item->hasActiveFocus());
+        QVERIFY_ACTIVE_FOCUS(item);
     }
 
     // Tab: sub1->sub2
@@ -162,7 +164,7 @@ void tst_QQuickApplicationWindow::activeFocusOnTab1()
 
         item = findItem<QQuickItem>(window->contentItem(), "sub2");
         QVERIFY(item);
-        QVERIFY(item->hasActiveFocus());
+        QVERIFY_ACTIVE_FOCUS(item);
     }
 
     // Tab: sub2->footer
@@ -173,7 +175,7 @@ void tst_QQuickApplicationWindow::activeFocusOnTab1()
 
         item = qobject_cast<QQuickApplicationWindow *>(window)->footer();
         QVERIFY(item);
-        QVERIFY(item->hasActiveFocus());
+        QVERIFY_ACTIVE_FOCUS(item);
     }
 
     // Tab: footer->menuBar
@@ -184,7 +186,7 @@ void tst_QQuickApplicationWindow::activeFocusOnTab1()
 
         item = qobject_cast<QQuickApplicationWindow *>(window)->menuBar();
         QVERIFY(item);
-        QVERIFY(item->hasActiveFocus());
+        QVERIFY_ACTIVE_FOCUS(item);
     }
 }
 
@@ -206,7 +208,7 @@ void tst_QQuickApplicationWindow::activeFocusOnTab2()
 
     QQuickItem* contentItem = window->contentItem();
     QVERIFY(contentItem);
-    QVERIFY(contentItem->hasActiveFocus());
+    QVERIFY_ACTIVE_FOCUS(contentItem);
 
     QQuickItem* item = findItem<QQuickItem>(window->contentItem(), "sub2");
     QVERIFY(item);
@@ -220,7 +222,7 @@ void tst_QQuickApplicationWindow::activeFocusOnTab2()
 
         item = qobject_cast<QQuickApplicationWindow *>(window)->footer();
         QVERIFY(item);
-        QVERIFY(item->hasActiveFocus());
+        QVERIFY_ACTIVE_FOCUS(item);
     }
 
     // BackTab: footer->sub2
@@ -231,7 +233,7 @@ void tst_QQuickApplicationWindow::activeFocusOnTab2()
 
         item = findItem<QQuickItem>(window->contentItem(), "sub2");
         QVERIFY(item);
-        QVERIFY(item->hasActiveFocus());
+        QVERIFY_ACTIVE_FOCUS(item);
     }
 
     // BackTab: sub2->sub1
@@ -242,7 +244,7 @@ void tst_QQuickApplicationWindow::activeFocusOnTab2()
 
         item = findItem<QQuickItem>(window->contentItem(), "sub1");
         QVERIFY(item);
-        QVERIFY(item->hasActiveFocus());
+        QVERIFY_ACTIVE_FOCUS(item);
     }
 
     // BackTab: sub1->header
@@ -253,7 +255,7 @@ void tst_QQuickApplicationWindow::activeFocusOnTab2()
 
         item = qobject_cast<QQuickApplicationWindow *>(window)->header();
         QVERIFY(item);
-        QVERIFY(item->hasActiveFocus());
+        QVERIFY_ACTIVE_FOCUS(item);
     }
 
     // BackTab: header->menuBar
@@ -264,7 +266,7 @@ void tst_QQuickApplicationWindow::activeFocusOnTab2()
 
         item = qobject_cast<QQuickApplicationWindow *>(window)->menuBar();
         QVERIFY(item);
-        QVERIFY(item->hasActiveFocus());
+        QVERIFY_ACTIVE_FOCUS(item);
     }
 
     // BackTab: menuBar->footer
@@ -275,7 +277,7 @@ void tst_QQuickApplicationWindow::activeFocusOnTab2()
 
         item = qobject_cast<QQuickApplicationWindow *>(window)->footer();
         QVERIFY(item);
-        QVERIFY(item->hasActiveFocus());
+        QVERIFY_ACTIVE_FOCUS(item);
     }
 }
 
@@ -298,13 +300,13 @@ void tst_QQuickApplicationWindow::defaultFocus()
 
     QQuickItem* contentItem = window->contentItem();
     QVERIFY(contentItem);
-    QVERIFY(contentItem->hasActiveFocus());
+    QVERIFY_ACTIVE_FOCUS(contentItem);
 
     // A single item in an ApplicationWindow with focus: true should receive focus.
     QQuickItem* item = findItem<QQuickItem>(window->contentItem(), "item");
     QVERIFY(item);
     QVERIFY(item->hasFocus());
-    QVERIFY(item->hasActiveFocus());
+    QVERIFY_ACTIVE_FOCUS(item);
 }
 
 void tst_QQuickApplicationWindow::implicitFill()
@@ -451,7 +453,7 @@ void tst_QQuickApplicationWindow::attachedProperties()
 
     QVERIFY(!childControl->hasActiveFocus());
     childControl->forceActiveFocus();
-    QTRY_VERIFY(childControl->hasActiveFocus());
+    QTRY_VERIFY_ACTIVE_FOCUS(childControl);
     QCOMPARE(window->activeFocusItem(), childControl);
     QCOMPARE(childControl->property("attached_activeFocusControl").value<QQuickItem *>(), childControl);
 
@@ -471,7 +473,7 @@ void tst_QQuickApplicationWindow::attachedProperties()
 
     QVERIFY(!childAppWindowControl->hasActiveFocus());
     childAppWindowControl->forceActiveFocus();
-    QTRY_VERIFY(childAppWindowControl->hasActiveFocus());
+    QTRY_VERIFY_ACTIVE_FOCUS(childAppWindowControl);
     QCOMPARE(childAppWindow->activeFocusItem(), childAppWindowControl);
     QCOMPARE(childAppWindowControl->property("attached_activeFocusControl").value<QQuickItem *>(), childAppWindowControl);
 
@@ -515,7 +517,7 @@ void tst_QQuickApplicationWindow::attachedProperties()
 
     QVERIFY(!childWindowControl->hasActiveFocus());
     childWindowControl->forceActiveFocus();
-    QTRY_VERIFY(childWindowControl->hasActiveFocus());
+    QTRY_VERIFY_ACTIVE_FOCUS(childWindowControl);
     QCOMPARE(childWindow->activeFocusItem(), childWindowControl);
     QCOMPARE(childWindowControl->property("attached_activeFocusControl").value<QQuickItem *>(), childWindowControl);
 
@@ -736,7 +738,7 @@ void tst_QQuickApplicationWindow::activeFocusControl()
     QQuickItem *activeFocusItem = window->property(activeFocusItemName).value<QQuickItem*>();
     QVERIFY(activeFocusItem);
     activeFocusItem->forceActiveFocus();
-    QVERIFY(activeFocusItem->hasActiveFocus());
+    QVERIFY_ACTIVE_FOCUS(activeFocusItem);
     QCOMPARE(window->activeFocusItem(), activeFocusItem);
 
     QQuickItem *activeFocusControl = window->property(activeFocusControlName).value<QQuickItem*>();
@@ -744,7 +746,7 @@ void tst_QQuickApplicationWindow::activeFocusControl()
         QVERIFY(!activeFocusControl);
     } else {
         QVERIFY(activeFocusControl);
-        QVERIFY(activeFocusControl->hasActiveFocus());
+        QVERIFY_ACTIVE_FOCUS(activeFocusControl);
     }
     QCOMPARE(window->activeFocusControl(), activeFocusControl);
 }
@@ -767,11 +769,11 @@ void tst_QQuickApplicationWindow::focusAfterPopupClosed()
 
     QQuickItem* contentItem = window->contentItem();
     QVERIFY(contentItem);
-    QVERIFY(contentItem->hasActiveFocus());
+    QVERIFY_ACTIVE_FOCUS(contentItem);
 
     QQuickItem* focusScope = window->property("focusScope").value<QQuickItem*>();
     QVERIFY(focusScope);
-    QVERIFY(focusScope->hasActiveFocus());
+    QVERIFY_ACTIVE_FOCUS(focusScope);
 
     QSignalSpy focusScopeSpy(window.data(), SIGNAL(focusScopeKeyPressed()));
     QTest::keyClick(window.data(), Qt::Key_Space);
@@ -790,7 +792,7 @@ void tst_QQuickApplicationWindow::focusAfterPopupClosed()
 
     // Close the menu. The FocusScope should regain focus.
     QTest::keyClick(window.data(), Qt::Key_Escape);
-    QVERIFY(focusScope->hasActiveFocus());
+    QVERIFY_ACTIVE_FOCUS(focusScope);
 
     QTest::keyClick(window.data(), Qt::Key_Space);
     QCOMPARE(focusScopeSpy.size(), 2);
@@ -817,14 +819,14 @@ void tst_QQuickApplicationWindow::focusAfterPopupClosed()
 
     // Close the menu. The Popup should regain focus.
     QTest::keyClick(window.data(), Qt::Key_Escape);
-    QVERIFY(focusPopup->hasActiveFocus());
+    QVERIFY_ACTIVE_FOCUS(focusPopup);
 
     QTest::keyClick(window.data(), Qt::Key_Space);
     QCOMPARE(focusPopupSpy.size(), 2);
 
     // Close the popup. The FocusScope should regain focus.
     QTest::keyClick(window.data(), Qt::Key_Escape);
-    QVERIFY(focusScope->hasActiveFocus());
+    QVERIFY_ACTIVE_FOCUS(focusScope);
 
     QTest::keyClick(window.data(), Qt::Key_Space);
     QCOMPARE(focusScopeSpy.size(), 3);
@@ -848,11 +850,11 @@ void tst_QQuickApplicationWindow::clearFocusOnDestruction()
 
     QQuickItem* contentItem = window->contentItem();
     QVERIFY(contentItem);
-    QVERIFY(contentItem->hasActiveFocus());
+    QVERIFY_ACTIVE_FOCUS(contentItem);
 
     QQuickItem* focusScope = window->property("textfield").value<QQuickItem*>();
     QVERIFY(focusScope);
-    QVERIFY(focusScope->hasActiveFocus());
+    QVERIFY_ACTIVE_FOCUS(focusScope);
 
     QSignalSpy spy(window.data(), SIGNAL(activeFocusControlChanged()));
     // destroy the window, do not crash
@@ -921,17 +923,20 @@ void tst_QQuickApplicationWindow::layout()
     QCOMPARE(content->width(), qreal(window->width()));
     QCOMPARE(content->height(), window->height() - header->height() - footer->height());
 
+    const int topSafeMargin = window->safeAreaMargins().top();
+    const int bottomSafeMargin = window->safeAreaMargins().bottom();
+
     header->setVisible(false);
     QCOMPARE(content->x(), 0.0);
-    QCOMPARE(content->y(), 0.0);
+    QCOMPARE(content->y(), topSafeMargin);
     QCOMPARE(content->width(), qreal(window->width()));
-    QCOMPARE(content->height(), window->height() - footer->height());
+    QCOMPARE(content->height(), window->height() - footer->height() - topSafeMargin);
 
     footer->setVisible(false);
     QCOMPARE(content->x(), 0.0);
-    QCOMPARE(content->y(), 0.0);
+    QCOMPARE(content->y(), topSafeMargin);
     QCOMPARE(content->width(), qreal(window->width()));
-    QCOMPARE(content->height(), qreal(window->height()));
+    QCOMPARE(content->height(), qreal(window->height() - topSafeMargin - bottomSafeMargin));
 }
 
 void tst_QQuickApplicationWindow::layoutLayout()
@@ -1064,8 +1069,8 @@ void tst_QQuickApplicationWindow::explicitBackgroundSizeBinding()
     QCOMPARE(background->height(), window->height());
 
     window->setProperty("scaleFactor", 0.5);
-    QCOMPARE(background->width(), window->width() / 2);
-    QCOMPARE(background->height(), window->height() / 2);
+    QCOMPARE(background->width(), window->width() / 2.0);
+    QCOMPARE(background->height(), window->height() / 2.0);
 }
 
 void tst_QQuickApplicationWindow::safeArea()
@@ -1100,7 +1105,7 @@ void tst_QQuickApplicationWindow::safeArea()
     windowSafeArea->setAdditionalMargins(QMarginsF(100, 100, 100, 100));
 
     QTRY_COMPARE(window->property("margins").value<QMarginsF>(),
-        windowSafeArea->additionalMargins());
+        windowSafeArea->additionalMargins() + window->safeAreaMargins());
 
     menuBarRect = window->menuBar()->mapRectToScene(window->menuBar()->boundingRect());
     headerRect = window->header()->mapRectToScene(window->header()->boundingRect());
@@ -1124,7 +1129,8 @@ void tst_QQuickApplicationWindow::safeArea()
     QQmlProperty::write(window, "bottomPadding", 0);
 
     // Removing the automatic padding should reflect the window's safe area margins
-    QCOMPARE(contentSafeArea->margins(), windowSafeArea->additionalMargins());
+    QCOMPARE(contentSafeArea->margins(),
+        windowSafeArea->additionalMargins() + window->safeAreaMargins());
 
     // And the content item should fill the entire window
     QCOMPARE(window->contentItem()->position(), QPoint());
@@ -1134,7 +1140,7 @@ void tst_QQuickApplicationWindow::safeArea()
     // menuBar, header, and footer as safe areas
     windowSafeArea->setAdditionalMargins(QMarginsF());
     QTRY_COMPARE(window->property("margins").value<QMarginsF>(),
-        windowSafeArea->additionalMargins());
+        windowSafeArea->additionalMargins() + window->safeAreaMargins());
 
     QCOMPARE(contentSafeArea->margins(),
         QMarginsF(0, window->menuBar()->height() + window->header()->height(),
@@ -1144,6 +1150,30 @@ void tst_QQuickApplicationWindow::safeArea()
     QCOMPARE(window->contentItem()->position(), QPoint());
     QCOMPARE(window->contentItem()->size(), window->size());
 
+}
+
+void tst_QQuickApplicationWindow::safeAreaLayout()
+{
+    QQuickControlsApplicationHelper helper(this, QLatin1String("safeAreaLayout.qml"));
+    QVERIFY2(helper.ready, helper.failureMessage());
+    QQuickApplicationWindow *window = helper.appWindow;
+    window->show();
+    window->requestActivate();
+    QVERIFY(QTest::qWaitForWindowExposed(window));
+
+    auto *windowSafeArea = qobject_cast<QQuickSafeArea*>(
+        qmlAttachedPropertiesObject<QQuickSafeArea>(window));
+    QVERIFY(windowSafeArea);
+
+    // Initially the footer is hidden, so the safe areas margins
+    // are not applied by ToolBar in computing the final height.
+    QCOMPARE(window->footer()->height(), 50);
+
+    // However once it's made visible, the safe area margins of
+    // the window should result in a taller footer, to account
+    // for both the implicit height and the margins.
+    window->footer()->setVisible(true);
+    QCOMPARE(window->footer()->height(), 50 + windowSafeArea->margins().bottom());
 }
 
 void tst_QQuickApplicationWindow::paintOrderChildItems()

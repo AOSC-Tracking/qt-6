@@ -72,6 +72,15 @@ public:
     QQmlComponent *delegate() const;
     void setDelegate(QQmlComponent *);
 
+    QQmlDelegateModel::DelegateModelAccess delegateModelAccess() const
+    {
+        return m_adaptorModel.delegateModelAccess;
+    }
+    void setDelegateModelAccess(QQmlDelegateModel::DelegateModelAccess delegateModelAccess)
+    {
+        m_adaptorModel.delegateModelAccess = delegateModelAccess;
+    }
+
     const QAbstractItemModel *abstractItemModel() const override;
 
     QObject *object(int index, QQmlIncubator::IncubationMode incubationMode = QQmlIncubator::AsynchronousIfNested) override;
@@ -90,6 +99,8 @@ public:
     QVariant variantValue(int, const QString &) override { Q_UNREACHABLE_RETURN(QVariant()); }
     void setWatchedRoles(const QList<QByteArray> &) override { Q_UNREACHABLE(); }
     int indexOf(QObject *, QObject *) const override { Q_UNREACHABLE_RETURN(0); }
+
+    QQmlDelegateModelItem *getModelItem(int index);
 
 private:
     enum DestructionMode {

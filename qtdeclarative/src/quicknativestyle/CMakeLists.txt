@@ -20,6 +20,7 @@ set(qml_files
     "controls/DefaultRadioButton.qml"
     "controls/DefaultRadioDelegate.qml"
     "controls/DefaultScrollBar.qml"
+    "controls/DefaultSearchField.qml"
     "controls/DefaultSlider.qml"
     "controls/DefaultSpinBox.qml"
     "controls/DefaultTextArea.qml"
@@ -35,6 +36,10 @@ endif()
 if(QT_FEATURE_quick_treeview)
     list(APPEND qml_files "controls/DefaultTreeViewDelegate.qml")
 endif()
+
+set_source_files_properties(SearchField.qml PROPERTIES
+    QT_QML_SOURCE_VERSIONS "6.10"
+)
 
 qt_internal_add_qml_module(qtquickcontrols2nativestyleplugin
     URI "QtQuick.NativeStyle"
@@ -99,6 +104,7 @@ qt_internal_extend_target(qtquickcontrols2nativestyleplugin CONDITION QT_FEATURE
 qt_internal_extend_target(qtquickcontrols2nativestyleplugin CONDITION QT_FEATURE_qml_delegate_model
     SOURCES
         items/qquickstyleitemcombobox.cpp items/qquickstyleitemcombobox.h
+        items/qquickstyleitemsearchfield.cpp items/qquickstyleitemsearchfield.h
 )
 
 qt_internal_extend_target(qtquickcontrols2nativestyleplugin CONDITION MACOS

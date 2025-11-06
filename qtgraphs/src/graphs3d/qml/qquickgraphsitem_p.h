@@ -274,6 +274,7 @@ public:
     virtual void handleAxisTitleFixedChangedBySender(QObject *sender);
     virtual void handleAxisTitleOffsetChangedBySender(QObject *sender);
     virtual void handleSeriesVisibilityChangedBySender(QObject *sender);
+    virtual void handleLightingModeChanged() = 0;
     virtual void adjustAxisRanges() = 0;
 
     bool graphPositionQueryPending() const { return m_graphPositionQueryPending; }
@@ -281,13 +282,6 @@ public:
     {
         m_graphPositionQueryPending = pending;
     }
-
-    enum SelectionType {
-        SelectionNone = 0,
-        SelectionItem,
-        SelectionRow,
-        SelectionColumn,
-    };
 
     virtual void addSeriesInternal(QAbstract3DSeries *series);
     void insertSeries(qsizetype index, QAbstract3DSeries *series);
@@ -648,6 +642,7 @@ Q_SIGNALS:
 protected:
     bool event(QEvent *event) override;
 
+    void setParentNode(QQuick3DNode *node);
     virtual void handleWindowChanged(/*QQuickWindow *win*/);
     void itemChange(ItemChange change, const ItemChangeData &value) override;
     virtual void updateWindowParameters();
@@ -668,6 +663,7 @@ protected:
     };
 
     virtual void createSliceView();
+    QQuick3DViewport *createOffscreenSliceView(QtGraphs3D::SliceCaptureType sliceType);
 
     void handleQueryPositionChanged(QPoint position);
 
@@ -718,8 +714,16 @@ protected:
     void updateGrid();
     void updateGridLineType();
     void updateLabels();
-    void updateSliceGrid();
-    void updateSliceLabels();
+    void updateSliceGrid(
+        QQuick3DModel *sliceGrid = nullptr,
+        QtGraphs3D::SliceCaptureType selectedFlag = QtGraphs3D::SliceCaptureType::NoImage);
+    void updateSliceLabels(
+        QQuick3DRepeater *horizontalLabel = nullptr,
+        QQuick3DRepeater *verticalLabel = nullptr,
+        QQuick3DNode *horizontalTitle = nullptr,
+        QQuick3DNode *verticalTitle = nullptr,
+        QQuick3DNode *itemLabel = nullptr,
+        QtGraphs3D::SliceCaptureType selectedFlag = QtGraphs3D::SliceCaptureType::NoImage);
     void updateBackgroundColor();
     void setItemSelected(bool selected);
     virtual void updateShadowQuality(QtGraphs3D::ShadowQuality quality);
@@ -751,7 +755,7 @@ protected:
     void setSliceEnabled(bool enabled) { m_sliceEnabled = enabled; }
     bool isSliceActivatedChanged() const { return m_sliceActivatedChanged; }
     virtual void toggleSliceGraph();
-    void createSliceCamera();
+    void createSliceCamera(QQuick3DViewport *sliceView);
     bool isSliceOrthoProjection() const { return m_sliceUseOrthoProjection; }
     void setSliceOrthoProjection(bool enable) { m_sliceUseOrthoProjection = enable; }
 
@@ -809,6 +813,9 @@ protected:
 
     QMutex m_renderMutex;
     QQuickGraphsItem *m_qml = nullptr;
+
+    QQuick3DViewport *m_customView = nullptr;
+    QQuick3DNode *m_parentNode = nullptr;
 
 private:
     // This is the same as the minimum bound of GridLine model.
@@ -978,6 +985,7 @@ private:
     QGraphsTheme *m_activeTheme = nullptr;
 
     friend class Q3DGraphsWidgetItem;
+    friend class QQuickGraphsNode;
 };
 
 QT_END_NAMESPACE

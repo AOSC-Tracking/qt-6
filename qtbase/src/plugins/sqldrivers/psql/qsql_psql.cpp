@@ -16,6 +16,7 @@
 #include <qsqlquery.h>
 #include <qsocketnotifier.h>
 #include <qstringlist.h>
+#include <quuid.h>
 #include <qlocale.h>
 #include <qvarlengtharray.h>
 #include <QtSql/private/qsqlresult_p.h>
@@ -52,6 +53,7 @@
 
 #define QBITOID 1560
 #define QVARBITOID 1562
+#define QUUIDOID 2950
 
 #define VARHDRSZ 4
 
@@ -373,6 +375,9 @@ static QMetaType qDecodePSQLType(int t)
     case QBYTEAOID:
         type = QMetaType::QByteArray;
         break;
+    case QUUIDOID:
+        type = QMetaType::QUuid;
+        break;
     default:
         type = QMetaType::QString;
         break;
@@ -676,6 +681,8 @@ QVariant QPSQLResult::data(int i)
         qPQfreemem(data);
         return QVariant(ba);
     }
+    case QMetaType::QUuid:
+        return QUuid::fromString(val);
     default:
         qCWarning(lcPsql, "QPSQLResult::data: unhandled data type %d.", type.id());
     }

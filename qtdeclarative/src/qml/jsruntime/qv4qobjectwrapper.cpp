@@ -4,6 +4,7 @@
 #include "qv4qobjectwrapper_p.h"
 
 #include <private/qjsvalue_p.h>
+#include <private/qjsmanagedvalue_p.h>
 
 #include <private/qqmlbinding_p.h>
 #include <private/qqmlbuiltinfunctions_p.h>
@@ -17,6 +18,7 @@
 #include <private/qqmlvmemetaobject_p.h>
 
 #include <private/qv4arraybuffer_p.h>
+#include <private/qv4arrayobject_p.h>
 #include <private/qv4compileddata_p.h>
 #include <private/qv4dateobject_p.h>
 #include <private/qv4functionobject_p.h>
@@ -63,20 +65,20 @@ using namespace Qt::StringLiterals;
 
 namespace QV4 {
 
-QPair<QObject *, int> QObjectMethod::extractQtMethod(const FunctionObject *function)
+std::pair<QObject *, int> QObjectMethod::extractQtMethod(const FunctionObject *function)
 {
     ExecutionEngine *v4 = function->engine();
     if (v4) {
         Scope scope(v4);
         Scoped<QObjectMethod> method(scope, function->as<QObjectMethod>());
         if (method)
-            return qMakePair(method->object(), method->methodIndex());
+            return std::make_pair(method->object(), method->methodIndex());
     }
 
-    return qMakePair((QObject *)nullptr, -1);
+    return std::make_pair((QObject *)nullptr, -1);
 }
 
-static QPair<QObject *, int> extractQtSignal(const Value &value)
+static std::pair<QObject *, int> extractQtSignal(const Value &value)
 {
     if (value.isObject()) {
         ExecutionEngine *v4 = value.as<Object>()->engine();
@@ -87,10 +89,10 @@ static QPair<QObject *, int> extractQtSignal(const Value &value)
 
         Scoped<QmlSignalHandler> handler(scope, value);
         if (handler)
-            return qMakePair(handler->object(), handler->signalIndex());
+            return std::make_pair(handler->object(), handler->signalIndex());
     }
 
-    return qMakePair((QObject *)nullptr, -1);
+    return std::make_pair((QObject *)nullptr, -1);
 }
 
 static Heap::ReferenceObject::Flags referenceFlags(
@@ -688,7 +690,9 @@ void QObjectWrapper::setProperty(
     }
 
     if (Q_UNLIKELY(lcBuiltinsBindingRemoval().isInfoEnabled())) {
-        if (auto binding = QQmlPropertyPrivate::binding(object, QQmlPropertyIndex(property->coreIndex()))) {
+        if (auto binding = QQmlPropertyPrivate::binding(
+                    object, QQmlPropertyIndex(property->coreIndex()));
+                binding && !binding->isSticky()) {
             const auto stackFrame = engine->currentStackFrame;
             switch (binding->kind()) {
             case QQmlAbstractBinding::QmlBinding: {
@@ -711,7 +715,8 @@ void QObjectWrapper::setProperty(
             }
         }
     }
-    QQmlPropertyPrivate::removeBinding(object, QQmlPropertyIndex(property->coreIndex()));
+    QQmlPropertyPrivate::removeBinding(
+            object, QQmlPropertyIndex(property->coreIndex()), QQmlPropertyPrivate::None);
 
     if (property->isVarProperty()) {
         // allow assignment of "special" values (null, undefined, function) to var properties
@@ -1302,7 +1307,7 @@ struct QObjectSlotDispatcher : public QtPrivate::QSlotObjectBase
                         (connection->thisObject.isUndefined() || RuntimeHelpers::strictEqual(*connection->thisObject.valueRef(), thisObject))) {
 
                     ScopedFunctionObject f(scope, connection->function.value());
-                    QPair<QObject *, int> connectedFunctionData = QObjectMethod::extractQtMethod(f);
+                    std::pair<QObject *, int> connectedFunctionData = QObjectMethod::extractQtMethod(f);
                     if (connectedFunctionData.first == receiverToDisconnect &&
                         connectedFunctionData.second == slotIndexToDisconnect) {
                         *ret = true;
@@ -1335,7 +1340,7 @@ ReturnedValue QObjectWrapper::method_connect(const FunctionObject *b, const Valu
     if (argc == 0)
         THROW_GENERIC_ERROR("Function.prototype.connect: no arguments given");
 
-    QPair<QObject *, int> signalInfo = extractQtSignal(*thisObject);
+    std::pair<QObject *, int> signalInfo = extractQtSignal(*thisObject);
     QObject *signalObject = signalInfo.first;
     int signalIndex = signalInfo.second; // in method range, not signal range!
 
@@ -1377,7 +1382,7 @@ ReturnedValue QObjectWrapper::method_connect(const FunctionObject *b, const Valu
         }
     }
 
-    QPair<QObject *, int> functionData = QObjectMethod::extractQtMethod(f); // align with disconnect
+    std::pair<QObject *, int> functionData = QObjectMethod::extractQtMethod(f); // align with disconnect
     QObject *receiver = nullptr;
 
     if (functionData.first)
@@ -1419,7 +1424,7 @@ ReturnedValue QObjectWrapper::method_disconnect(const FunctionObject *b, const V
     if (argc == 0)
         THROW_GENERIC_ERROR("Function.prototype.disconnect: no arguments given");
 
-    QPair<QObject *, int> signalInfo = extractQtSignal(*thisObject);
+    std::pair<QObject *, int> signalInfo = extractQtSignal(*thisObject);
     QObject *signalObject = signalInfo.first;
     int signalIndex = signalInfo.second;
 
@@ -1448,7 +1453,7 @@ ReturnedValue QObjectWrapper::method_disconnect(const FunctionObject *b, const V
     if (!functionThisValue->isUndefined() && !functionThisValue->isObject())
         THROW_GENERIC_ERROR("Function.prototype.disconnect: target this is not an object");
 
-    QPair<QObject *, int> functionData = QObjectMethod::extractQtMethod(functionValue);
+    std::pair<QObject *, int> functionData = QObjectMethod::extractQtMethod(functionValue);
 
     void *a[] = {
         scope.engine,
@@ -1589,14 +1594,14 @@ DEFINE_OBJECT_VTABLE(QObjectWrapper);
 
 namespace {
 
-template<typename A, typename B, typename C, typename D, typename E, typename F, typename G>
-class MaxSizeOf7 {
+template<typename A, typename B, typename C, typename D, typename E, typename F, typename G, typename H>
+class MaxSizeOf8 {
     template<typename Z, typename X>
     struct SMax {
         char dummy[sizeof(Z) > sizeof(X) ? sizeof(Z) : sizeof(X)];
     };
 public:
-    static const size_t Size = sizeof(SMax<A, SMax<B, SMax<C, SMax<D, SMax<E, SMax<F, G> > > > > >);
+    static const size_t Size = sizeof(SMax<A, SMax<B, SMax<C, SMax<D, SMax<E, SMax<F, SMax<G, H> > > > > > >);
 };
 
 struct CallArgument {
@@ -1636,10 +1641,11 @@ private:
         std::vector<QModelIndex> *stdVectorQModelIndexPtr;
 #endif
 
-        char allocData[MaxSizeOf7<QVariant,
+        char allocData[MaxSizeOf8<QVariant,
                                   QString,
                                   QList<QObject *>,
                                   QJSValue,
+                                  QJSManagedValue,
                                   QJsonArray,
                                   QJsonObject,
                                   QJsonValue>::Size];
@@ -1653,6 +1659,7 @@ private:
         QVariant *qvariantPtr;
         QList<QObject *> *qlistPtr;
         QJSValue *qjsValuePtr;
+        QJSManagedValue *qjsManagedValuePtr;
         QJsonArray *jsonArrayPtr;
         QJsonObject *jsonObjectPtr;
         QJsonValue *jsonValuePtr;
@@ -2307,6 +2314,11 @@ void CallArgument::cleanup()
             break;
         }
 
+        if (type == qMetaTypeId<QJSManagedValue>()) {
+            qjsManagedValuePtr->~QJSManagedValue();
+            break;
+        }
+
         if (type == qMetaTypeId<QList<QObject *> >()) {
             qlistPtr->~QList<QObject *>();
             break;
@@ -2387,6 +2399,11 @@ void CallArgument::initAsType(QMetaType metaType)
             break;
         }
 
+        if (metaType == QMetaType::fromType<QJSManagedValue>()) {
+            qjsManagedValuePtr = new (&allocData) QJSManagedValue();
+            break;
+        }
+
         if (metaType == QMetaType::fromType<QList<QObject *>>()) {
             qlistPtr = new (&allocData) QList<QObject *>();
             break;
@@ -2402,12 +2419,10 @@ void CallArgument::initAsType(QMetaType metaType)
 template <class T, class M>
 bool CallArgument::fromContainerValue(const Value &value, M CallArgument::*member)
 {
-    if (const Sequence *sequence = value.as<Sequence>()) {
-        if (T* ptr = static_cast<T *>(SequencePrototype::getRawContainerPtr(
-                    sequence, QMetaType(type)))) {
-            (this->*member) = ptr;
-            return true;
-        }
+    if (T* ptr = static_cast<T *>(SequencePrototype::rawContainerPtr(
+                value.as<Sequence>(), QMetaType(type)))) {
+        (this->*member) = ptr;
+        return true;
     }
     (this->*member) = nullptr;
     return false;
@@ -2503,6 +2518,15 @@ bool CallArgument::fromValue(QMetaType metaType, ExecutionEngine *engine, const 
             return true;
         }
 
+        if (type == qMetaTypeId<QJSManagedValue>()) {
+            Scope scope(engine);
+            ScopedValue v(scope, value);
+            qjsManagedValuePtr = new (&allocData) QJSManagedValue;
+            // This points to a JS heap object that cannot be immutable. const_cast-ing is fine here.
+            *QJSManagedValuePrivate::memberPtr(qjsManagedValuePtr) = const_cast<Value *>(&value);
+            return true;
+        }
+
         if (type == qMetaTypeId<QList<QObject*> >()) {
             qlistPtr = new (&allocData) QList<QObject *>();
             Scope scope(engine);
@@ -2523,11 +2547,19 @@ bool CallArgument::fromValue(QMetaType metaType, ExecutionEngine *engine, const 
             }
 
             if (const auto sequence = value.as<QV4::Sequence>()) {
-                QV4::ReferenceObject::readReference(sequence->d());
-                uint length = sequence->size();
-                if (sequence->d()->listType() == QMetaType::fromType<QList<QObject *>>()) {
-                    *qlistPtr = *static_cast<QList<QObject *> *>(sequence->getRawContainerPtr());
-                } else {
+
+                // Does readReference(). Don't move past getRawContainer()
+                const qint64 length = sequence->getLength();
+
+                switch (QV4::SequencePrototype::getRawContainer(
+                        sequence, qlistPtr, QMetaType::fromType<QList<QObject *>>())) {
+                case SequencePrototype::Copied:
+                case SequencePrototype::WasEqual:
+                    break;
+                case SequencePrototype::TypeMismatch: {
+                    if (!qIsAtMostSizetypeLimit(length) || !qIsAtMostUintLimit(length))
+                        return false;
+
                     qlistPtr->reserve(length);
                     Scoped<QObjectWrapper> qobjectWrapper(scope);
                     for (uint ii = 0; ii < length; ++ii) {
@@ -2537,6 +2569,8 @@ bool CallArgument::fromValue(QMetaType metaType, ExecutionEngine *engine, const 
                             o = qobjectWrapper->object();
                         qlistPtr->append(o);
                     }
+                    break;
+                }
                 }
                 return true;
             }
@@ -2648,6 +2682,9 @@ ReturnedValue CallArgument::toValue(ExecutionEngine *engine)
         QJSValuePrivate::manageStringOnV4Heap(engine, qjsValuePtr);
         return QJSValuePrivate::asReturnedValue(qjsValuePtr);
     }
+
+    if (type == qMetaTypeId<QJSManagedValue>())
+        return QJSManagedValuePrivate::member(qjsManagedValuePtr)->asReturnedValue();
 
     if (type == qMetaTypeId<QList<QObject *> >()) {
         // XXX Can this be made more by using Array as a prototype and implementing

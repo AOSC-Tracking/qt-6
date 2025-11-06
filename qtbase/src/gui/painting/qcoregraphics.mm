@@ -10,6 +10,13 @@
 #include <QtCore/qdebug.h>
 #include <QtCore/qcoreapplication.h>
 #include <QtCore/qoperatingsystemversion.h>
+#include <QtGui/qcolorspace.h>
+
+#if defined(Q_OS_MACOS)
+# include <AppKit/AppKit.h>
+#elif defined(QT_PLATFORM_UIKIT)
+# include <UIKit/UIKit.h>
+#endif
 
 QT_USE_NAMESPACE
 
@@ -54,17 +61,6 @@ CGImageRef qt_mac_toCGImage(const QImage &inImage)
     return inImage.convertToFormat(QImage::Format_ARGB32_Premultiplied).toCGImage();
 }
 
-CGImageRef qt_mac_toCGImageMask(const QImage &image)
-{
-    static const auto deleter = [](void *image, const void *, size_t) { delete static_cast<QImage *>(image); };
-    QCFType<CGDataProviderRef> dataProvider =
-            CGDataProviderCreateWithData(new QImage(image), image.bits(),
-                                                    image.sizeInBytes(), deleter);
-
-    return CGImageMaskCreate(image.width(), image.height(), 8, image.depth(),
-                              image.bytesPerLine(), dataProvider, NULL, false);
-}
-
 void qt_mac_drawCGImage(CGContextRef inContext, const CGRect *inBounds, CGImageRef inImage)
 {
     CGContextSaveGState( inContext );
@@ -85,6 +81,11 @@ QImage qt_mac_toQImage(CGImageRef image)
     CGRect rect = CGRectMake(0, 0, w, h);
     QMacCGContext ctx(&ret);
     qt_mac_drawCGImage(ctx, &rect, image);
+
+    CGColorSpaceRef colorSpace = CGImageGetColorSpace(image);
+    QCFType<CFDataRef> iccData = CGColorSpaceCopyICCData(colorSpace);
+    ret.setColorSpace(QColorSpace::fromIccProfile(QByteArray::fromRawCFData(iccData)));
+
     return ret;
 }
 

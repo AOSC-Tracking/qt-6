@@ -1,4 +1,4 @@
-include(RunCMake)
+include(QtRunCMake)
 
 include(${_Qt6CTestMacros})
 # Stub function to make `_qt_internal_get_cmake_test_configure_options` work
@@ -20,4 +20,6 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.19"
     AND RunCMake_GENERATOR MATCHES "^Ninja"
 )
     run_cmake_and_build(subdirectory_with_top)
+    run_cmake_and_build(subdirectory_only)
+    run_cmake_and_build(subdirectory_without_qt_in_root)
 endif()

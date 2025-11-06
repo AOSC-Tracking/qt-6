@@ -5,6 +5,7 @@
 
 #include <QtCore/private/qsystemerror_p.h>
 #include <QtCore/private/qfunctions_win_p.h>
+#include <QtMultimedia/private/qmemory_resource_tlsf_p.h>
 #include <QtMultimedia/private/qwindowsaudiodevice_p.h>
 #include <QtMultimedia/private/qwindowsresampler_p.h>
 
@@ -210,17 +211,7 @@ bool QWASAPIAudioSinkStream::startAudioClient(StreamType streamType)
             m_resampler = std::make_unique<QWindowsResampler>();
             m_resampler->setup(m_format, m_hostFormat);
 
-            m_preallocatedBuffer = std::make_unique<char[]>(512 * 1024); // 512 KiB
-
-            m_pmrBufferResource = std::make_unique<std::pmr::monotonic_buffer_resource>(
-                    m_preallocatedBuffer.get(), 512 * 1024, std::pmr::get_default_resource());
-
-            std::pmr::pool_options poolOptions{
-                /*.largest_required_pool_block =*/256 * 1024,
-                /*.min_blocks_per_chunk        =*/2,
-            };
-            m_pmrPoolResource = std::make_unique<std::pmr::unsynchronized_pool_resource>(
-                    poolOptions, m_pmrBufferResource.get());
+            m_memoryResource = std::make_unique<QTlsfMemoryResource>(512 * 1024);
         }
 
         switch (streamType) {
@@ -345,11 +336,11 @@ bool QWASAPIAudioSinkStream::visitAudioClientBuffer(Functor &&f)
 
         std::pmr::vector<std::byte> resampleBuffer{
             size_t(m_format.bytesForFrames(requiredFrames)),
-            m_pmrPoolResource.get(),
+            m_memoryResource.get(),
         };
         consumedFrames = f(as_writable_bytes(QSpan{ resampleBuffer }), requiredFrames);
 
-        auto resampledBuffer = m_resampler->resample(resampleBuffer, m_pmrPoolResource.get());
+        auto resampledBuffer = m_resampler->resample(resampleBuffer, m_memoryResource.get());
 
         Q_ASSERT(resampledBuffer.size() == size_t(hostBufferSpan.size()));
         std::copy_n(resampledBuffer.data(), resampledBuffer.size(), hostBufferSpan.data());
@@ -379,7 +370,7 @@ bool QWASAPIAudioSinkStream::processRingbuffer() noexcept QT_MM_NONBLOCKING
 bool QWASAPIAudioSinkStream::processCallback() noexcept QT_MM_NONBLOCKING
 {
     return visitAudioClientBuffer([&](QSpan<std::byte> hostBuffer, uint32_t requiredFrames) {
-        runAudioCallback(m_audioCallback, hostBuffer, m_format);
+        runAudioCallback(m_audioCallback, hostBuffer, m_format, volume());
         return requiredFrames;
     });
 }
@@ -390,7 +381,7 @@ void QWASAPIAudioSinkStream::handleAudioClientError()
     audioClientStop(m_audioClient);
     audioClientReset(m_audioClient);
 
-    QMetaObject::invokeMethod(&m_ringbufferDrained, [this] {
+    invokeOnAppThread([this] {
         handleIOError(m_parent);
     });
 }

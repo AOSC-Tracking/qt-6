@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:network-protocol
 
 #include "qwebengineurlrequestinfo.h"
 #include "qwebengineurlrequestinfo_p.h"
@@ -32,9 +33,9 @@ ASSERT_ENUMS_MATCH(QtWebEngineCore::WebContentsAdapterClient::RedirectNavigation
     \since 5.6
     \brief The QWebEngineUrlRequestInfo class provides information about URL requests.
 
-    The QWebEngineUrlRequestInfo is useful for setting extra header fields for requests
+    The QWebEngineUrlRequestInfo is useful for setting extra header fields for requests,
     or for redirecting certain requests without payload data to another URL.
-    This class cannot be instantiated or copied by the user, instead it will
+    This class cannot be instantiated or copied by the user; instead, it will
     be created by \QWE and sent through the virtual function
     QWebEngineUrlRequestInterceptor::interceptRequest() if an interceptor has been set.
 */
@@ -247,7 +248,7 @@ QByteArray QWebEngineUrlRequestInfo::requestMethod() const
 /*!
     Returns a pointer to a QIODevice that gives access to the request body.
     The request body can contain data for example when the request is
-    a POST request. If the request body is empty the QIODevice reflects this
+    a POST request. If the request body is empty, the QIODevice reflects this
     and does not return any data when performing read operations on it.
 
     \since 6.7

@@ -30,6 +30,8 @@
 #include <QVBoxLayout>
 #include <QAudioBufferOutput>
 
+using namespace Qt::Literals;
+
 Player::Player(QWidget *parent) : QWidget(parent)
 {
     //! [create-objs]
@@ -133,6 +135,36 @@ Player::Player(QWidget *parent) : QWidget(parent)
     m_fullScreenButton = new QPushButton(tr("FullScreen"), this);
     m_fullScreenButton->setCheckable(true);
     controlLayout->addWidget(m_fullScreenButton);
+
+    m_pitchCompensationButton = new QPushButton(tr("Pitch compensation"), this);
+    m_pitchCompensationButton->setCheckable(true);
+    switch (m_player->pitchCompensationAvailability()) {
+    case QMediaPlayer::PitchCompensationAvailability::AlwaysOn:
+        m_pitchCompensationButton->setEnabled(false);
+        m_pitchCompensationButton->setChecked(true);
+        m_pitchCompensationButton->setToolTip(
+                u"Pitch compensation always enabled on this backend"_s);
+        break;
+    case QMediaPlayer::PitchCompensationAvailability::Unavailable:
+        m_pitchCompensationButton->setEnabled(false);
+        m_pitchCompensationButton->setChecked(false);
+        m_pitchCompensationButton->setToolTip(u"Pitch compensation unavailable on this backend"_s);
+        break;
+    case QMediaPlayer::PitchCompensationAvailability::Available:
+        m_pitchCompensationButton->setEnabled(true);
+        m_pitchCompensationButton->setChecked(m_player->pitchCompensation());
+        break;
+    default:
+        Q_UNREACHABLE();
+    }
+
+    controlLayout->addWidget(m_pitchCompensationButton);
+    connect(m_player, &QMediaPlayer::pitchCompensationChanged, this, [this] {
+        m_pitchCompensationButton->setChecked(m_player->pitchCompensation());
+    });
+    m_pitchCompensationButton->setChecked(m_player->pitchCompensation());
+    connect(m_pitchCompensationButton, &QPushButton::toggled, m_player,
+            &QMediaPlayer::setPitchCompensation);
 
 #if !defined(Q_OS_ANDROID) && !defined(Q_OS_IOS)
     m_audioOutputCombo = new QComboBox(this);

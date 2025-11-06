@@ -1,5 +1,6 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:data-parser
 
 #include "qwebengineprofilebuilder.h"
 #include "qwebengineprofile_p.h"
@@ -88,7 +89,8 @@ QWebEngineProfile *QWebEngineProfileBuilder::createProfile(const QString &storag
                             d_ptr->m_persistentCookiesPolicy),
                     d_ptr->m_httpCacheMaxSize,
                     QtWebEngineCore::ProfileAdapter::PersistentPermissionsPolicy(
-                            d_ptr->m_persistentPermissionPolicy))),
+                            d_ptr->m_persistentPermissionPolicy),
+                    d_ptr->m_additionalTrustedCertificates)),
             parent);
 }
 
@@ -172,5 +174,17 @@ QWebEngineProfileBuilder &QWebEngineProfileBuilder::setPersistentPermissionsPoli
         QWebEngineProfile::PersistentPermissionsPolicy persistentPermissionPolicy)
 {
     d_ptr->m_persistentPermissionPolicy = persistentPermissionPolicy;
+    return *this;
+}
+
+/*!
+    \since 6.10
+
+    Sets additional certificates for this profile's CA certificate database to \a certificates.
+*/
+QWebEngineProfileBuilder &QWebEngineProfileBuilder::setAdditionalTrustedCertificates(
+        const QList<QSslCertificate> &certificates)
+{
+    d_ptr->m_additionalTrustedCertificates = certificates;
     return *this;
 }

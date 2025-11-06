@@ -35,11 +35,12 @@
 
 #include <assert.h>
 #include <math.h>
+
 #include <algorithm>
+#include <array>
 #include <memory>
 #include <utility>
 
-#include "base/ranges/algorithm.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_audio_bus.h"
 #include "third_party/blink/renderer/platform/audio/denormal_disabler.h"
@@ -179,8 +180,7 @@ AudioChannel* AudioBus::ChannelByType(unsigned channel_type) {
       }
   }
 
-  NOTREACHED_IN_MIGRATION();
-  return nullptr;
+  NOTREACHED();
 }
 
 const AudioChannel* AudioBus::ChannelByType(unsigned type) const {
@@ -506,9 +506,7 @@ void AudioBus::SumFromByDownMixing(const AudioBus& source_bus) {
 
 void AudioBus::CopyWithGainFrom(const AudioBus& source_bus, float gain) {
   if (!TopologyMatches(source_bus)) {
-    NOTREACHED_IN_MIGRATION();
-    Zero();
-    return;
+    NOTREACHED();
   }
 
   if (source_bus.IsSilent()) {
@@ -527,8 +525,8 @@ void AudioBus::CopyWithGainFrom(const AudioBus& source_bus, float gain) {
     return;
   }
 
-  const float* sources[kMaxBusChannels];
-  float* destinations[kMaxBusChannels];
+  std::array<const float*, kMaxBusChannels> sources;
+  std::array<float*, kMaxBusChannels> destinations;
 
   for (unsigned i = 0; i < number_of_channels; ++i) {
     sources[i] = source_bus.Channel(i)->Data();
@@ -566,13 +564,11 @@ void AudioBus::CopyWithSampleAccurateGainValuesFrom(
   // Make sure we're processing from the same type of bus.
   // We *are* able to process from mono -> stereo
   if (source_bus.NumberOfChannels() != 1 && !TopologyMatches(source_bus)) {
-    NOTREACHED_IN_MIGRATION();
-    return;
+    NOTREACHED();
   }
 
   if (!gain_values || number_of_gain_values > source_bus.length()) {
-    NOTREACHED_IN_MIGRATION();
-    return;
+    NOTREACHED();
   }
 
   if (source_bus.length() == number_of_gain_values &&
@@ -696,8 +692,7 @@ scoped_refptr<AudioBus> AudioBus::CreateByMixingToMono(
     }
   }
 
-  NOTREACHED_IN_MIGRATION();
-  return nullptr;
+  NOTREACHED();
 }
 
 bool AudioBus::IsSilent() const {
@@ -706,7 +701,7 @@ bool AudioBus::IsSilent() const {
       return false;
   }
   return true;
-//  return base::ranges::all_of(channels_, &AudioChannel::IsSilent);
+//  return std::ranges::all_of(channels_, &AudioChannel::IsSilent);
 }
 
 void AudioBus::ClearSilentFlag() {

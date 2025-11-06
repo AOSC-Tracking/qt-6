@@ -47,7 +47,7 @@ struct QQmlJSAnnotation
 
     friend size_t qHash(const QQmlJSAnnotation &annotation, size_t seed = 0)
     {
-        QtPrivate::QHashCombine combine;
+        QtPrivate::QHashCombine combine(seed);
         seed = combine(seed, annotation.name);
 
         for (auto it = annotation.bindings.constBegin(); it != annotation.bindings.constEnd(); ++it) {

@@ -17,6 +17,8 @@
 
 #include <QtCore/qstring.h>
 
+QT_BEGIN_NAMESPACE
+
 namespace Utils {
 
 class TextDocument;
@@ -68,5 +70,7 @@ private:
     int m_anchor = 0;
 };
 } // namespace Utils
+
+QT_END_NAMESPACE
 
 #endif // TEXTCURSOR_H

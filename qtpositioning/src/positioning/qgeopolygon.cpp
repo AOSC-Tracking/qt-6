@@ -181,6 +181,11 @@ void QGeoPolygon::setPerimeter(const QList<QGeoCoordinate> &path)
 }
 
 /*!
+    \property QGeoPolygon::perimeter
+    \brief the coordinates of the polygon's perimeter.
+*/
+
+/*!
     Returns all the elements of the polygon's perimeter.
 
     \since QtPositioning 5.12
@@ -320,7 +325,8 @@ QString QGeoPolygon::toString() const
 
     QString pathString;
     for (const auto &p : perimeter())
-        pathString += p.toString() + QLatin1Char(',');
+        pathString += p.toString() + QLatin1StringView("; ");
+    pathString.chop(2);
 
     return QStringLiteral("QGeoPolygon([ %1 ])").arg(pathString);
 }

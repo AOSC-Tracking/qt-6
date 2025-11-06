@@ -1,5 +1,6 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "native_skia_output_device_opengl.h"
 
@@ -12,6 +13,7 @@
 
 #if BUILDFLAG(IS_OZONE)
 #include "ozone/gl_helper.h"
+#include "ozone/gl_ozone_qt.h"
 #include "ozone/ozone_util_qt.h"
 
 #include "base/posix/eintr_wrapper.h"
@@ -38,7 +40,7 @@
 
 #include "components/viz/common/gpu/vulkan_context_provider.h"
 #include "gpu/vulkan/vulkan_device_queue.h"
-#include "third_party/skia/include/gpu/vk/GrVkTypes.h"
+#include "third_party/skia/include/gpu/ganesh/vk/GrVkTypes.h"
 #include "third_party/skia/include/gpu/ganesh/vk/GrVkBackendSurface.h"
 #endif // BUILDFLAG(ENABLE_VULKAN)
 #endif // BUILDFLAG(IS_OZONE)
@@ -48,6 +50,56 @@
 #endif
 
 namespace QtWebEngineCore {
+
+class ScopedGLContextForCleanup
+{
+public:
+    ScopedGLContextForCleanup(QOpenGLContext *createContext, QSurface *createSurface)
+        : m_createContext(createContext), m_currentContext(QOpenGLContext::currentContext())
+    {
+        if (m_createContext == m_currentContext)
+            return;
+
+        if (!m_createContext->isValid()) {
+            skipCleanup = true;
+            return;
+        }
+
+        if (m_currentContext)
+            m_currentSurface = m_currentContext->surface();
+
+        if (!createContext->makeCurrent(createSurface)) {
+            skipCleanup = true;
+            qWarning("Failed to make OpenGL context current for clean-up, OpenGL resources will "
+                     "not be destroyed.");
+        }
+    }
+
+    ~ScopedGLContextForCleanup()
+    {
+        if (!m_currentContext || m_createContext == m_currentContext || skipCleanup)
+            return;
+
+        if (!m_currentContext->makeCurrent(m_currentSurface))
+            qFatal("Failed to restore OpenGL context after clean-up.");
+    }
+
+    void deleteTexture(GLuint glTexture)
+    {
+        if (skipCleanup)
+            return;
+
+        auto *glFun = m_createContext->functions();
+        Q_ASSERT(glFun->glGetError() == GL_NO_ERROR);
+        glFun->glDeleteTextures(1, &glTexture);
+    }
+
+private:
+    QOpenGLContext *m_createContext;
+    QOpenGLContext *m_currentContext;
+    QSurface *m_currentSurface = nullptr;
+    bool skipCleanup = false;
+};
 
 NativeSkiaOutputDeviceOpenGL::NativeSkiaOutputDeviceOpenGL(
         scoped_refptr<gpu::SharedContextState> contextState, bool requiresAlpha,
@@ -62,9 +114,15 @@ NativeSkiaOutputDeviceOpenGL::NativeSkiaOutputDeviceOpenGL(
     qCDebug(lcWebEngineCompositor, "Native Skia Output Device: OpenGL");
 
     SkColorType skColorType = kRGBA_8888_SkColorType;
-#if BUILDFLAG(IS_OZONE_X11) && QT_CONFIG(xcb_glx_plugin)
-    if (OzoneUtilQt::usingGLX() && m_contextState->gr_context_type() == gpu::GrContextType::kGL)
+#if BUILDFLAG(IS_OZONE)
+    ui::NativePixmapSupportType type = ui::GLOzoneQt::getNativePixmapSupportType();
+    if (type == ui::NativePixmapSupportType::kX11Pixmap)
         skColorType = kBGRA_8888_SkColorType;
+
+    if (type == ui::NativePixmapSupportType::kDMABuf && OzoneUtilQt::usingGLX()
+        && gl::GetGLImplementation() == gl::kGLImplementationEGLGLES2) {
+        skColorType = kBGRA_8888_SkColorType;
+    }
 #endif
 
     capabilities_.sk_color_type_map[viz::SinglePlaneFormat::kRGBA_8888] = skColorType;
@@ -213,10 +271,12 @@ QSGTexture *NativeSkiaOutputDeviceOpenGL::texture(QQuickWindow *win, uint32_t te
             glxFun->glXBindTexImageEXT(display, glxPixmap, GLX_FRONT_LEFT_EXT, nullptr);
             glFun->glBindTexture(GL_TEXTURE_2D, 0);
 
-            m_frontBuffer->textureCleanupCallback = [glFun, glxFun, display, glxPixmap, glTexture,
-                                                     glxHelper, pixmapId]() {
+            QSurface *createSurface = glContext->surface();
+            m_frontBuffer->textureCleanupCallback = [glContext, createSurface, glxFun, display,
+                                                     glxPixmap, glTexture, glxHelper, pixmapId]() {
+                ScopedGLContextForCleanup cleanupContext(glContext, createSurface);
                 glxFun->glXReleaseTexImageEXT(display, glxPixmap, GLX_FRONT_LEFT_EXT);
-                glFun->glDeleteTextures(1, &glTexture);
+                cleanupContext.deleteTexture(glTexture);
                 glXDestroyGLXPixmap(display, glxPixmap);
                 glxHelper->freePixmap(pixmapId);
             };
@@ -248,7 +308,7 @@ QSGTexture *NativeSkiaOutputDeviceOpenGL::texture(QQuickWindow *win, uint32_t te
                 EGL_LINUX_DRM_FOURCC_EXT, drmFormat,
                 EGL_DMA_BUF_PLANE0_FD_EXT, scopedFd.get(),
                 EGL_DMA_BUF_PLANE0_OFFSET_EXT, static_cast<EGLAttrib>(nativePixmap->GetDmaBufOffset(0)),
-                EGL_DMA_BUF_PLANE0_PITCH_EXT, nativePixmap->GetDmaBufPitch(0),
+                EGL_DMA_BUF_PLANE0_PITCH_EXT, static_cast<EGLAttrib>(nativePixmap->GetDmaBufPitch(0)),
                 EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, static_cast<EGLAttrib>(modifier & 0xffffffff),
                 EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, static_cast<EGLAttrib>(modifier >> 32),
                 EGL_NONE
@@ -265,9 +325,11 @@ QSGTexture *NativeSkiaOutputDeviceOpenGL::texture(QQuickWindow *win, uint32_t te
             glExtFun->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, eglImage);
             glFun->glBindTexture(GL_TEXTURE_2D, 0);
 
-            m_frontBuffer->textureCleanupCallback = [glFun, eglFun, glTexture, eglDisplay,
-                                                     eglImage]() {
-                glFun->glDeleteTextures(1, &glTexture);
+            QSurface *createSurface = glContext->surface();
+            m_frontBuffer->textureCleanupCallback = [glContext, createSurface, eglFun, glTexture,
+                                                     eglDisplay, eglImage]() {
+                ScopedGLContextForCleanup cleanupContext(glContext, createSurface);
+                cleanupContext.deleteTexture(glTexture);
                 eglFun->eglDestroyImage(eglDisplay, eglImage);
             };
         }
@@ -320,11 +382,12 @@ QSGTexture *NativeSkiaOutputDeviceOpenGL::texture(QQuickWindow *win, uint32_t te
                                        glMemoryObject, 0);
         glFun->glBindTexture(GL_TEXTURE_2D, 0);
 
-        m_frontBuffer->textureCleanupCallback = [glFun, glExtFun, glTexture, glMemoryObject]() {
-            Q_ASSERT(glFun->glGetError() == GL_NO_ERROR);
-
+        QSurface *createSurface = glContext->surface();
+        m_frontBuffer->textureCleanupCallback = [glContext, createSurface, glExtFun, glTexture,
+                                                 glMemoryObject]() {
+            ScopedGLContextForCleanup cleanupContext(glContext, createSurface);
             glExtFun->glDeleteMemoryObjectsEXT(1, &glMemoryObject);
-            glFun->glDeleteTextures(1, &glTexture);
+            cleanupContext.deleteTexture(glTexture);
         };
 #else
         Q_UNREACHABLE();
@@ -337,8 +400,8 @@ QSGTexture *NativeSkiaOutputDeviceOpenGL::texture(QQuickWindow *win, uint32_t te
     qCDebug(lcWebEngineCompositor, "WGL: Importing DXGI Resource into GL Texture.");
     Q_ASSERT(m_contextState->gr_context_type() == gpu::GrContextType::kGL);
 
-    Q_ASSERT(overlayImage->type() == gl::DCLayerOverlayType::kNV12Texture);
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> chromeTexture = overlayImage->nv12_texture();
+    Q_ASSERT(overlayImage->type() == gl::DCLayerOverlayType::kD3D11Texture);
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> chromeTexture = overlayImage->d3d11_video_texture();
     if (!chromeTexture) {
         qWarning("WGL: No D3D texture.");
         return nullptr;
@@ -376,12 +439,11 @@ QSGTexture *NativeSkiaOutputDeviceOpenGL::texture(QQuickWindow *win, uint32_t te
     uint32_t glTexture = makeCGLTexture(win, ioSurface.get(), size());
     texture = QNativeInterface::QSGOpenGLTexture::fromNative(glTexture, win, size(), texOpts);
 
-    m_frontBuffer->textureCleanupCallback = [glTexture]() {
-        auto *glContext = QOpenGLContext::currentContext();
-        if (!glContext)
-            return;
-        auto glFun = glContext->functions();
-        glFun->glDeleteTextures(1, &glTexture);
+    QOpenGLContext *glContext = QOpenGLContext::currentContext();
+    QSurface *createSurface = glContext->surface();
+    m_frontBuffer->textureCleanupCallback = [glContext, createSurface, glTexture]() {
+        ScopedGLContextForCleanup cleanupContext(glContext, createSurface);
+        cleanupContext.deleteTexture(glTexture);
     };
 #endif // BUILDFLAG(IS_OZONE)
 

@@ -243,6 +243,9 @@ private slots:
     void QTBUG_73286_data() { generic_data("QODBC"); }
     void QTBUG_73286();
 
+    void ODBC_FloatingPoint_data() { return generic_data("QODBC"); }
+    void ODBC_FloatingPoint();
+
     void insertVarChar1_data() { generic_data("QODBC"); }
     void insertVarChar1();
 
@@ -270,6 +273,9 @@ private slots:
     // invalidQuery() if run later; so put this one last !
     void prematureExec_data() { generic_data(); }
     void prematureExec();
+
+    void uuid_data() { generic_data(); }
+    void uuid();
 
 #if QT_REMOVAL_QT7_DEPRECATED_SINCE(6, 2)
     // cleanup() is data-driven
@@ -4408,7 +4414,7 @@ void tst_QSqlQuery::aggregateFunctionTypes()
         const auto &tableName = ts.tableName();
 
         QSqlQuery q(db);
-        QVERIFY_SQL(q, exec(QLatin1String("CREATE TABLE %1 (id REAL)").arg(tableName)));
+        QVERIFY_SQL(q, exec(QLatin1String("CREATE TABLE %1 (id DOUBLE PRECISION)").arg(tableName)));
 
         // First test without any entries
         QVERIFY_SQL(q, exec("SELECT SUM(id) FROM " + tableName));
@@ -4682,6 +4688,34 @@ void tst_QSqlQuery::QTBUG_73286()
     QCOMPARE(q.value(1).toString(), "12345678901234567890");
     QCOMPARE(q.value(2).toString(), "12345678901234567.890");
 }
+
+void tst_QSqlQuery::ODBC_FloatingPoint()
+{
+    QFETCH(QString, dbName);
+    QSqlDatabase db = QSqlDatabase::database(dbName);
+    CHECK_DATABASE(db);
+    TableScope ts(db, "qtbug138642", __FILE__);
+
+    constexpr auto val1 = 0.015625; // more than 7 chars which is the length of real!
+    constexpr auto val2 = 0.09375;
+    QSqlQuery q(db);
+    QVERIFY_SQL(q, exec("CREATE TABLE %1 (Id INT, Column1 REAL, Column2 FLOAT)"_L1.arg(ts.tableName())));
+    QVERIFY_SQL(q, exec("INSERT INTO %1 (Id, Column1, Column2) Values (1, %2, %2)"_L1.arg(ts.tableName()).arg(val1)));
+    QVERIFY_SQL(q, exec("INSERT INTO %1 (Id, Column1, Column2) Values (2, %2, %2)"_L1.arg(ts.tableName()).arg(val2)));
+
+    const auto prec = {QSql::HighPrecision, QSql::LowPrecisionDouble};
+    for (const auto p  : prec) {
+        q.setNumericalPrecisionPolicy(p);
+        QVERIFY_SQL(q, exec("SELECT Column1, Column2 FROM %1 ORDER BY Id"_L1.arg(ts.tableName())));
+        QVERIFY_SQL(q, next());
+        QCOMPARE(q.value(0).toDouble(), val1);
+        QCOMPARE(q.value(1).toDouble(), val1);
+        QVERIFY_SQL(q, next());
+        QCOMPARE(q.value(0).toDouble(), val2);
+        QCOMPARE(q.value(1).toDouble(), val2);
+    }
+}
+
 
 void tst_QSqlQuery::insertVarChar1()
 {
@@ -5245,6 +5279,45 @@ void tst_QSqlQuery::psqlJsonOperator()
     QCOMPARE(qry.value(1).toByteArray(), "{\"b\": [3, 4]}");
 }
 
+void tst_QSqlQuery::uuid()
+{
+    QFETCH(QString, dbName);
+    QSqlDatabase db = QSqlDatabase::database(dbName);
+    CHECK_DATABASE(db);
+    if (tst_Databases::getDatabaseType(db) != QSqlDriver::PostgreSQL &&
+        tst_Databases::getDatabaseType(db) != QSqlDriver::MimerSQL)
+        QSKIP("UUID only supported by PostgreSQL and MimerSQL");
+
+    TableScope ts(db, "uuid", __FILE__);
+    const QString &tableName = ts.tableName();
+    const QUuid uuid1(QUuid::createUuid());
+    const QUuid uuid2(QUuid::createUuid());
+
+    QSqlQuery qry(db);
+    QVERIFY_SQL(qry, exec("CREATE TABLE " + tableName + " (id integer, uuidcol uuid)"));
+    auto tableRecord = db.record(tableName);
+    QCOMPARE(tableRecord.value(0).metaType().id(), QMetaType::Int);
+    QCOMPARE(tableRecord.value(1).metaType().id(), QMetaType::QUuid);
+
+    QString stmt =
+            "INSERT INTO " + tableName + " (id, uuidcol) VALUES (1, '" + uuid1.toString() + "')";
+    QVERIFY_SQL(qry, exec(stmt));
+    QVERIFY_SQL(qry, prepare("INSERT INTO " + tableName + " (id, uuidcol) VALUES (:id, :uuid)"));
+    qry.bindValue(":id", 2);
+    qry.bindValue(":uuid", uuid2);
+    QVERIFY_SQL(qry, exec());
+    QVERIFY_SQL(qry, exec("SELECT id, uuidcol FROM " + tableName + " ORDER BY id"));
+    QVERIFY_SQL(qry, next());
+    QCOMPARE(qry.value(0).toInt(), 1);
+    QCOMPARE(qry.value(0).metaType().id(), QMetaType::Int);
+    QCOMPARE(qry.value(1).toUuid(), uuid1);
+    QCOMPARE(qry.value(1).metaType().id(), QMetaType::QUuid);
+    QVERIFY_SQL(qry, next());
+    QCOMPARE(qry.value(0).toInt(), 2);
+    QCOMPARE(qry.value(0).metaType().id(), QMetaType::Int);
+    QCOMPARE(qry.value(1).toUuid(), uuid2);
+    QCOMPARE(qry.value(1).metaType().id(), QMetaType::QUuid);
+}
 
 #if QT_REMOVAL_QT7_DEPRECATED_SINCE(6, 2)
 void tst_QSqlQuery::qmetatypeDeprecatedCopy()

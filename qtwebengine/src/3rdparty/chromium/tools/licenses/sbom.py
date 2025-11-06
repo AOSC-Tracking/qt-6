@@ -13,6 +13,9 @@ import spdx_writer
 import pathlib
 import subprocess
 import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 # <webengine-root>/src/3rdparty/chromium
 ROOT = license_tools._REPOSITORY_ROOT
@@ -25,9 +28,22 @@ CHROMIUM_TO_SPDX_KEY = {
     'Comment': 'comment',
 }
 
+# third_party/README.chromium.template says to use the string
+# "This is the canonical public repository." to mark projects that don't
+# have a homepage. Not all READMEs follow the text exactly, so just
+# match against the first words.
+CANONICAL_HOMEPAGE_STRING = "This is the canonical"
+
+# Packages that have bad homepages that don't start with CANONICAL_HOMEPAGE_STRING
 PACKAGES_TO_CLEAN_BAD_URL = [
-    'metrics_proto',
     'PSM (Private Set Membership) client side',
+]
+
+# Some packages don't have a license file, but their license is a known SPDX
+# identifier so we can still use it.
+OVERRIDE_LICENSE_FILE_METADATA_KEY = "Override License File"
+PACKAGES_TO_OVERRIDE_LICENSE_FILE_WITH_ID = [
+    'libdrm',
 ]
 
 # Hardcoded metadata for GN
@@ -50,11 +66,8 @@ DIRECTORIES_TO_SKIP_BECAUSE_THEY_HAVE_VARIOUS_PARSING_ISSUES = [
     os.path.join('third_party', 'crashpad', 'crashpad', 'third_party', 'mini_chromium'),
     os.path.join('third_party', 'devtools-frontend', 'src', 'front_end', 'third_party', 'chromium'),
     os.path.join('third_party', 'perfetto', 'protos', 'third_party', 'chromium'),
-    os.path.join('third_party', 'perfetto', 'protos', 'third_party', 'simpleperf'),
-    os.path.join('third_party', 'tflite'),
 
     # Missing URL (no homepage)
-    os.path.join('third_party', 'webrtc', 'modules', 'third_party', 'fft'),
     os.path.join('third_party', 'webrtc', 'modules', 'third_party', 'g711'),
     os.path.join('third_party', 'webrtc', 'modules', 'third_party', 'g722'),
     os.path.join('third_party', 'webrtc', 'rtc_base', 'third_party', 'base64'),
@@ -80,7 +93,12 @@ class ExtendedSpdxJsonWriter(spdx_writer._SPDXJSONWriter):
     # super().add_package() adds everything as a dependency of the root package, we want to set
     # up our dependencies more precisely.
     pkg_id = self._get_package_id(pkg)
-    license_id, need_to_add_license = self._get_license_id(pkg)
+    if OVERRIDE_LICENSE_FILE_METADATA_KEY in pkg.extra_metadata:
+      logger.info("Allowing known license ID without file for package %s" % (pkg.name))
+      license_id = pkg.file
+      need_to_add_license = False
+    else:
+      license_id, need_to_add_license = self._get_license_id(pkg)
 
     # Required fields
     pkg_content = {
@@ -126,18 +144,41 @@ def GetDirectoryRevisionInfo(d):
   git_rev_list_result = subprocess.check_output(
       ['git', 'rev-list', '-n1', '--first-parent', '--grep=BASELINE: Update Chromium', 'HEAD', '--', d],
       cwd=ROOT,
-      text=True)
+      encoding='utf-8')
   commit_sha = git_rev_list_result.strip()
   git_log_result = subprocess.check_output(
       ['git', 'log', '--oneline', f'{commit_sha}..HEAD', '--', d],
       cwd=ROOT,
-      text=True)
+      encoding='utf-8')
   num_revisions = git_log_result.count('\n')
   if num_revisions == 0:
     return ''
   plural = '' if num_revisions == 1 else 's'
   comment_text = f'{num_revisions} revision{plural} added by Qt'
   return comment_text
+
+
+def CleanupLicenseMetadata(dep_metadata):
+  num_licenses = len(dep_metadata['License File'])
+  if num_licenses == 2 and dep_metadata['License'].endswith(", Patent"):
+    # Handle cases like libaom, libwebp: We don't want to include the patent file
+    former_license = dep_metadata['License']
+    updated_license = dep_metadata['License'][:-len(", Patent")]
+    logger.info("Patent file detected for package %s, skipping patent" % (dep_metadata['Name']))
+    dep_metadata['License'] = updated_license
+
+    dep_metadata['License File'] = dep_metadata['License File'][0]
+  elif num_licenses == 0 and dep_metadata['Name'] in PACKAGES_TO_OVERRIDE_LICENSE_FILE_WITH_ID:
+    logger.info("Allowing known license ID without file for package %s" % (dep_metadata['Name']))
+
+    dep_metadata['License File'] = dep_metadata['License']
+    dep_metadata[OVERRIDE_LICENSE_FILE_METADATA_KEY] = True
+  elif num_licenses != 1:
+    dep_metadata['License File'] = None
+    raise license_tools.LicenseError("Dependency has %d licenses, expected exactly 1" % num_licenses)
+  else:
+    dep_metadata['License File'] = dep_metadata['License File'][0]
+
 
 def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
   optional_keys = list(CHROMIUM_TO_SPDX_KEY.keys()) + ['Short Name', 'CPEPrefix']
@@ -150,7 +191,7 @@ def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
   metadatas = {}
   for d in third_party_dirs:
     if d in DIRECTORIES_TO_SKIP_BECAUSE_THEY_HAVE_VARIOUS_PARSING_ISSUES:
-      print("Warning: Skipping '%s' because it has known parsing issue" % d)
+      logger.info("Skipping '%s' because it has known parsing issue" % d)
       continue
     try:
       dir_metadata, errors = license_tools.ParseDir(d, ROOT,
@@ -158,15 +199,12 @@ def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
                                                     enable_warnings=True,
                                                     optional_keys=optional_keys)
       if not dir_metadata:
-        print("Warning: Parsing '%s' returned nothing" % d)
+        logger.warning("Parsing '%s' returned nothing" % d)
       metadatas[d] = dir_metadata
       git_revision_info = GetDirectoryRevisionInfo(d)
       for dep_metadata in dir_metadata:
-        num_licenses = len(dep_metadata['License File'])
-        if num_licenses != 1:
-          dep_metadata['License File'] = None
-          raise license_tools.LicenseError("Dependency has %d licenses, expected exactly 1" % num_licenses)
-        dep_metadata['License File'] = dep_metadata['License File'][0]
+        CleanupLicenseMetadata(dep_metadata)
+
         if git_revision_info:
           dep_metadata['Source Info'] = git_revision_info
         dep_metadata['Comment'] = f'Location within source: {d}'
@@ -174,14 +212,14 @@ def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
         # be quite long.
         if 'Short Name' in dep_metadata:
           dep_metadata['Name'] = dep_metadata['Short Name']
-        if dep_metadata['Name'] in PACKAGES_TO_CLEAN_BAD_URL:
-          print("Info: cleaning bad URL from package: %s" % dep_metadata['Name'])
+        if dep_metadata['Name'] in PACKAGES_TO_CLEAN_BAD_URL or CANONICAL_HOMEPAGE_STRING in dep_metadata['URL']:
+          logger.info("Cleaning bad URL from package: %s" % dep_metadata['Name'])
           del dep_metadata['URL']
     except license_tools.LicenseError as err:
-      print("Error: Failed parsing '%s': %s" % (d, err))
+      logger.error("Failed parsing '%s': %s" % (d, err))
       pass
     except Exception as err:
-      print("Error: Failed parsing '%s': %s" % (d, err))
+      logger.error("Failed parsing '%s': %s" % (d, err))
       pass
     license_tools.LogParseDirErrors(errors)
 
@@ -210,6 +248,8 @@ def CreateSpdxText(targets_and_metadatas, package_id: str, doc_namespace: str, g
       dir_metadata = metadatas[directory]
       for dep_metadata in dir_metadata:
         license_file = dep_metadata.pop('License File')
+        # This is used in CleanupLicenseMetadata as a sentinel to skip an
+        # errored-out dependency.
         if license_file is None:
           continue
 
@@ -238,9 +278,12 @@ def main():
   parser.add_argument('--gn-version', required=True, help="GN version.")
   parser.add_argument('--package-id', required=True, help="Camelcase package id. This is used for several purposes")
   parser.add_argument('--namespace', required=True, help="Namespace of the document")
+  parser.add_argument('--verbose', action="store_true", help="Verbose output")
   parser.add_argument('output_file')
   args = parser.parse_args()
 
+  logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)
+  logger.info("sbom.py run with arguments: %s" % (' '.join(sys.argv)))
   gn_target_list = args.gn_target_list.split(';')
   build_dir_list = args.build_dir_list.split(';')
   if len(gn_target_list) != len(build_dir_list):
@@ -255,5 +298,4 @@ def main():
     f.write(spdx_text)
 
 if __name__ == '__main__':
-  print(sys.argv)
   sys.exit(main())

@@ -105,6 +105,7 @@ Rectangle {
             borderColor: "#882222"
             borderWidth: 3
             selectable: true
+            hoverable: true
 
             upperSeries: LineSeries {
                 XYPoint { x: 0; y: 2 }
@@ -117,6 +118,10 @@ Rectangle {
                 XYPoint { x: 1; y: 2.5 }
                 XYPoint { x: 2.4; y: 3 }
             }
+            onHoveredChanged: (enabled)=> {
+                                  console.log("hoveredChanged:", enabled)
+                                  console.log("isHovered:", hovered)
+                              }
         }
 
         AreaSeries {

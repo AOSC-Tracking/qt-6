@@ -74,12 +74,13 @@ bool StringObject::virtualDeleteProperty(Managed *m, PropertyKey id)
     return Object::virtualDeleteProperty(m, id);
 }
 
+namespace {
 struct StringObjectOwnPropertyKeyIterator : ObjectOwnPropertyKeyIterator
 {
     ~StringObjectOwnPropertyKeyIterator() override = default;
     PropertyKey next(const QV4::Object *o, Property *pd = nullptr, PropertyAttributes *attrs = nullptr) override;
-
 };
+} // namespace
 
 PropertyKey StringObjectOwnPropertyKeyIterator::next(const QV4::Object *o, Property *pd, PropertyAttributes *attrs)
 {

@@ -65,8 +65,6 @@ class QWidgetItemV2;
 
 class QStyle;
 
-class QUnifiedToolbarSurface;
-
 // implemented in qshortcut.cpp
 bool qWidgetShortcutContextMatcher(QObject *object, Qt::ShortcutContext context);
 void qSendWindowChangeToTextureChildrenRecursively(QWidget *widget, QEvent::Type eventType);
@@ -83,6 +81,7 @@ public:
 
 protected:
     friend class QApplication;
+    friend class QApplicationPrivate;
     QRegion m_region;
 };
 
@@ -207,7 +206,7 @@ public:
     Q_ENUM(Direction)
 
     // Functions.
-    explicit QWidgetPrivate(int version = QObjectPrivateVersion);
+    explicit QWidgetPrivate(decltype(QObjectPrivateVersion) = QObjectPrivateVersion);
     ~QWidgetPrivate();
 
     static QWidgetPrivate *get(QWidget *w) { return w->d_func(); }

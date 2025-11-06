@@ -276,7 +276,7 @@ static void qInit(QSqlQuery *q, const QString& query, const QSqlDatabase &db)
     QSqlDatabase database = db;
     if (!database.isValid()) {
         database =
-                QSqlDatabase::database(QLatin1StringView(QSqlDatabase::defaultConnection), false);
+                QSqlDatabase::database(QSqlDatabase::defaultConnectionName(), false);
     }
     if (database.isValid())
         *q = QSqlQuery(database.driver()->createResult());

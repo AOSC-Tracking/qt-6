@@ -1,5 +1,6 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:data-parser
 
 #ifndef QWEBENGINEPROFILEBUILDER_P_H
 #define QWEBENGINEPROFILEBUILDER_P_H
@@ -30,6 +31,7 @@ struct QWebEngineProfileBuilderPrivate
     int m_httpCacheMaxSize;
     QWebEngineProfile::PersistentPermissionsPolicy m_persistentPermissionPolicy =
             QWebEngineProfile::PersistentPermissionsPolicy::StoreOnDisk;
+    QList<QSslCertificate> m_additionalTrustedCertificates;
 };
 QT_END_NAMESPACE
 #endif // QWEBENGINEPROFILEBUILDER_P_H

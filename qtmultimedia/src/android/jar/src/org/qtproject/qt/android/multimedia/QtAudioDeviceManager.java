@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import android.content.Context;
 import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
@@ -19,10 +20,14 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.util.Range;
+
+import org.qtproject.qt.android.UsedFromNativeCode;
 
 class QtAudioDeviceManager
 {
     private static final String TAG = "QtAudioDeviceManager";
+
     static private AudioManager m_audioManager = null;
     static private final AudioDevicesReceiver m_audioDevicesReceiver = new AudioDevicesReceiver();
     static private Handler handler = new Handler(Looper.getMainLooper());
@@ -75,17 +80,25 @@ class QtAudioDeviceManager
         m_audioManager = (AudioManager)context.getSystemService(Context.AUDIO_SERVICE);
     }
 
-    private static String[] getAudioOutputDevices()
+    static AudioDeviceInfo[] getAudioOutputDevices()
     {
         return getAudioDevices(AudioManager.GET_DEVICES_OUTPUTS);
     }
 
-    private static String[] getAudioInputDevices()
+    static AudioDeviceInfo[] getAudioInputDevices()
     {
         return getAudioDevices(AudioManager.GET_DEVICES_INPUTS);
     }
 
-    private static boolean isBluetoothDevice(AudioDeviceInfo deviceInfo)
+    @UsedFromNativeCode
+    static int getDefaultSampleRate()
+    {
+        String sampleRate = m_audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE);
+        return Integer.parseInt(sampleRate);
+    }
+
+    @UsedFromNativeCode
+    static boolean isBluetoothDevice(AudioDeviceInfo deviceInfo)
     {
         switch (deviceInfo.getType()) {
         case AudioDeviceInfo.TYPE_BLUETOOTH_A2DP:
@@ -193,7 +206,6 @@ class QtAudioDeviceManager
     private static final int DEFAULT_PRIORITY = 4;
 
     private static void sortAudioDevices(AudioDeviceInfo[] devices) {
-
         Comparator<AudioDeviceInfo> deviceTypeComparator = new Comparator<AudioDeviceInfo>() {
             @Override
             public int compare(AudioDeviceInfo device1, AudioDeviceInfo device2) {
@@ -208,9 +220,9 @@ class QtAudioDeviceManager
        Arrays.sort(devices, deviceTypeComparator);
     }
 
-    private static String[] getAudioDevices(int type)
+    private static AudioDeviceInfo[] getAudioDevices(int type)
     {
-        ArrayList<String> devices = new ArrayList<>();
+        ArrayList<AudioDeviceInfo> filteredDevices = new ArrayList<>();
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             boolean builtInMicAdded = false;
@@ -245,14 +257,11 @@ class QtAudioDeviceManager
                     bluetoothDeviceAdded = true;
                 }
 
-                devices.add(deviceInfo.getId() + ":" + deviceType + " ("
-                            + deviceInfo.getProductName().toString() +")");
+                filteredDevices.add(deviceInfo);
             }
         }
 
-        String[] ret = new String[devices.size()];
-        ret = devices.toArray(ret);
-        return ret;
+        return filteredDevices.toArray(new AudioDeviceInfo[filteredDevices.size()]);
     }
 
     final private static int [] bluetoothTypes = {

@@ -20,6 +20,8 @@
 #include <private/qssgrhicontext_p.h>
 #include <private/qssgrhiquadrenderer_p.h>
 
+#include <QtCore/qpointer.h>
+
 QT_BEGIN_NAMESPACE
 
 class QSSGShaderCache;
@@ -31,9 +33,11 @@ class QSSGRenderContextInterface;
 struct QSSGRenderNode;
 struct QSSGRenderItem2D;
 struct QSSGRenderRay;
-struct QSSGSubsetRenderable;
+class QSSGSubsetRenderable;
 struct QSSGShaderDefaultMaterialKeyProperties;
 struct QSSGShaderFeatures;
+class QSGRenderContext;
+class QSGRenderer;
 
 class Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderer
 {
@@ -83,6 +87,26 @@ public:
     void beginSubLayerRender(QSSGLayerRenderData &inLayer);
     void endSubLayerRender(QSSGLayerRenderData &inLayer);
 
+    using ModelViewProjections = std::array<QMatrix4x4, 2>;
+
+    struct Item2DData
+    {
+        const QSSGRenderLayer *layer = nullptr;
+        const QSSGRenderItem2D *item = nullptr;
+        QPointer<QSGRenderer> renderer;
+        QRhiRenderPassDescriptor *rpd = nullptr;
+        ModelViewProjections mvps;
+        bool isValid() const { return layer && item && renderer && rpd; }
+    };
+
+    using Item2DDataList = std::vector<Item2DData>;
+    using Item2DDataMap = std::unordered_map<const QSSGRenderItem2D *, Item2DData>;
+
+    void registerItem2DData(const Item2DData &data);
+    void populateItem2DDataMapForLayer(const QSSGRenderLayer &layer, Item2DDataMap &item2DDataMap) const;
+    void releaseItem2DData(const QSSGRenderItem2D &item2D);
+    void releaseItem2DData(const QSSGRenderLayer &layer);
+
 protected:
     void cleanupResources(QList<QSSGRenderGraphObject*> &resources);
     void cleanupResources(QSet<QSSGRenderGraphObject*> &resources);
@@ -111,6 +135,11 @@ private:
     QSSGLayerRenderData *m_currentLayer = nullptr;
 
     QSet<QSSGRenderGraphObject *> m_materialClearDirty;
+
+    QPointer<QSGRenderContext> m_qsgRenderContext;
+
+    // Item2D data (per layer)
+    Item2DDataList item2DDataList;
 
     mutable std::unique_ptr<QSSGRhiQuadRenderer> m_rhiQuadRenderer;
     mutable std::unique_ptr<QSSGRhiCubeRenderer> m_rhiCubeRenderer;
@@ -150,11 +179,11 @@ public:
                                       const QSSGRenderRay &ray,
                                       bool inPickEverything,
                                       PickResultList &outIntersectionResult);
-    static void intersectRayWithSubsetRenderable(QSSGBufferManager &bufferManager,
+    static void intersectRayWithSubsetRenderable(const QSSGRenderLayer &layer, QSSGBufferManager &bufferManager,
                                                  const QSSGRenderRay &inRay,
                                                  const QSSGRenderNode &node,
                                                  PickResultList &outIntersectionResultList);
-    static void intersectRayWithItem2D(const QSSGRenderRay &inRay,
+    static void intersectRayWithItem2D(const QSSGRenderLayer &layer, const QSSGRenderRay &inRay,
                                        const QSSGRenderItem2D &item2D,
                                        PickResultList &outIntersectionResultList);
 
@@ -178,6 +207,13 @@ public:
     static void setGlobalPickingEnabled(QSSGRenderer &renderer, bool isEnabled);
 
     static void setRenderContextInterface(QSSGRenderer &renderer, QSSGRenderContextInterface *ctx);
+    static void setSgRenderContext(QSSGRenderer &renderer, QSGRenderContext *sgRenderCtx);
+
+    static QSSGLayerRenderData *getCurrentRenderData(const QSSGRenderer &renderer) { return renderer.m_currentLayer; }
+
+    static QSGRenderContext *getSgRenderContext(const QSSGRenderer &renderer);
+
+    static constexpr float minimumRenderOpacity = .01f;
 };
 
 QT_END_NAMESPACE

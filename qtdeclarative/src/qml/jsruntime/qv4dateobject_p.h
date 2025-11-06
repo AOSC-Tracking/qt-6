@@ -217,20 +217,27 @@ DECLARE_HEAP_OBJECT(DateObject, ReferenceObject) {
         if (!object())
             return false;
 
+        if (!isDirty())
+            return true;
+
         QV4::Scope scope(internalClass->engine);
         QV4::ScopedObject o(scope, object());
 
+        bool wasRead = false;
         if (isVariant()) {
             QVariant variant;
             void *a[] = { &variant };
-            return o->metacall(QMetaObject::ReadProperty, property(), a)
-                    && setVariant(variant);
+            wasRead = o->metacall(QMetaObject::ReadProperty, property(), a)
+                        && setVariant(variant);
+        } else {
+            wasRead = m_date.withWriteonlyStoragePointer([&](void *storagePointer) {
+                void *a[] = { storagePointer };
+                return o->metacall(QMetaObject::ReadProperty, property(), a);
+            }, scope.engine);
         }
 
-        return m_date.withWriteonlyStoragePointer([&](void *storagePointer) {
-            void *a[] = { storagePointer };
-            return o->metacall(QMetaObject::ReadProperty, property(), a);
-        }, scope.engine);
+        setDirty(!isConnected() || !wasRead);
+        return wasRead;
     }
 
     bool writeBack(int internalIndex = QV4::ReferenceObject::AllProperties)

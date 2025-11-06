@@ -52,11 +52,12 @@ public:
     bool async:1;
 #if QT_CONFIG(qml_delegate_model)
     bool ownModel:1;
+    QQmlDelegateModel::DelegateModelAccess delegateModelAccess = QQmlDelegateModel::Qt5ReadWrite;
 #endif
-    int requestedIndex;
+    int requestedIndex = -1;
     QVariant model;
-    QQmlInstanceModel *instanceModel;
-    QQmlComponent *delegate;
+    QQmlInstanceModel *instanceModel = nullptr;
+    QQmlComponent *delegate = nullptr;
     QVector<QPointer<QObject> > objects;
 };
 

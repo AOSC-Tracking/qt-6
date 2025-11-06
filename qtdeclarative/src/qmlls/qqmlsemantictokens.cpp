@@ -198,6 +198,9 @@ static int fromQmlModifierKindToLspTokenType(QmlHighlightModifiers highlightModi
     if (highlightModifier.testFlag(QmlHighlightModifier::QmlDefaultProperty))
         addModifier(SemanticTokenModifiers::DefaultLibrary, &modifier);
 
+    if (highlightModifier.testFlag(QmlHighlightModifier::QmlFinalProperty))
+        addModifier(SemanticTokenModifiers::Static, &modifier);
+
     if (highlightModifier.testFlag(QmlHighlightModifier::QmlRequiredProperty))
         addModifier(SemanticTokenModifiers::Abstract, &modifier);
 
@@ -211,11 +214,11 @@ static FieldFilter highlightingFilter()
 {
     QMultiMap<QString, QString> fieldFilterAdd{};
     QMultiMap<QString, QString> fieldFilterRemove{
-        { QString(), QString::fromUtf16(Fields::propertyInfos) },
-        { QString(), QString::fromUtf16(Fields::fileLocationsTree) },
-        { QString(), QString::fromUtf16(Fields::importScope) },
-        { QString(), QString::fromUtf16(Fields::defaultPropertyName) },
-        { QString(), QString::fromUtf16(Fields::get) },
+        { QString(), Fields::propertyInfos.toString() },
+        { QString(), Fields::fileLocationsTree.toString() },
+        { QString(), Fields::importScope.toString() },
+        { QString(), Fields::defaultPropertyName.toString() },
+        { QString(), Fields::get.toString() },
     };
     return FieldFilter{ fieldFilterAdd, fieldFilterRemove };
 }
@@ -439,6 +442,10 @@ void HighlightingVisitor::highlightPropertyDefinition(const DomItem &item)
     if (propertyDef->isDefaultMember) {
         modifier |= QmlHighlightModifier::QmlDefaultProperty;
         m_highlights.addHighlight(regions[DefaultKeywordRegion], QmlHighlightKind::QmlKeyword);
+    }
+    if (propertyDef->isFinal) {
+        modifier |= QmlHighlightModifier::QmlFinalProperty;
+        m_highlights.addHighlight(regions[FinalKeywordRegion], QmlHighlightKind::QmlKeyword);
     }
     if (propertyDef->isRequired) {
         modifier |= QmlHighlightModifier::QmlRequiredProperty;

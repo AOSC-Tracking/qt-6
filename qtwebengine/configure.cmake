@@ -17,7 +17,7 @@ qt_webengine_set_version(glib 2.32.0)
 qt_webengine_set_version(glibc 2.16)
 qt_webengine_set_version(harfbuzz 4.3.0)
 qt_webengine_set_version(libpng 1.6.0)
-qt_webengine_set_version(libtiff 4.2.0)
+qt_webengine_set_version(libtiff 4.5.0)
 qt_webengine_set_version(re2 11.0.0)
 qt_webengine_set_version(icu 70)
 qt_webengine_set_version(opus 1.3.1)
@@ -25,6 +25,7 @@ qt_webengine_set_version(vpx 1.10.0)
 qt_webengine_set_version(libavutil 58.29.100)
 qt_webengine_set_version(libavcodec 60.31.102)
 qt_webengine_set_version(libavformat 60.16.100)
+qt_webengine_set_version(openh264 2.4.1)
 qt_webengine_set_version(windows_sdk 26100) # we only care about minor number "10.0.26100.0"
 
 if(QT_CONFIGURE_RUNNING)
@@ -69,7 +70,6 @@ if(PkgConfig_FOUND)
     pkg_check_modules(GLIB glib-2.0>=${QT_CONFIGURE_CHECK_glib_version})
     pkg_check_modules(HARFBUZZ harfbuzz>=${QT_CONFIGURE_CHECK_harfbuzz_version} harfbuzz-subset>=${QT_CONFIGURE_CHECK_harfbuzz_version})
     pkg_check_modules(JPEG libjpeg IMPORTED_TARGET)
-    pkg_check_modules(LIBEVENT libevent)
     pkg_check_modules(MINIZIP minizip)
     pkg_check_modules(PNG libpng>=${QT_CONFIGURE_CHECK_libpng_version})
     pkg_check_modules(TIFF libtiff-4>=${QT_CONFIGURE_CHECK_libtiff_version})
@@ -93,6 +93,7 @@ if(PkgConfig_FOUND)
     pkg_check_modules(XKBFILE xkbfile)
     pkg_check_modules(XCBDRI3 xcb-dri3)
     pkg_check_modules(LIBUDEV libudev)
+    pkg_check_modules(OPENH264 openh264>=${QT_CONFIGURE_CHECK_openh264_version})
 endif()
 
 if(Python3_EXECUTABLE)
@@ -653,10 +654,6 @@ qt_feature("webengine-system-minizip" PRIVATE
     LABEL "minizip"
     CONDITION UNIX AND MINIZIP_FOUND
 )
-qt_feature("webengine-system-libevent" PRIVATE
-    LABEL "libevent"
-    CONDITION UNIX AND LIBEVENT_FOUND
-)
 qt_feature("webengine-system-libxml" PRIVATE
     LABEL "libxml2 and libxslt"
     CONDITION UNIX AND LIBXML2_FOUND
@@ -723,6 +720,11 @@ qt_feature("webengine-system-libudev" PRIVATE
     CONDITION UNIX AND LIBUDEV_FOUND
 )
 
+qt_feature("webengine-system-openh264" PRIVATE
+    LABEL "openh264"
+    CONDITION UNIX AND OPENH264_FOUND
+)
+
 qt_feature("webengine-ozone-x11" PRIVATE
     LABEL "Support X11 on qpa-xcb"
     CONDITION LINUX
@@ -767,7 +769,6 @@ if(UNIX)
     qt_configure_add_summary_entry(ARGS "webengine-system-glib")
     qt_configure_add_summary_entry(ARGS "webengine-system-zlib")
     qt_configure_add_summary_entry(ARGS "webengine-system-minizip")
-    qt_configure_add_summary_entry(ARGS "webengine-system-libevent")
     qt_configure_add_summary_entry(ARGS "webengine-system-libxml")
     qt_configure_add_summary_entry(ARGS "webengine-system-lcms2")
     qt_configure_add_summary_entry(ARGS "webengine-system-libpng")
@@ -778,6 +779,7 @@ if(UNIX)
     qt_configure_add_summary_entry(ARGS "webengine-system-freetype")
     qt_configure_add_summary_entry(ARGS "webengine-system-libpci")
     qt_configure_add_summary_entry(ARGS "webengine-system-libudev")
+    qt_configure_add_summary_entry(ARGS "webengine-system-openh264")
     qt_configure_end_summary_section()
 endif()
 

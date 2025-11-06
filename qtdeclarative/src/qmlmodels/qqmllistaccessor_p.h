@@ -45,7 +45,8 @@ public:
         ListProperty,
         Instance,
         Integer,
-        Sequence,
+        ObjectSequence,
+        ValueSequence,
     };
 
     Type type() const { return m_type; }

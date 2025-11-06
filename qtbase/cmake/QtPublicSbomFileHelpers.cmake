@@ -298,6 +298,7 @@ function(_qt_internal_sbom_add_binary_file target file_path)
         FILENAME "${file_path}"
         FILETYPE BINARY ${optional}
         SPDXID "${spdx_id}"
+        PARENT_PACKAGE_SPDXID "${arg_PACKAGE_SPDX_ID}"
         ${file_common_options}
         ${config_to_install_option}
         ${relationship_option}
@@ -729,6 +730,7 @@ function(_qt_internal_sbom_add_custom_file target installed_file_relative_path)
         FILENAME "${installed_file_relative_path}"
         FILETYPE "${file_type}" ${optional}
         SPDXID "${spdx_id}"
+        PARENT_PACKAGE_SPDXID "${arg_PACKAGE_SPDX_ID}"
         ${file_common_options}
         ${config_to_install_option}
         ${relationship_option}
@@ -814,13 +816,9 @@ function(_qt_internal_sbom_map_path_to_reproducible_relative_path out_var)
         if(IS_ABSOLUTE "${path}")
             set(path_in "${path}")
 
-            string(FIND "${path}" "${PROJECT_SOURCE_DIR}/" src_idx)
-            string(FIND "${path}" "${PROJECT_BINARY_DIR}/" dest_idx)
-
-            if(src_idx EQUAL "0")
-                set(is_in_source_dir TRUE)
-            elseif(dest_idx EQUAL "0")
-                set(is_in_build_dir TRUE)
+            _qt_internal_path_is_prefix(PROJECT_SOURCE_DIR "${path}" is_in_source_dir)
+            if(NOT is_in_source_dir)
+                _qt_internal_path_is_prefix(PROJECT_BINARY_DIR "${path}" is_in_build_dir)
             endif()
             if(NOT is_in_source_dir AND NOT is_in_build_dir)
                 _qt_internal_path_is_prefix(CMAKE_INSTALL_PREFIX "${path}" is_in_prefix_dir)

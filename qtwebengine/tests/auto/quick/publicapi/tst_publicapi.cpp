@@ -10,6 +10,8 @@
 #include <QtTest/QtTest>
 #include <QtWebEngineCore/QWebEngineCertificateError>
 #include <QtWebEngineCore/QWebEngineDesktopMediaRequest>
+#include <QtWebEngineCore/QWebEngineExtensionInfo>
+#include <QtWebEngineCore/QWebEngineExtensionManager>
 #include <QtWebEngineCore/QWebEngineFileSystemAccessRequest>
 #include <QtWebEngineCore/QWebEngineFindTextResult>
 #include <QtWebEngineCore/QWebEngineFullScreenRequest>
@@ -84,6 +86,10 @@ static const QList<const QMetaObject *> typesToCheck = QList<const QMetaObject *
     << &QWebEngineFrame::staticMetaObject
     << &QWebEngineClientHints::staticMetaObject
     << &QQuickWebEngineProfilePrototype::staticMetaObject
+#if QT_CONFIG(webengine_extensions)
+    << &QWebEngineExtensionInfo::staticMetaObject
+    << &QWebEngineExtensionManager::staticMetaObject
+#endif
     ;
 
 static QList<QMetaEnum> knownEnumNames = QList<QMetaEnum>()
@@ -104,6 +110,9 @@ static const QStringList hardcodedTypes = QStringList()
     << "QQmlComponent*"
     << "QMultiMap<QByteArray,QByteArray>"
     << "QList<QWebEnginePermission>"
+#if QT_CONFIG(webengine_extensions)
+    << "QList<QWebEngineExtensionInfo>"
+#endif
     ;
 
 static const QStringList expectedAPI = QStringList()
@@ -160,6 +169,7 @@ static const QStringList expectedAPI = QStringList()
     << "QWebEngineClientHints.wow64 --> bool"
     << "QWebEngineClientHints.isAllClientHintsEnabled --> bool"
     << "QWebEngineClientHints.resetAll() --> void"
+    << "QWebEngineClientHints.formFactors --> QStringList"
     << "QQuickWebEngineClientCertificateOption.issuer --> QString"
     << "QQuickWebEngineClientCertificateOption.subject --> QString"
     << "QQuickWebEngineClientCertificateOption.effectiveDate --> QDateTime"
@@ -299,6 +309,28 @@ static const QStringList expectedAPI = QStringList()
     << "QWebEngineDesktopMediaRequest.selectScreen(QModelIndex) --> void"
     << "QWebEngineDesktopMediaRequest.selectWindow(QModelIndex) --> void"
     << "QWebEngineDesktopMediaRequest.cancel() --> void"
+#if QT_CONFIG(webengine_extensions)
+    << "QWebEngineExtensionInfo.name --> QString"
+    << "QWebEngineExtensionInfo.id --> QString"
+    << "QWebEngineExtensionInfo.description --> QString"
+    << "QWebEngineExtensionInfo.path --> QString"
+    << "QWebEngineExtensionInfo.error --> QString"
+    << "QWebEngineExtensionInfo.actionPopupUrl --> QUrl"
+    << "QWebEngineExtensionInfo.isEnabled --> bool"
+    << "QWebEngineExtensionInfo.isLoaded --> bool"
+    << "QWebEngineExtensionInfo.isInstalled --> bool"
+    << "QWebEngineExtensionManager.extensions --> QList<QWebEngineExtensionInfo>"
+    << "QWebEngineExtensionManager.loadExtension(QString) --> void"
+    << "QWebEngineExtensionManager.installExtension(QString) --> void"
+    << "QWebEngineExtensionManager.unloadExtension(QWebEngineExtensionInfo) --> void"
+    << "QWebEngineExtensionManager.uninstallExtension(QWebEngineExtensionInfo) --> void"
+    << "QWebEngineExtensionManager.setExtensionEnabled(QWebEngineExtensionInfo,bool) --> void"
+    << "QWebEngineExtensionManager.installPath --> QString"
+    << "QWebEngineExtensionManager.loadFinished(QWebEngineExtensionInfo) --> void"
+    << "QWebEngineExtensionManager.unloadFinished(QWebEngineExtensionInfo) --> void"
+    << "QWebEngineExtensionManager.installFinished(QWebEngineExtensionInfo) --> void"
+    << "QWebEngineExtensionManager.uninstallFinished(QWebEngineExtensionInfo) --> void"
+#endif
     << "QWebEngineFullScreenRequest.accept() --> void"
     << "QWebEngineFullScreenRequest.origin --> QUrl"
     << "QWebEngineFullScreenRequest.reject() --> void"
@@ -447,6 +479,9 @@ static const QStringList expectedAPI = QStringList()
     << "QQuickWebEngineProfile.storageName --> QString"
     << "QQuickWebEngineProfile.storageNameChanged() --> void"
     << "QQuickWebEngineProfile.userScripts --> QQuickWebEngineScriptCollection*"
+#if QT_CONFIG(webengine_extensions)
+    << "QQuickWebEngineProfile.extensionManager --> QWebEngineExtensionManager*"
+#endif
     << "QQuickWebEngineSettings.AllowAllUnknownUrlSchemes --> UnknownUrlSchemePolicy"
     << "QQuickWebEngineSettings.AllowUnknownUrlSchemesFromUserInteraction --> UnknownUrlSchemePolicy"
     << "QQuickWebEngineSettings.DisallowUnknownUrlSchemes --> UnknownUrlSchemePolicy"
@@ -526,6 +561,8 @@ static const QStringList expectedAPI = QStringList()
     << "QQuickWebEngineSettings.readingFromCanvasEnabledChanged() --> void"
     << "QQuickWebEngineSettings.touchEventsApiEnabled --> bool"
     << "QQuickWebEngineSettings.touchEventsApiEnabledChanged() --> void"
+    << "QQuickWebEngineSettings.backForwardCacheEnabled --> bool"
+    << "QQuickWebEngineSettings.backForwardCacheEnabledChanged() --> void"
     << "QQuickWebEngineSingleton.defaultProfile --> QQuickWebEngineProfile*"
     << "QQuickWebEngineSingleton.settings --> QQuickWebEngineSettings*"
     << "QQuickWebEngineSingleton.script() --> QWebEngineScript"
@@ -971,6 +1008,7 @@ static const QStringList expectedAPI = QStringList()
     << "QQuickWebEngineProfilePrototype.persistentCookiesPolicy --> QQuickWebEngineProfile::PersistentCookiesPolicy"
     << "QQuickWebEngineProfilePrototype.httpCacheMaximumSize --> int"
     << "QQuickWebEngineProfilePrototype.persistentPermissionsPolicy --> QQuickWebEngineProfile::PersistentPermissionsPolicy"
+    << "QQuickWebEngineProfilePrototype.additionalTrustedCertificateFiles --> QStringList"
     << "QQuickWebEngineProfilePrototype.instance() --> QQuickWebEngineProfile*"
     ;
 

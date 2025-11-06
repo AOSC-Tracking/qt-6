@@ -230,8 +230,9 @@ ReturnedValue QQmlContextWrapper::getPropertyAndBase(const QQmlContextWrapper *r
                         } else {
                             QJSValue singleton = e->singletonInstance<QJSValue>(r.type);
 
-                            // QSrting values should already have been put on the engine heap at this point
-                            // to manage their memory. We later assume this has already happened.
+                            // QString values should already have been put on the engine heap at
+                            // this point to manage their memory. We later assume this has already
+                            // happened.
                             Q_ASSERT(!QJSValuePrivate::asQString(&singleton));
 
                             if (QV4::Value *val = QJSValuePrivate::takeManagedValue(&singleton)) {

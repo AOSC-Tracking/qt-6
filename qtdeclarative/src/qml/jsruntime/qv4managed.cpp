@@ -106,6 +106,18 @@ QString Managed::className() const
     case Type_QmlListProperty:
         s = "QML List";
         break;
+    case Type_V4QObjectWrapper:
+        s = "V4QObjectWrapper";
+        break;
+    case Type_QMLTypeWrapper:
+        s = "QMLTypeWrapper";
+        break;
+    case Type_V4ReferenceObject:
+        s = "V4ReferenceObject";
+        break;
+    case Type_QMLValueTypeWrapper:
+        s = "QMLValueTypeWrapper";
+        break;
     }
     return QString::fromLatin1(s);
 }

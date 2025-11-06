@@ -22,10 +22,7 @@ QQmlInstantiatorPrivate::QQmlInstantiatorPrivate()
 #if QT_CONFIG(qml_delegate_model)
     , ownModel(false)
 #endif
-    , requestedIndex(-1)
     , model(QVariant(1))
-    , instanceModel(nullptr)
-    , delegate(nullptr)
 {
 }
 
@@ -175,6 +172,7 @@ void QQmlInstantiatorPrivate::makeModel()
     instanceModel = delegateModel;
     ownModel = true;
     delegateModel->setDelegate(delegate);
+    delegateModel->setDelegateModelAccess(delegateModelAccess);
     delegateModel->classBegin(); //Pretend it was made in QML
     if (componentComplete)
         delegateModel->componentComplete();
@@ -412,6 +410,39 @@ void QQmlInstantiator::setModel(const QVariant &v)
     d->regenerate();
     emit modelChanged();
 }
+
+#if QT_CONFIG(qml_delegate_model)
+/*!
+    \qmlproperty enumeration QtQml.Models::Instantiator::delegateModelAccess
+
+    \include delegatemodelaccess.qdocinc
+*/
+
+QQmlDelegateModel::DelegateModelAccess QQmlInstantiator::delegateModelAccess() const
+{
+    Q_D(const QQmlInstantiator);
+    return d->delegateModelAccess;
+}
+
+void QQmlInstantiator::setDelegateModelAccess(
+        QQmlDelegateModel::DelegateModelAccess delegateModelAccess)
+{
+    Q_D(QQmlInstantiator);
+    if (delegateModelAccess == d->delegateModelAccess)
+        return;
+
+    d->delegateModelAccess = delegateModelAccess;
+    emit delegateModelAccessChanged();
+
+    if (!d->ownModel)
+        return;
+
+    if (QQmlDelegateModel *dModel = qobject_cast<QQmlDelegateModel*>(d->instanceModel))
+        dModel->setDelegateModelAccess(delegateModelAccess);
+    if (d->componentComplete)
+        d->regenerate();
+}
+#endif
 
 /*!
     \qmlproperty QtObject QtQml.Models::Instantiator::object

@@ -75,6 +75,7 @@ public:
     static void dispatchEnterLeave(QWidget *enter, QWidget *leave, const QPointF &globalPosF);
     static QWidget *desktop();
     void notifyWindowIconChanged() override;
+    bool compressEvent(QEvent *event, QObject *receiver, QPostEventList *postedEvents) final;
 
 #ifndef QT_NO_ACTION
     QActionPrivate *createActionPrivate() const override;

@@ -22,8 +22,10 @@ static bool qWaitForWidgetWindow(QWidget *w, Predicate predicate, QDeadlineTimer
     if (!w->window()->windowHandle())
         return false;
 
-    return QTest::qWaitFor([&]() {
-        if (QWindow *window = w->window()->windowHandle())
+    return QTest::qWaitFor([&, wp = QPointer(w)]() {
+        if (QWidget *widget = wp.data(); !widget)
+            return false;
+        else if (QWindow *window = widget->window()->windowHandle())
             return predicate(window);
         return false;
     }, timeout);
@@ -31,6 +33,17 @@ static bool qWaitForWidgetWindow(QWidget *w, Predicate predicate, QDeadlineTimer
 
 /*!
     \since 5.0
+    \overload
+
+    The \a timeout is in milliseconds.
+*/
+bool QTest::qWaitForWindowActive(QWidget *widget, int timeout)
+{
+    return qWaitForWindowActive(widget, QDeadlineTimer{timeout, Qt::TimerType::PreciseTimer});
+}
+
+/*!
+    \since 6.10
 
     Returns \c true if \a widget is active within \a timeout milliseconds. Otherwise returns \c false.
 
@@ -45,7 +58,7 @@ static bool qWaitForWidgetWindow(QWidget *w, Predicate predicate, QDeadlineTimer
 
     \sa qWaitForWindowExposed(), QWidget::isActiveWindow()
 */
-Q_WIDGETS_EXPORT bool QTest::qWaitForWindowActive(QWidget *widget, int timeout)
+bool QTest::qWaitForWindowActive(QWidget *widget, QDeadlineTimer timeout)
 {
     if (Q_UNLIKELY(!QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowActivation))) {
         qWarning() << "qWaitForWindowActive was called on a platform that doesn't support window"
@@ -57,9 +70,19 @@ Q_WIDGETS_EXPORT bool QTest::qWaitForWindowActive(QWidget *widget, int timeout)
     }
     return qWaitForWidgetWindow(widget,
                                 [&](QWindow *window) { return window->isActive(); },
-                                QDeadlineTimer{timeout, Qt::TimerType::PreciseTimer});
+                                timeout);
 }
 
+/*!
+    \since 6.10
+    \overload
+
+    This function uses the default timeout of 5 seconds.
+*/
+bool QTest::qWaitForWindowActive(QWidget *widget)
+{
+    return qWaitForWindowActive(widget, Internal::defaultTryTimeout);
+}
 
 /*!
     \since 6.7
@@ -86,7 +109,30 @@ Q_WIDGETS_EXPORT bool QTest::qWaitForWindowFocused(QWidget *widget, QDeadlineTim
 }
 
 /*!
+    \since 6.10
+    \overload
+
+    This function uses the default timeout of 5 seconds.
+*/
+bool QTest::qWaitForWindowFocused(QWidget *widget)
+{
+    return qWaitForWindowFocused(widget, Internal::defaultTryTimeout);
+}
+
+/*!
     \since 5.0
+    \overload
+
+    The \a timeout is in milliseconds.
+*/
+bool QTest::qWaitForWindowExposed(QWidget *widget, int timeout)
+{
+    return qWaitForWindowExposed(widget, std::chrono::milliseconds(timeout));
+}
+
+
+/*!
+    \since 6.10
 
     Returns \c true if \a widget is exposed within \a timeout milliseconds. Otherwise returns \c false.
 
@@ -99,11 +145,22 @@ Q_WIDGETS_EXPORT bool QTest::qWaitForWindowFocused(QWidget *widget, QDeadlineTim
 
     \sa qWaitForWindowActive(), QWidget::isVisible(), QWindow::isExposed()
 */
-Q_WIDGETS_EXPORT bool QTest::qWaitForWindowExposed(QWidget *widget, int timeout)
+bool QTest::qWaitForWindowExposed(QWidget *widget, QDeadlineTimer timeout)
 {
     return qWaitForWidgetWindow(widget,
                                 [&](QWindow *window) { return window->isExposed(); },
-                                QDeadlineTimer{timeout, Qt::TimerType::PreciseTimer});
+                                timeout);
+}
+
+/*!
+    \since 6.10
+    \overload
+
+    This function uses the default timeout of 5 seconds.
+*/
+bool QTest::qWaitForWindowExposed(QWidget *widget)
+{
+    return qWaitForWindowExposed(widget, Internal::defaultTryTimeout);
 }
 
 namespace QTest {

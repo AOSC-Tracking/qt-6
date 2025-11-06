@@ -22,11 +22,21 @@ struct QXcbCursorCacheKey
     Qt::CursorShape shape;
     qint64 bitmapCacheKey;
     qint64 maskCacheKey;
+    union {
+        qint64 hashKey;
+        struct {
+            qint32 x;
+            qint32 y;
+        };
+    } hotspotCacheKey;
 };
 
 inline bool operator==(const QXcbCursorCacheKey &k1, const QXcbCursorCacheKey &k2)
 {
-    return k1.shape == k2.shape && k1.bitmapCacheKey == k2.bitmapCacheKey && k1.maskCacheKey == k2.maskCacheKey;
+    return k1.shape == k2.shape &&
+           k1.bitmapCacheKey == k2.bitmapCacheKey &&
+           k1.maskCacheKey == k2.maskCacheKey &&
+           k1.hotspotCacheKey.hashKey == k2.hotspotCacheKey.hashKey;
 }
 
 inline size_t qHash(const QXcbCursorCacheKey &k, size_t seed) noexcept

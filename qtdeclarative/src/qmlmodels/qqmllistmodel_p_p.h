@@ -328,7 +328,6 @@ class ListModel
 public:
 
     ListModel(ListLayout *layout, QQmlListModel *modelCache);
-    ~ListModel() {}
 
     void destroy();
 

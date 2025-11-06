@@ -800,37 +800,8 @@ void QQuick3DViewport::setImportScene(QQuick3DNode *inScene)
     }
 
     m_importScene = inScene;
-    if (m_importScene) {
-        auto privateObject = QQuick3DObjectPrivate::get(m_importScene);
-        if (!privateObject->sceneManager) {
-            // If object doesn't already have scene manager, check from its children
-            QQuick3DSceneManager *manager = findChildSceneManager(m_importScene);
-            // If still not found, use the one from the scene root (scenes defined outside of an view3d)
-            if (!manager)
-                manager = QQuick3DObjectPrivate::get(m_sceneRoot)->sceneManager;
-            if (manager) {
-                manager->setWindow(window());
-                privateObject->refSceneManager(*manager);
-            }
-            // At this point some manager will exist
-            Q_ASSERT(privateObject->sceneManager);
-        }
-
-        connect(privateObject->sceneManager, &QQuick3DSceneManager::needsUpdate,
-                this, &QQuickItem::update);
-
-        QQuick3DNode *scene = inScene;
-        while (scene) {
-            QQuick3DSceneRootNode *rn = qobject_cast<QQuick3DSceneRootNode *>(scene);
-            scene = rn ? rn->view3D()->importScene() : nullptr;
-
-            if (scene) {
-                connect(QQuick3DObjectPrivate::get(scene)->sceneManager,
-                        &QQuick3DSceneManager::needsUpdate,
-                        this, &QQuickItem::update);
-            }
-        }
-    }
+    if (m_importScene)
+        updateSceneManagerForImportScene();
 
     emit importSceneChanged();
     update();
@@ -1396,8 +1367,31 @@ QQuick3DLightmapBaker *QQuick3DViewport::lightmapBaker()
 */
 void QQuick3DViewport::bakeLightmap()
 {
-    lightmapBaker()->bake();
+    QQuick3DSceneRenderer *renderer = getRenderer();
+    if (!renderer || !renderer->m_layer->renderData)
+        return;
+
+    const bool currentlyBaking = renderer->m_layer->renderData->lightmapBaker != nullptr;
+
+    if (!currentlyBaking)
+        lightmapBaker()->bake();
 }
+
+/*!
+    \internal
+*/
+void QQuick3DViewport::denoiseLightmap()
+{
+    QQuick3DSceneRenderer *renderer = getRenderer();
+    if (!renderer || !renderer->m_layer->renderData)
+        return;
+
+    const bool currentlyBaking = renderer->m_layer->renderData->lightmapBaker != nullptr;
+
+    if (!currentlyBaking)
+        lightmapBaker()->denoise();
+}
+
 
 void QQuick3DViewport::setGlobalPickingEnabled(bool isEnabled)
 {
@@ -2014,6 +2008,7 @@ QQuick3DPickResult QQuick3DViewport::processPickResult(const QSSGRenderPickResul
                                   pickResult.m_scenePosition,
                                   pickResult.m_localPosition,
                                   pickResult.m_faceNormal,
+                                  pickResult.m_sceneNormal,
                                   pickResult.m_instanceIndex);
 
     QQuick3DItem2D *frontend2DItem = qobject_cast<QQuick3DItem2D *>(frontendObject);
@@ -2114,6 +2109,55 @@ void QQuick3DViewport::updateCameraForLayer(const QQuick3DViewport &view3D, QSSG
             layerNode.explicitCameras.append(static_cast<QSSGRenderCamera *>(QQuick3DObjectPrivate::get(camera)->spatialNode));
     } else if (view3D.camera()) {
         layerNode.explicitCameras.append(static_cast<QSSGRenderCamera *>(QQuick3DObjectPrivate::get(view3D.camera())->spatialNode));
+    }
+
+    // Ensure these have a parent. All nodes need to be in the node tree somewhere, even if they're technically "parentless"
+    // or we'll not assign a storage slot for them or update them.
+    for (QSSGRenderCamera *camera : std::as_const(layerNode.explicitCameras)) {
+        if (!camera->parent)
+            layerNode.addChild(*camera);
+    }
+}
+
+void QQuick3DViewport::updateSceneManagerForImportScene()
+{
+    auto privateObject = QQuick3DObjectPrivate::get(m_importScene);
+    if (!privateObject->sceneManager) {
+        // If object doesn't already have scene manager, check from its children
+        QQuick3DSceneManager *manager = findChildSceneManager(m_importScene);
+        // If still not found, use the one from the scene root (scenes defined outside of an view3d)
+        if (!manager)
+            manager = QQuick3DObjectPrivate::get(m_sceneRoot)->sceneManager;
+        if (manager) {
+            manager->setWindow(window());
+            privateObject->refSceneManager(*manager);
+        }
+
+        // In the case m_sceneRoot doesn't have a valid sceneManager,
+        // it means the view3d is not valid now.
+        if (!privateObject->sceneManager)
+            return;
+
+    }
+    connect(privateObject->sceneManager, &QQuick3DSceneManager::needsUpdate,
+            this, &QQuickItem::update, Qt::UniqueConnection);
+    connect(privateObject->sceneManager, &QObject::destroyed,
+            this, [&](QObject *) {
+                auto privateObject = QQuick3DObjectPrivate::get(m_importScene);
+                privateObject->sceneManager = nullptr;
+                updateSceneManagerForImportScene();
+            }, Qt::DirectConnection);
+
+    QQuick3DNode *scene = m_importScene;
+    while (scene) {
+        QQuick3DSceneRootNode *rn = qobject_cast<QQuick3DSceneRootNode *>(scene);
+        scene = rn ? rn->view3D()->importScene() : nullptr;
+
+        if (scene) {
+            connect(QQuick3DObjectPrivate::get(scene)->sceneManager,
+                    &QQuick3DSceneManager::needsUpdate,
+                    this, &QQuickItem::update, Qt::UniqueConnection);
+        }
     }
 }
 

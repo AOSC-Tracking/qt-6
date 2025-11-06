@@ -247,6 +247,8 @@ QXcbCursorCacheKey::QXcbCursorCacheKey(const QCursor &c)
             maskCacheKey = c.mask().cacheKey();
         }
     }
+    hotspotCacheKey.x = c.hotSpot().x();
+    hotspotCacheKey.y = c.hotSpot().y();
 }
 
 #endif // !QT_NO_CURSOR

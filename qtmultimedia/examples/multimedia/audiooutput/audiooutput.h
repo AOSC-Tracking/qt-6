@@ -13,11 +13,11 @@
 #include <QMediaDevices>
 #include <QObject>
 #include <QPushButton>
-#include <QScopedPointer>
 #include <QSlider>
 #include <QTimer>
 
 #include <math.h>
+#include <memory>
 
 class Generator : public QIODevice
 {
@@ -50,6 +50,9 @@ public:
     AudioTest();
     ~AudioTest();
 
+signals:
+    void pullModeChanged();
+
 private:
     void initializeWindow();
     void initializeAudio(const QAudioDevice &deviceInfo);
@@ -65,10 +68,11 @@ private:
     QLabel *m_volumeLabel = nullptr;
     QSlider *m_volumeSlider = nullptr;
 
-    QScopedPointer<Generator> m_generator;
-    QScopedPointer<QAudioSink> m_audioOutput;
+    std::unique_ptr<Generator> m_generator;
+    std::unique_ptr<QAudioSink> m_audioSink;
 
     bool m_pullMode = true;
+    void restartAudioStream();
 
 private slots:
     void toggleMode();

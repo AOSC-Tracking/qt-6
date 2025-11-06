@@ -96,7 +96,7 @@ class Q_QMLMODELS_EXPORT QQmlObjectModel : public QQmlInstanceModel
 
 public:
     QQmlObjectModel(QObject *parent=nullptr);
-    ~QQmlObjectModel() {}
+    ~QQmlObjectModel();
 
     int count() const override;
     bool isValid() const override;

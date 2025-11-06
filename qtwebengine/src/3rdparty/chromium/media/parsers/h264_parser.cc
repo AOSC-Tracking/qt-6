@@ -283,7 +283,7 @@ void H264Parser::SetEncryptedStream(
     const uint8_t* stream,
     off_t stream_size,
     const std::vector<SubsampleEntry>& subsamples) {
-  DCHECK(stream);
+  CHECK(stream);
   DCHECK_GT(stream_size, 0);
 
   stream_ = stream;
@@ -636,8 +636,7 @@ static void FallbackScalingList4x4(
       break;
 
     default:
-      NOTREACHED_IN_MIGRATION();
-      break;
+      NOTREACHED();
   }
 }
 
@@ -677,8 +676,7 @@ static void FallbackScalingList8x8(
       break;
 
     default:
-      NOTREACHED_IN_MIGRATION();
-      break;
+      NOTREACHED();
   }
 }
 

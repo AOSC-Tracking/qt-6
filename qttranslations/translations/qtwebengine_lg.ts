@@ -103,10 +103,6 @@
 <context>
     <name>QQuickPdfDocument</name>
     <message>
-        <source>Cannot open: %1</source>
-        <translation>Tekisobose okubikkula: %1</translation>
-    </message>
-    <message>
         <source>no error</source>
         <translation>temuli bisobu</translation>
     </message>
@@ -139,79 +135,79 @@
     <name>QQuickWebEngineView</name>
     <message>
         <source>Stop</source>
-        <translation type="vanished">Koma</translation>
+        <translation>Koma</translation>
     </message>
     <message>
         <source>Reload and Bypass Cache</source>
-        <translation type="vanished">Damu Okulubikkula mu Kifo kya ku Lunona mu Ggwanika Ly&apos;ebyanguyisa</translation>
+        <translation>Damu Okulubikkula mu Kifo kya ku Lunona mu Ggwanika Ly&apos;ebyanguyisa</translation>
     </message>
     <message>
         <source>Open link in this window</source>
-        <translation type="vanished">Enyunzi gibikkulire mu ddirisa lino</translation>
+        <translation>Enyunzi gibikkulire mu ddirisa lino</translation>
     </message>
     <message>
         <source>Toggle Play/Pause</source>
-        <translation type="vanished">Wanyisa wakati w&apos;okwolesa n&apos;okuyimirizamu</translation>
+        <translation>Wanyisa wakati w&apos;okwolesa n&apos;okuyimirizamu</translation>
     </message>
     <message>
         <source>Toggle Mute</source>
-        <translation type="vanished">Wanyisa wakati wa kusirisa n&apos;okuwulirika</translation>
+        <translation>Wanyisa wakati wa kusirisa n&apos;okuwulirika</translation>
     </message>
     <message>
         <source>Close Page</source>
-        <translation type="vanished">Olupapula Luleke</translation>
+        <translation>Olupapula Luleke</translation>
     </message>
     <message>
         <source>Unselect</source>
-        <translation type="vanished">Tta</translation>
+        <translation>Tta</translation>
     </message>
     <message>
         <source>&amp;Bold</source>
-        <translation type="vanished">&amp;Ggumiza</translation>
+        <translation>&amp;Ggumiza</translation>
     </message>
     <message>
         <source>&amp;Italic</source>
-        <translation type="vanished">&amp;Italiki</translation>
+        <translation>&amp;Italiki</translation>
     </message>
     <message>
         <source>&amp;Underline</source>
-        <translation type="vanished">&amp;Za Lukoloboze Wansi</translation>
+        <translation>&amp;Za Lukoloboze Wansi</translation>
     </message>
     <message>
         <source>&amp;Strikethrough</source>
-        <translation type="vanished">&amp;Nsazemu</translation>
+        <translation>&amp;Nsazemu</translation>
     </message>
     <message>
         <source>Align &amp;Left</source>
-        <translation type="vanished">Emboozi Zeesimbenga ku &amp;Kkono</translation>
+        <translation>Emboozi Zeesimbenga ku &amp;Kkono</translation>
     </message>
     <message>
         <source>Align &amp;Center</source>
-        <translation type="vanished">Emboozi Zeesimbenga mu &amp;Makkati</translation>
+        <translation>Emboozi Zeesimbenga mu &amp;Makkati</translation>
     </message>
     <message>
         <source>Align &amp;Right</source>
-        <translation type="vanished">Emboozi Zeesimbenga ku &amp;Ddyo</translation>
+        <translation>Emboozi Zeesimbenga ku &amp;Ddyo</translation>
     </message>
     <message>
         <source>Align &amp;Justified</source>
-        <translation type="vanished">Emboozi &amp;Zeenkanankanenga</translation>
+        <translation>Emboozi &amp;Zeenkanankanenga</translation>
     </message>
     <message>
         <source>&amp;Indent</source>
-        <translation type="vanished">S&amp;eenserawaza</translation>
+        <translation>S&amp;eenserawaza</translation>
     </message>
     <message>
         <source>&amp;Outdent</source>
-        <translation type="vanished">So&amp;loobawaza</translation>
+        <translation>So&amp;loobawaza</translation>
     </message>
     <message>
         <source>Insert &amp;Ordered List</source>
-        <translation type="vanished">Sonsekawo Olukalala Lw&apos;ebi&amp;rambidwa</translation>
+        <translation>Sonsekawo Olukalala Lw&apos;ebi&amp;rambidwa</translation>
     </message>
     <message>
         <source>Insert &amp;Unordered List</source>
-        <translation type="vanished">Sonsekawo Olukalala Lw&apos;ebi&amp;tali Birambe</translation>
+        <translation>Sonsekawo Olukalala Lw&apos;ebi&amp;tali Birambe</translation>
     </message>
 </context>
 <context>
@@ -239,14 +235,6 @@
     <message>
         <source>Unselect</source>
         <translation>Tta</translation>
-    </message>
-    <message>
-        <source>Change text direction left to right</source>
-        <translation>Ebigambo bivenga ku kkono nga bidda ku ddyo</translation>
-    </message>
-    <message>
-        <source>Change text direction right to left</source>
-        <translation>Ebigambo bivenga ku ddyo nga bidda ku kkono</translation>
     </message>
     <message>
         <source>Are you sure you want to leave this page? Changes that you made may not be saved.</source>
@@ -310,29 +298,29 @@
     </message>
     <message>
         <source>Select folder to upload</source>
-        <translation type="vanished">Tangaaza tterekero erinawanikibwa</translation>
+        <translation>Tangaaza tterekero erinawanikibwa</translation>
     </message>
 </context>
 <context>
     <name>QtWebEnginePlugin</name>
     <message>
         <source>Cannot create separate instance of WebEngineNewViewRequest</source>
-        <translation type="vanished">Sisobola okwongerawo olubumbujjo lwa WebEngineNewViewRequest olwetongovu</translation>
+        <translation>Sisobola okwongerawo olubumbujjo lwa WebEngineNewViewRequest olwetongovu</translation>
     </message>
     <message>
         <source>Cannot create separate instance of %1</source>
-        <translation type="vanished">Sisobola okwongerawo olubumbujjo lwa %1 olwetongovu</translation>
+        <translation>Sisobola okwongerawo olubumbujjo lwa %1 olwetongovu</translation>
     </message>
 </context>
 <context>
     <name>QtWebEngineTestSupportPlugin</name>
     <message>
         <source>Cannot create a separate instance of WebEngineErrorPage</source>
-        <translation type="vanished">Sisobola okwongerawo olubumbujjo lwa WebEngineErrorPage olwetongovu</translation>
+        <translation>Sisobola okwongerawo olubumbujjo lwa WebEngineErrorPage olwetongovu</translation>
     </message>
     <message>
         <source>Cannot create a separate instance of WebEngineTestEvent</source>
-        <translation type="vanished">Sisobola okwongerawo olubumbujjo lwa WebEngineTestEvent olwetongovu</translation>
+        <translation>Sisobola okwongerawo olubumbujjo lwa WebEngineTestEvent olwetongovu</translation>
     </message>
 </context>
 <context>
@@ -474,140 +462,6 @@
     <message>
         <source>HTTP-POST data can only be sent over HTTP(S) protocol</source>
         <translation>Empulizagana ey&apos;ekika kya HTTP(S) yokka y&apos;esobola okusindika data eya HTTP-POST</translation>
-    </message>
-</context>
-<context>
-    <name>PdfLinkDelegate</name>
-    <message>
-        <source>Page %1 location %2, %3 zoom %4</source>
-        <translation>Olupapula namba %1 kifo %2, %3 obuzimbulukufu %4</translation>
-    </message>
-</context>
-<context>
-    <name>AlertDialog</name>
-    <message>
-        <source>Alert Dialog</source>
-        <translation>Kaboozi ak&apos;okutemyako</translation>
-    </message>
-    <message>
-        <source>OK</source>
-        <translation>Kale</translation>
-    </message>
-</context>
-<context>
-    <name>AuthenticationDialog</name>
-    <message>
-        <source>Authentication Required</source>
-        <translation>Kyetaagisa Okukukakasa</translation>
-    </message>
-    <message>
-        <source>Username:</source>
-        <translation>Linnya lya akawunti:</translation>
-    </message>
-    <message>
-        <source>Password:</source>
-        <translation>Kyama:</translation>
-    </message>
-    <message>
-        <source>Cancel</source>
-        <translation>Sazamu</translation>
-    </message>
-    <message>
-        <source>Log In</source>
-        <translation>Yingira</translation>
-    </message>
-</context>
-<context>
-    <name>ConfirmDialog</name>
-    <message>
-        <source>Confirm Dialog</source>
-        <translation>Kaboozi ak&apos;okukakasa</translation>
-    </message>
-    <message>
-        <source>OK</source>
-        <translation>Kale</translation>
-    </message>
-    <message>
-        <source>Cancel</source>
-        <translation>Sazamu</translation>
-    </message>
-</context>
-<context>
-    <name>PromptDialog</name>
-    <message>
-        <source>Prompt Dialog</source>
-        <translation>Kaboozi ak&apos;okubuuza</translation>
-    </message>
-    <message>
-        <source>OK</source>
-        <translation>Kale</translation>
-    </message>
-    <message>
-        <source>Cancel</source>
-        <translation>Sazamu</translation>
-    </message>
-</context>
-<context>
-    <name>ColorDialog</name>
-    <message>
-        <source>Color Picker Dialog</source>
-        <translation>Kaboozi ak&apos;okutegeka langi</translation>
-    </message>
-    <message>
-        <source>Copy color</source>
-        <translation>Kwata langi</translation>
-    </message>
-    <message>
-        <source>Paste</source>
-        <translation>Paatiika</translation>
-    </message>
-    <message>
-        <source>Apply</source>
-        <translation>Kazza</translation>
-    </message>
-    <message>
-        <source>Cancel</source>
-        <translation>Sazamu</translation>
-    </message>
-</context>
-<context>
-    <name>FilePickerController</name>
-    <message>
-        <source>Accepted types (%1)</source>
-        <translation>Ebika ebikkirizibwa (%1)</translation>
-    </message>
-</context>
-<context>
-    <name>QPdfLinkModel</name>
-    <message>
-        <source>Page %1 location %2, %3 zoom %4</source>
-        <translation>Olupapula namba %1 kifo %2, %3 obuzimbulukufu %4</translation>
-    </message>
-</context>
-<context>
-    <name>QWebEngineView</name>
-    <message>
-        <source>Select folder to upload</source>
-        <translation>Tangaaza tterekero erinawanikibwa</translation>
-    </message>
-</context>
-<context>
-    <name>QtWebEngineWidgetUI::TouchSelectionMenuWidget</name>
-    <message>
-        <source>Cut</source>
-        <translation>Situlawo</translation>
-    </message>
-    <message>
-        <source>Copy</source>
-        <translation>Koppa</translation>
-    </message>
-    <message>
-        <source>Paste</source>
-        <translation>Paatiika</translation>
-    </message>
-    <message>
-        <source>...</source>
-        <translation>...</translation>
     </message>
 </context>
 </TS>

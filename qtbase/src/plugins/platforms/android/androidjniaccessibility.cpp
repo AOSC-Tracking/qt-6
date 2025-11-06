@@ -1,7 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
-#include "androiddeadlockprotector.h"
 #include "androidjniaccessibility.h"
 #include "androidjnimain.h"
 #include "qandroidplatformintegration.h"
@@ -64,7 +63,8 @@ namespace QtAndroidAccessibility
     template <typename Func, typename Ret>
     void runInObjectContext(QObject *context, Func &&func, Ret *retVal)
     {
-        AndroidDeadlockProtector protector;
+        QtAndroidPrivate::AndroidDeadlockProtector protector(
+            u"QtAndroidAccessibility::runInObjectContext()"_s);
         if (!protector.acquire()) {
             __android_log_print(ANDROID_LOG_WARN, m_qtTag,
                                 "Could not run accessibility call in object context, accessing "
@@ -79,11 +79,6 @@ namespace QtAndroidAccessibility
             __android_log_print(ANDROID_LOG_WARN, m_qtTag,
                                 "Could not run accessibility call in object context, event loop suspended.");
         }
-    }
-
-    void initialize()
-    {
-        QtAndroid::initializeAccessibility();
     }
 
     bool isActive()
@@ -147,6 +142,18 @@ namespace QtAndroidAccessibility
     {
         jstring value = jvalueForAccessibleObject(accessibilityObjectId);
         QtAndroid::notifyValueChanged(accessibilityObjectId, value);
+    }
+
+    // Forward declaration
+    static QString descriptionForInterface(QAccessibleInterface *iface);
+
+    void notifyDescriptionOrNameChanged(uint accessibilityObjectId)
+    {
+        QAccessibleInterface *iface = interfaceFromId(accessibilityObjectId);
+        if (iface && iface->isValid()) {
+            const QString value = descriptionForInterface(iface);
+            QtAndroid::notifyDescriptionOrNameChanged(accessibilityObjectId, value);
+        }
     }
 
     void notifyScrolledEvent(uint accessiblityObjectId)
@@ -304,12 +311,39 @@ namespace QtAndroidAccessibility
         return true;
     }
 
+    static bool focusAction_helper(int objectId)
+    {
+        QAccessibleInterface *iface = interfaceFromId(objectId);
+        if (!iface || !iface->isValid() || !iface->actionInterface())
+            return false;
+
+        const auto& actionNames = iface->actionInterface()->actionNames();
+
+        if (actionNames.contains(QAccessibleActionInterface::setFocusAction())) {
+            invokeActionOnInterfaceInMainThread(iface->actionInterface(),
+                                                QAccessibleActionInterface::setFocusAction());
+            return true;
+        }
+        return false;
+    }
+
     static jboolean clickAction(JNIEnv */*env*/, jobject /*thiz*/, jint objectId)
     {
         bool result = false;
         if (m_accessibilityContext) {
             runInObjectContext(m_accessibilityContext, [objectId]() {
                 return clickAction_helper(objectId);
+            }, &result);
+        }
+        return result;
+    }
+
+    static jboolean focusAction(JNIEnv */*env*/, jobject /*thiz*/, jint objectId)
+    {
+        bool result = false;
+        if (m_accessibilityContext) {
+            runInObjectContext(m_accessibilityContext, [objectId]() {
+                return focusAction_helper(objectId);
             }, &result);
         }
         return result;
@@ -485,9 +519,10 @@ namespace QtAndroidAccessibility
             return QStringLiteral("android.app.ActionBar.Tab");
         case QAccessible::Role::PageTabList:
             return QStringLiteral("android.widget.TabWidget");
-        case QAccessible::Role::ScrollBar: [[fallthrough]];
+        case QAccessible::Role::ScrollBar:
+            return QStringLiteral("android.widget.Scroller");
         case QAccessible::Role::Slider:
-            return QStringLiteral("android.widget.SeekBar");
+            return QStringLiteral("com.google.android.material.slider.Slider");
         case QAccessible::Role::Table:
             // #TODO Evaluate the usage of AccessibleNodeInfo.setCollectionItemInfo() to provide
             // infos about colums, rows und items.
@@ -559,8 +594,12 @@ namespace QtAndroidAccessibility
         if (iface && iface->isValid()) {
             bool hasValue = false;
             desc = iface->text(QAccessible::Name);
-            if (desc.isEmpty())
-                desc = iface->text(QAccessible::Description);
+            const QString descStr = iface->text(QAccessible::Description);
+            if (!descStr.isEmpty()) {
+                if (!desc.isEmpty())
+                    desc.append(QStringLiteral(", "));
+                desc.append(descStr);
+            }
             if (desc.isEmpty()) {
                 desc = iface->text(QAccessible::Value);
                 hasValue = !desc.isEmpty();
@@ -702,6 +741,7 @@ namespace QtAndroidAccessibility
         {"hitTest", "(FF)I", (void*)hitTest},
         {"populateNode", "(ILandroid/view/accessibility/AccessibilityNodeInfo;)Z", (void*)populateNode},
         {"clickAction", "(I)Z", (void*)clickAction},
+        {"focusAction", "(I)Z", (void*)focusAction},
         {"scrollForward", "(I)Z", (void*)scrollForward},
         {"scrollBackward", "(I)Z", (void*)scrollBackward},
     };

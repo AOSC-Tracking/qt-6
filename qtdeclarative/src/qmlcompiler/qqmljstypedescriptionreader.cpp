@@ -192,6 +192,8 @@ void QQmlJSTypeDescriptionReader::readComponent(UiObjectDefinition *ast)
             QString name = toString(script->qualifiedId);
             if (name == QLatin1String("file")) {
                 scope->setFilePath(readStringBinding(script));
+            } else if (name == QLatin1String("lineNumber")) {
+                // only used in 6.11
             } else if (name == QLatin1String("name")) {
                 scope->setInternalName(readStringBinding(script));
             } else if (name == QLatin1String("prototype")) {

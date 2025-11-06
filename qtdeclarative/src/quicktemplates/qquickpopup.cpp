@@ -511,6 +511,11 @@ void QQuickPopupPrivate::init()
     QObject::connect(popupItem, &QQuickControl::implicitContentHeightChanged, q, &QQuickPopup::implicitContentHeightChanged);
     QObject::connect(popupItem, &QQuickControl::implicitBackgroundWidthChanged, q, &QQuickPopup::implicitBackgroundWidthChanged);
     QObject::connect(popupItem, &QQuickControl::implicitBackgroundHeightChanged, q, &QQuickPopup::implicitBackgroundHeightChanged);
+    QObject::connect(popupItem, &QQuickControl::spacingChanged, q, &QQuickPopup::spacingChanged);
+    QObject::connect(popupItem, &QQuickControl::topInsetChanged, q, &QQuickPopup::topInsetChanged);
+    QObject::connect(popupItem, &QQuickControl::bottomInsetChanged, q, &QQuickPopup::bottomInsetChanged);
+    QObject::connect(popupItem, &QQuickControl::leftInsetChanged, q, &QQuickPopup::leftInsetChanged);
+    QObject::connect(popupItem, &QQuickControl::rightInsetChanged, q, &QQuickPopup::rightInsetChanged);
 }
 
 void QQuickPopupPrivate::closeOrReject()
@@ -844,11 +849,13 @@ void QQuickPopupPrivate::finalizeExitTransition()
     }
     destroyDimmer();
 
-    if (hadActiveFocusBeforeExitTransition && window) {
+    if (auto *overlay = QQuickOverlay::overlay(window)) {
+        auto *overlayPrivate = QQuickOverlayPrivate::get(overlay);
+
         // restore focus to the next popup in chain, or to the window content if there are no other popups open
-        QQuickPopup *nextFocusPopup = nullptr;
-        if (QQuickOverlay *overlay = QQuickOverlay::overlay(window)) {
-            const auto stackingOrderPopups = QQuickOverlayPrivate::get(overlay)->stackingOrderPopups();
+        if (hadActiveFocusBeforeExitTransition) {
+            QQuickPopup *nextFocusPopup = nullptr;
+            const auto stackingOrderPopups = overlayPrivate->stackingOrderPopups();
             for (auto popup : stackingOrderPopups) {
                 // only pick a popup that is focused but has not already been activated
                 if (QQuickPopupPrivate::get(popup)->transitionState != ExitTransition
@@ -857,30 +864,24 @@ void QQuickPopupPrivate::finalizeExitTransition()
                     break;
                 }
             }
-        }
-        if (nextFocusPopup) {
-            nextFocusPopup->forceActiveFocus(Qt::PopupFocusReason);
-        } else if (auto *overlay = QQuickOverlay::overlay(window)) {
-            auto *appWindow = qobject_cast<QQuickApplicationWindow*>(window);
-            auto *contentItem = appWindow ? appWindow->contentItem() : window->contentItem();
-            auto *overlayPrivate = QQuickOverlayPrivate::get(overlay);
-            if (!contentItem->scopedFocusItem()
-                && !overlayPrivate->lastActiveFocusItem.isNull()) {
-                // The last active focus item may have lost focus not just for
-                // itself but for its entire focus chain, so force active focus.
-                overlayPrivate->lastActiveFocusItem->forceActiveFocus(Qt::OtherFocusReason);
+            if (nextFocusPopup) {
+                nextFocusPopup->forceActiveFocus(Qt::PopupFocusReason);
             } else {
-                contentItem->setFocus(true, Qt::PopupFocusReason);
+                auto *appWindow = qobject_cast<QQuickApplicationWindow*>(window);
+                auto *contentItem = appWindow ? appWindow->contentItem() : window->contentItem();
+                if (!contentItem->scopedFocusItem()
+                    && !overlayPrivate->lastActiveFocusItem.isNull()) {
+                    // The last active focus item may have lost focus not just for
+                    // itself but for its entire focus chain, so force active focus.
+                    overlayPrivate->lastActiveFocusItem->forceActiveFocus(Qt::OtherFocusReason);
+                } else {
+                    contentItem->setFocus(true, Qt::PopupFocusReason);
+                }
             }
         }
-    }
-
-    if (window) {
-        auto *overlay = QQuickOverlay::overlay(window);
-        auto *overlayPrivate = overlay ? QQuickOverlayPrivate::get(overlay) : nullptr;
 
         // Clear the overlay's saved focus if this popup was the one that set it
-        if (savedLastActiveFocusItem && overlayPrivate)
+        if (savedLastActiveFocusItem)
             overlayPrivate->lastActiveFocusItem = nullptr;
     }
 
@@ -1039,6 +1040,12 @@ void QQuickPopupPrivate::setWindow(QQuickWindow *newWindow)
         QQuickOverlay *overlay = QQuickOverlay::overlay(window);
         if (overlay)
             QQuickOverlayPrivate::get(overlay)->removePopup(q);
+
+        // Interacting with Popups in async Loaders (QTBUG-139306) would cause crashes
+        // because the popup's window was null. We can avoid this by unparenting the popupItem,
+        // which removes it from stackingOrderPopups and hence excludes it from receiving events.
+        if (!newWindow && popupItem)
+            popupItem->setParentItem(nullptr);
     }
 
     window = newWindow;
@@ -1125,15 +1132,21 @@ void QQuickPopupPrivate::adjustPopupItemParentAndWindow()
                 const qreal initialHeight = popupItem->height() + windowInsets().top() + windowInsets().bottom();
                 popupItem->setParentItem(popupWindow->contentItem());
                 popupWindow->resize(qCeil(initialWidth), qCeil(initialHeight));
-                popupWindow->setModality(modal ? Qt::ApplicationModal : Qt::NonModal);
+                if (popupWndModality != Qt::NonModal)
+                    popupWindow->setModality(popupWndModality);
+                else
+                    popupWindow->setModality(modal ? Qt::ApplicationModal : Qt::NonModal);
                 popupItem->resetTitle();
                 popupWindow->setTitle(title);
             }
             popupItem->setParentItem(popupWindow->contentItem());
             popupItem->forceActiveFocus(Qt::PopupFocusReason);
         }
-        if (popupWindow)
-            popupWindow->setVisible(visible);
+        if (popupWindow && popupWindow->transientParent()) {
+            auto *transientParentPriv = QQuickWindowPrivate::get(qobject_cast<QQuickWindow *>(popupWindow->transientParent()));
+            if (!transientParentPriv->inDestructor)
+                popupWindow->setVisible(visible);
+        }
     } else {
         if (visible) {
             popupItem->setParentItem(overlay);
@@ -1156,6 +1169,7 @@ void QQuickPopupPrivate::adjustPopupItemParentAndWindow()
                 if (!hasZ)
                     popupItem->setZ(qMax(topPopupItem->z(), popupItem->z()));
             }
+            q->setModal((popupWndModality != Qt::NonModal) || modal);
         }
 
         popupItem->setTitle(title);
@@ -3246,7 +3260,7 @@ bool QQuickPopup::overlayEvent(QQuickItem *item, QEvent *event)
 void QQuickPopup::touchEvent(QTouchEvent *event)
 {
     Q_D(QQuickPopup);
-    d->handleTouchEvent(d->popupItem, event);
+    event->setAccepted(d->handleTouchEvent(d->popupItem, event));
 }
 
 void QQuickPopup::touchUngrabEvent()
@@ -3427,6 +3441,12 @@ bool QQuickPopup::setAccessibleProperty(const char *propertyName, const QVariant
 {
     Q_D(QQuickPopup);
     return d->popupItem->setAccessibleProperty(propertyName, value);
+}
+
+void QQuickPopup::setWindowModality(const Qt::WindowModality modality)
+{
+    Q_D(QQuickPopup);
+    d->popupWndModality = modality;
 }
 
 QQuickItem *QQuickPopup::safeAreaAttachmentItem()

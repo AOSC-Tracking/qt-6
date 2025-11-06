@@ -1,11 +1,11 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QWEBENGINEFRAME_H
 #define QWEBENGINEFRAME_H
 
 #include <QtWebEngineCore/qtwebenginecoreglobal.h>
-#include <QtQml/qqmlregistration.h>
 #include <QtQml/qjsvalue.h>
 #include <QtCore/qcompare.h>
 #include <QtCore/QList>
@@ -32,8 +32,12 @@ class QWebEngineFrame
     Q_PROPERTY(bool isMainFrame READ isMainFrame FINAL)
 
 public:
-    QML_VALUE_TYPE(webEngineFrame)
-    QML_ADDED_IN_VERSION(6, 8)
+    QWebEngineFrame() = default;
+    QWebEngineFrame(const QWebEngineFrame &other) = default;
+    QWebEngineFrame &operator=(const QWebEngineFrame &other) = default;
+    QWebEngineFrame(QWebEngineFrame &&other) = default;
+    QWebEngineFrame &operator=(QWebEngineFrame &&other) = default;
+    ~QWebEngineFrame() = default;
 
     Q_WEBENGINECORE_EXPORT bool isValid() const;
     Q_WEBENGINECORE_EXPORT QString name() const;

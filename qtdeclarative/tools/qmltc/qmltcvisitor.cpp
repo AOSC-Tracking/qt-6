@@ -763,7 +763,16 @@ void QmltcVisitor::checkNamesAndTypes(const QQmlJSScope::ConstPtr &type)
 
     const auto validateType = [&type, this](const QQmlJSScope::ConstPtr &typeToCheck,
                                             QStringView name, QStringView errorPrefix) {
-        if (type->moduleName().isEmpty() || typeToCheck.isNull())
+        if (typeToCheck.isNull()) {
+            m_logger->log(
+                    QStringLiteral(
+                            "Can't compile the %1 type \"%2\" to C++ because it cannot be resolved")
+                            .arg(errorPrefix, name),
+                    qmlCompiler, type->sourceLocation());
+            return;
+        }
+
+        if (type->moduleName().isEmpty())
             return;
 
         if (typeToCheck->isComposite() && typeToCheck->moduleName() != type->moduleName()) {

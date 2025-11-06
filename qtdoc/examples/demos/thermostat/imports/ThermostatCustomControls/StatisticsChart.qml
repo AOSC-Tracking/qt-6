@@ -2,38 +2,19 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
 import QtCharts
 import Thermostat
 
 Pane {
+    id: root
     width: 900
     height: 580
 
     padding: 0
 
-    property var energyValuesModel
-    property var tempValuesModel
-
-    property var energyValues: {
-        var enrg = [];
-        for (let i = 0; i < energyValuesModel.count; ++i) {
-            enrg.push(energyValuesModel.get(i).enrg);
-        }
-        return enrg;
-    }
-
-    property var tempValues: {
-        var temp = [];
-        for (let i = 0; i < tempValuesModel.count; ++i) {
-            temp.push(tempValuesModel.get(i).tmp);
-        }
-        return temp;
-    }
-
-    property real maxValue
-    property real minValue
-    property real avgValue
+    required property list<int> energyValues
+    required property list<real> tempValues
 
     background: Rectangle {
         radius: 12
@@ -114,10 +95,10 @@ Pane {
             BarSet {
                 id: energySet
 
-                label: "Energy Usage [wh]"
+                label: "Energy Usage [Wh]"
                 color: internal.energyBarColor
                 borderWidth: 0
-                values: energyValues
+                values: root.energyValues.map(x => x) // list<int> -> list<var> hack
             }
         }
 
@@ -131,9 +112,9 @@ Pane {
             axisX: splineChartAxisX
             axisYRight: splineChartAxisY
 
-            Component.onCompleted: function () {
-                for (var i = 0; i < tempValues.length; i++) {
-                    spline.append(i * 7, tempValues[i]);
+            Component.onCompleted: {
+                for (let i = 0; i < root.tempValues.length; ++i) {
+                    spline.append(i * 7, root.tempValues[i]);
                 }
             }
         }
@@ -189,10 +170,4 @@ Pane {
             }
         }
     ]
-
-    Component.onCompleted: function () {
-        maxValue = Math.max(...tempValues).toFixed(1);
-        minValue = Math.min(...tempValues).toFixed(1);
-        avgValue = (tempValues.reduce((a, b) => a + b, 0) / tempValues.length).toFixed(1);
-    }
 }

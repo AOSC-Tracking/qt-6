@@ -129,7 +129,6 @@ public:
         inline insert_iterator() {}
         inline insert_iterator(const iterator &it) : iterator(it) {}
         inline insert_iterator(Range *, int, Group, int);
-        inline ~insert_iterator() {}
 
         insert_iterator &operator +=(int difference);
     };

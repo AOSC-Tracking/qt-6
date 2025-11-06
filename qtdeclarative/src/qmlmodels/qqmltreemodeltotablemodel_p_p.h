@@ -21,6 +21,7 @@
 #include <QtCore/qpointer.h>
 #include <QtCore/qabstractitemmodel.h>
 #include <QtCore/qitemselectionmodel.h>
+#include <QtCore/qvarlengtharray.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -109,7 +110,7 @@ public Q_SLOTS:
 private Q_SLOTS:
     void modelHasBeenDestroyed();
     void modelHasBeenReset();
-    void modelDataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight, const QVector<int> &roles);
+    void modelDataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight, const QList<int> &roles);
     void modelLayoutAboutToBeChanged(const QList<QPersistentModelIndex> &parents, QAbstractItemModel::LayoutChangeHint hint);
     void modelLayoutChanged(const QList<QPersistentModelIndex> &parents, QAbstractItemModel::LayoutChangeHint hint);
     void modelRowsAboutToBeInserted(const QModelIndex & parent, int start, int end);
@@ -140,9 +141,9 @@ private:
     };
 
     struct DataChangedParams {
-        QModelIndex topLeft;
-        QModelIndex bottomRight;
-        QVector<int> roles;
+        int top;
+        int bottom;
+        QVarLengthArray<int, 5> roles;
     };
 
     struct SignalFreezer {
@@ -158,9 +159,7 @@ private:
     void enableSignalAggregation();
     void disableSignalAggregation();
     bool isAggregatingSignals() const { return m_signalAggregatorStack > 0; }
-    void queueDataChanged(const QModelIndex &topLeft,
-                          const QModelIndex &bottomRight,
-                          const QVector<int> &roles);
+    void queueDataChanged(int top, int bottom, std::initializer_list<int> roles);
     void emitQueuedSignals();
     void connectToModel();
 
@@ -173,9 +172,8 @@ private:
     bool m_visibleRowsMoved = false;
     bool m_modelLayoutChanged = false;
     int m_signalAggregatorStack = 0;
-    QVector<DataChangedParams> m_queuedDataChanged;
+    QList<DataChangedParams> m_queuedDataChanged;
     std::array<QMetaObject::Connection, 15> m_connections;
-    int m_column = 0;
 };
 
 QT_END_NAMESPACE

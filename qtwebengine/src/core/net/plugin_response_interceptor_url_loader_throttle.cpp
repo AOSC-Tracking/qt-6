@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:network-protocol
 
 // based on chrome/browser/plugins/plugin_response_interceptor_url_loader_throttle.cc
 // Copyright 2018 The Chromium Authors. All rights reserved.
@@ -150,7 +151,7 @@ void PluginResponseInterceptorURLLoaderThrottle::WillProcessResponse(const GURL 
     size_t len = payload.size();
     CHECK_EQ(MOJO_RESULT_OK,
                 producer_handle->WriteData(
-                     base::make_span(reinterpret_cast<const uint8_t*>(payload.data()), len),
+                     base::span<const uint8_t>(reinterpret_cast<const uint8_t*>(payload.data()), len),
                      MOJO_WRITE_DATA_FLAG_ALL_OR_NONE, len));
 
     network::URLLoaderCompletionStatus status(net::OK);

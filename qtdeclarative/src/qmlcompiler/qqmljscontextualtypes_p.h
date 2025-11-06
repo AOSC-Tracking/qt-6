@@ -57,8 +57,8 @@ struct ContextualTypes
     void clearType(const QString &name)
     {
         auto &scope = m_types[name].scope;
-        auto it = m_names.constFind(scope);
-        while (it != m_names.constEnd() && it.key() == scope)
+        auto it = m_names.find(scope);
+        while (it != m_names.end() && it.key() == scope)
             it = m_names.erase(it);
         scope = QQmlJSScope::ConstPtr();
     }

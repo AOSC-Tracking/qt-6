@@ -33,6 +33,7 @@
     \li \l{Qt for Windows - Deployment}
     \li \l{Qt for Windows - Graphics Acceleration}
     \li \l{Qt for Windows - Specific Issues}
+    \li \l{Qt for Windows - Windows App SDK}
     \endlist
 
     \section1 Where to Go from Here
@@ -274,6 +275,64 @@
     library is not possible.
 */
 
+
+/*!
+    \page windows-winappsdk.html
+    \title Qt for Windows - Windows App SDK
+    \brief Using Windows App SDK with Qt for Windows.
+
+    \section1 Configuration
+    To use
+    \l{https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/}{Windows App SDK}
+    in Qt apps, configure the SDK path.
+
+        \section2 Using \QC
+        To configure the Windows App SDK in \QC,
+        go to \uicontrol Preferences > \uicontrol SDKs.
+        \image qt-creator-sdks.webp "\QC SDKs Preferences."
+        For more information, see \l{\QC Documentation}.
+        \section2 From the command line
+        \list 1
+        \li Go to an empty directory.
+
+        Example:
+        \badcode
+            mkdir C:\Dev\wasdk
+            cd C:\Dev\wasdk
+        \endcode
+        \li Download \l{https://www.nuget.org/downloads}{NuGet} into that directory.
+
+        For example, to download with PowerShell from the command line:
+        \badcode
+            powershell.exe -Command "& {Invoke-WebRequest https://dist.nuget.org/win-x86-commandline/latest/nuget.exe -OutFile nuget.exe}"
+        \endcode
+        \li Download the Windows App SDK with NuGet.
+        \badcode
+            nuget.exe install Microsoft.WindowsAppSDK -OutputDirectory ./
+        \endcode
+        \li Set the \c WIN_APP_SDK_ROOT environment variable to the Windows APP SDK
+        directory, usually called \c{Microsoft.WindowsAppSDK.{Version}}.
+
+        For example, using the command-line:
+        \badcode
+            cd Microsoft.WindowsAppSDK.*
+            set WIN_APP_SDK_ROOT=%cd%
+            setX WIN_APP_SDK_ROOT %cd%
+        \endcode
+        \endlist
+
+    \section1 Using the Windows App SDK in Qt apps
+    Call \l{qt_add_win_app_sdk}(ProjectName) CMake function in the
+    project's CMake file. Replace \b ProjectName with your project name.
+
+    Use a condition to ensure the build is only for MSVC builds:
+    \badcode
+        if (MSVC)
+            qt_add_win_app_sdk(ProjectName)
+        endif()
+    \endcode
+*/
+
 /*!
     \page windows-issues.html
     \title Qt for Windows - Specific Issues
@@ -342,6 +401,17 @@
 
     This will give the full screen window a 1-pixel border, thus enabling the
     other top level windows to appear on top.
+
+    \section1 OLE Initialization
+
+    Qt uses \l {OLE} on Windows to be able to support functionality like dragging or clipboard
+    access. To use OLE, Qt has to call \l {OleInitialize}. This in turn will set the thread's
+    concurrency model to \c{COINIT_APARTMENTTHREADED}.
+
+    Calling \c{CoInitializeEx} or \c{winrt::init_apartment} on the UI thread and specifying a
+    concurrency model other than single-threaded apartment (\c{COINIT_APARTMENTTHREADED} or
+    \c{winrt::apartment_type::single_threaded}, respectively) might lead to bugs or application
+    hangs.
 */
 
 /*!
@@ -394,7 +464,7 @@
 
     \badcode
     Usage: windeployqt.exe [options] [files]
-    Qt Deploy Tool 6.9.0
+    Qt Deploy Tool 6.10.0
 
     The simplest way to use windeployqt is to add the bin directory of your Qt
     installation (e.g. <QT_DIR\bin>) to the PATH variable and then run:

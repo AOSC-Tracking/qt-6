@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:network-protocol
 
 #ifndef QWEBENGINEPROFILE_H
 #define QWEBENGINEPROFILE_H
@@ -16,11 +17,13 @@
 
 QT_BEGIN_NAMESPACE
 
+class QSslCertificate;
 class QUrl;
 class QWebEngineClientCertificateStore;
 class QWebEngineClientHints;
 class QWebEngineCookieStore;
 class QWebEngineDownloadRequest;
+class QWebEngineExtensionManager;
 class QWebEngineNotification;
 class QWebEngineProfilePrivate;
 class QWebEngineSettings;
@@ -117,6 +120,7 @@ public:
     void setNotificationPresenter(std::function<void(std::unique_ptr<QWebEngineNotification>)> notificationPresenter);
 
     QWebEngineClientCertificateStore *clientCertificateStore();
+    QList<QSslCertificate> additionalTrustedCertificates() const;
 
     void requestIconForPageURL(const QUrl &url, int desiredSizeInPixel, std::function<void(const QIcon &, const QUrl &, const QUrl &)> iconAvailableCallback) const;
     void requestIconForIconURL(const QUrl &url, int desiredSizeInPixel, std::function<void(const QIcon &, const QUrl &)> iconAvailableCallback) const;
@@ -125,6 +129,8 @@ public:
     QList<QWebEnginePermission> listAllPermissions() const;
     QList<QWebEnginePermission> listPermissionsForOrigin(const QUrl &securityOrigin) const;
     QList<QWebEnginePermission> listPermissionsForPermissionType(QWebEnginePermission::PermissionType permissionType) const;
+
+    QWebEngineExtensionManager *extensionManager() const;
 
     static QWebEngineProfile *defaultProfile();
 

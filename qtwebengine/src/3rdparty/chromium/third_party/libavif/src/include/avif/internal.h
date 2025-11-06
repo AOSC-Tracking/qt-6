@@ -139,13 +139,6 @@ AVIF_NODISCARD avifBool avifFractionCD(avifFraction * a, avifFraction * b);
 AVIF_NODISCARD avifBool avifFractionAdd(avifFraction a, avifFraction b, avifFraction * result);
 AVIF_NODISCARD avifBool avifFractionSub(avifFraction a, avifFraction b, avifFraction * result);
 
-// Creates an int32 fraction that is approximately equal to 'v'.
-// Returns AVIF_FALSE if 'v' is NaN or abs(v) is > INT32_MAX.
-AVIF_NODISCARD avifBool avifDoubleToSignedFraction(double v, int32_t * numerator, uint32_t * denominator);
-// Creates a uint32 fraction that is approximately equal to 'v'.
-// Returns AVIF_FALSE if 'v' is < 0 or > UINT32_MAX or NaN.
-AVIF_NODISCARD avifBool avifDoubleToUnsignedFraction(double v, uint32_t * numerator, uint32_t * denominator);
-
 void avifImageSetDefaults(avifImage * image);
 // Copies all fields that do not need to be freed/allocated from srcImage to dstImage.
 void avifImageCopyNoAlloc(avifImage * dstImage, const avifImage * srcImage);
@@ -153,8 +146,20 @@ void avifImageCopyNoAlloc(avifImage * dstImage, const avifImage * srcImage);
 // Copies the samples from srcImage to dstImage. dstImage must be allocated.
 // srcImage and dstImage must have the same width, height, and depth.
 // If the AVIF_PLANES_YUV bit is set in planes, then srcImage and dstImage must have the same yuvFormat.
-// Ignores the gainMap field (which exists only if AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP is defined).
+// Ignores the gainMap field.
 void avifImageCopySamples(avifImage * dstImage, const avifImage * srcImage, avifPlanesFlags planes);
+
+// Appends an opaque image item property.
+AVIF_API avifResult avifImagePushProperty(avifImage * image,
+                                          const uint8_t boxtype[4],
+                                          const uint8_t usertype[16],
+                                          const uint8_t * boxPayload,
+                                          size_t boxPayloadSize);
+
+// Check if the FourCC property value is a known value
+AVIF_NODISCARD avifBool avifIsKnownPropertyType(const uint8_t boxtype[4]);
+// Check if the extended property (UUID) is valid
+AVIF_NODISCARD avifBool avifIsValidUUID(const uint8_t uuid[16]);
 
 // ---------------------------------------------------------------------------
 
@@ -391,9 +396,7 @@ typedef enum avifItemCategory
 {
     AVIF_ITEM_COLOR,
     AVIF_ITEM_ALPHA,
-#if defined(AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP)
     AVIF_ITEM_GAIN_MAP,
-#endif
 #if defined(AVIF_ENABLE_EXPERIMENTAL_SAMPLE_TRANSFORM)
     AVIF_ITEM_SAMPLE_TRANSFORM, // Sample Transform derived image item 'sato'.
     // Extra input image items for AVIF_ITEM_SAMPLE_TRANSFORM. "Extra" because AVIF_ITEM_COLOR could be one too.
@@ -651,6 +654,7 @@ typedef struct avifBoxHeader
     size_t size;
 
     uint8_t type[4];
+    uint8_t usertype[16]; // Unused unless |type| is "uuid".
 } avifBoxHeader;
 
 typedef struct avifROStream
@@ -693,8 +697,10 @@ AVIF_NODISCARD avifBool avifROStreamReadBoxHeaderPartial(avifROStream * stream, 
 AVIF_NODISCARD avifBool avifROStreamReadVersionAndFlags(avifROStream * stream, uint8_t * version, uint32_t * flags); // version and flags ptrs are both optional
 AVIF_NODISCARD avifBool avifROStreamReadAndEnforceVersion(avifROStream * stream, uint8_t enforcedVersion); // currently discards flags
 // The following functions can read non-aligned bits.
-AVIF_NODISCARD avifBool avifROStreamReadBits8(avifROStream * stream, uint8_t * v, size_t bitCount);
-AVIF_NODISCARD avifBool avifROStreamReadBits(avifROStream * stream, uint32_t * v, size_t bitCount);
+AVIF_NODISCARD avifBool avifROStreamSkipBits(avifROStream * stream, size_t bitCount);
+AVIF_NODISCARD avifBool avifROStreamReadBitsU8(avifROStream * stream, uint8_t * v, size_t bitCount);
+AVIF_NODISCARD avifBool avifROStreamReadBitsU16(avifROStream * stream, uint16_t * v, size_t bitCount);
+AVIF_NODISCARD avifBool avifROStreamReadBitsU32(avifROStream * stream, uint32_t * v, size_t bitCount);
 
 typedef struct avifRWStream
 {
@@ -776,15 +782,13 @@ AVIF_NODISCARD avifBool avifSequenceHeaderParse(avifSequenceHeader * header, con
 // ---------------------------------------------------------------------------
 // gain maps
 
-#if defined(AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP)
-
 // Finds the approximate min/max values from the given gain map values, excluding outliers.
 // Uses a histogram, with outliers defined as having at least one empty bucket between them
 // and the rest of the distribution. Discards at most 0.1% of values.
 // Removing outliers helps with accuracy/compression.
 avifResult avifFindMinMaxWithoutOutliers(const float * gainMapF, int numPixels, float * rangeMin, float * rangeMax);
 
-#endif // AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP
+avifResult avifGainMapValidateMetadata(const avifGainMap * gainMap, avifDiagnostics * diag);
 
 #define AVIF_INDEFINITE_DURATION64 UINT64_MAX
 #define AVIF_INDEFINITE_DURATION32 UINT32_MAX

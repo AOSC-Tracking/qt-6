@@ -4,6 +4,8 @@
 #include "qtextdocument_p.h"
 #include "qtextblock_p.h"
 
+QT_BEGIN_NAMESPACE
+
 namespace Utils {
 
 TextDocument::TextDocument(const QString &text)
@@ -122,3 +124,5 @@ QMutex *TextDocument::mutex() const
 }
 
 } // namespace Utils
+
+QT_END_NAMESPACE

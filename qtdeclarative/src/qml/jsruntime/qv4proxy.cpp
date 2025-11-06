@@ -481,6 +481,8 @@ bool ProxyObject::virtualSetPrototypeOf(Managed *m, const Object *p)
     return true;
 }
 
+namespace {
+
 struct ProxyObjectOwnPropertyKeyIterator : OwnPropertyKeyIterator
 {
     PersistentValue ownKeys;
@@ -490,7 +492,6 @@ struct ProxyObjectOwnPropertyKeyIterator : OwnPropertyKeyIterator
     ProxyObjectOwnPropertyKeyIterator(ArrayObject *keys);
     ~ProxyObjectOwnPropertyKeyIterator() override = default;
     PropertyKey next(const Object *o, Property *pd = nullptr, PropertyAttributes *attrs = nullptr) override;
-
 };
 
 ProxyObjectOwnPropertyKeyIterator::ProxyObjectOwnPropertyKeyIterator(ArrayObject *keys)
@@ -519,7 +520,8 @@ PropertyKey ProxyObjectOwnPropertyKeyIterator::next(const Object *m, Property *p
     return key;
 }
 
-static bool removeAllOccurrences(ArrayObject *target, ReturnedValue val) {
+bool removeAllOccurrences(ArrayObject *target, ReturnedValue val)
+{
     uint len = target->getLength();
     bool found = false;
     for (uint i = 0; i < len; ++i) {
@@ -531,6 +533,8 @@ static bool removeAllOccurrences(ArrayObject *target, ReturnedValue val) {
     }
     return  found;
 }
+
+} // namespace
 
 OwnPropertyKeyIterator *ProxyObject::virtualOwnPropertyKeys(const Object *m, Value *iteratorTarget)
 {

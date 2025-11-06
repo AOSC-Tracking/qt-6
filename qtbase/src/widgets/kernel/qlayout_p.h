@@ -58,7 +58,8 @@ public:
     uint enabled : 1;
     uint activated : 1;
     uint autoNewChild : 1;
-    QLayout::SizeConstraint constraint;
+    QLayout::SizeConstraint horizontalConstraint;
+    QLayout::SizeConstraint verticalConstraint;
     QRect rect;
     QWidget *menubar;
 };

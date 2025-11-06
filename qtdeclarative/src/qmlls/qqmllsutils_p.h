@@ -274,7 +274,7 @@ RenameUsages renameUsagesOf(const DomItem &item, const QString &newName,
 std::optional<ExpressionType> resolveExpressionType(const DomItem &item, ResolveOptions);
 bool isValidEcmaScriptIdentifier(QStringView view);
 
-QPair<QString, QStringList> cmakeBuildCommand(const QString &path);
+std::pair<QString, QStringList> cmakeBuildCommand(const QString &path);
 
 bool isFieldMemberExpression(const DomItem &item);
 bool isFieldMemberAccess(const DomItem &item);

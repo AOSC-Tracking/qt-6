@@ -122,7 +122,10 @@ public:
 
         Type_V4Sequence,
         Type_QmlListProperty,
-
+        Type_V4QObjectWrapper,
+        Type_QMLTypeWrapper,
+        Type_V4ReferenceObject,
+        Type_QMLValueTypeWrapper,
     };
     Q_MANAGED_TYPE(Invalid)
 
@@ -131,6 +134,7 @@ public:
     inline ExecutionEngine *engine() const { return internalClass()->engine; }
 
     bool isV4SequenceType() const { return d()->internalClass->vtable->type == Type_V4Sequence; }
+    bool isV4QObjectWrapper() const { return d()->internalClass->vtable->type == Type_V4QObjectWrapper; }
     bool isQmlListPropertyType() const { return d()->internalClass->vtable->type == Type_QmlListProperty; }
     bool isArrayLike() const { return isArrayObject() || isV4SequenceType() || isQmlListPropertyType(); }
 

@@ -4,7 +4,6 @@
 #include <QTest>
 #include <QtQml>
 #include <QtCore/private/qhooks_p.h>
-#include <QtCore/qpair.h>
 #include <QtCore/qscopedpointer.h>
 #include <QtCore/qset.h>
 #include <QtCore/qplugin.h>
@@ -19,8 +18,7 @@
 #include <QtQuickTestUtils/private/qmlutils_p.h>
 #include <QtQuickControlsTestUtils/private/controlstestutils_p.h>
 #include <QtQmlCompiler/private/qqmljslinter_p.h>
-#include <QtQmlCompiler/private/qqmljstyperesolver_p.h>
-#include <QtQmlCompiler/private/qqmljsimportvisitor_p.h>
+#include <utility>
 
 Q_IMPORT_PLUGIN(QuickControlsSanityPlugin)
 
@@ -104,7 +102,7 @@ void tst_Sanity::initTestCase()
     }
 
     // Then, collect the files from each installed style directory.
-    const QVector<QPair<QString, QString>> styleRelativePaths = {
+    const QVector<std::pair<QString, QString>> styleRelativePaths = {
         { "basic", "QtQuick/Controls/Basic" },
         { "fusion", "QtQuick/Controls/Fusion" },
         { "material", "QtQuick/Controls/Material" },

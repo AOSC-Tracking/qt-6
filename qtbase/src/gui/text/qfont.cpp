@@ -82,6 +82,9 @@ bool QFontDef::exactMatch(const QFontDef &other) const
     if (stretch != 0 && other.stretch != 0 && stretch != other.stretch)
         return false;
 
+    if (families.size() != other.families.size())
+        return false;
+
     QString this_family, this_foundry, other_family, other_foundry;
     for (int i = 0; i < families.size(); ++i) {
         QFontDatabasePrivate::parseFontName(families.at(i), this_foundry, this_family);
@@ -422,7 +425,7 @@ QFontEngineData::~QFontEngineData()
     actually used are retrievable from a QFontInfo object. If the
     window system provides an exact match exactMatch() returns \c true.
     Use QFontMetricsF to get measurements, e.g. the pixel length of a
-    string using QFontMetrics::width().
+    string using QFontMetrics::horizontalAdvance().
 
     Attributes which are not specifically set will not affect the font
     selection algorithm, and default values will be preferred instead.
@@ -2406,9 +2409,8 @@ std::optional<QFont::Tag> QFont::Tag::fromString(QAnyStringView view) noexcept
 }
 
 /*!
-    \fn QDataStream &operator<<(QDataStream &, QFont::Tag)
-    \fn QDataStream &operator>>(QDataStream &, QFont::Tag &)
-    \relates QFont::Tag
+    \fn QDataStream &QFont::Tag::operator<<(QDataStream &, QFont::Tag)
+    \fn QDataStream &QFont::Tag::operator>>(QDataStream &, QFont::Tag &)
 
     Data stream operators for QFont::Tag.
 */

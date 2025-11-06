@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qthread.h"
 #include "qthread_p.h"
@@ -144,6 +145,8 @@ unsigned int __stdcall QT_ENSURE_STACK_ALIGNED_FOR_SSE QThreadPrivate::start(voi
 {
     QThread *thr = reinterpret_cast<QThread *>(arg);
     QThreadData *data = QThreadData::get2(thr);
+    // If a QThread is restarted, reuse the QBindingStatus, too
+    data->reuseBindingStatusForNewNativeThread();
 
     data->ref();
     set_thread_data(data);
@@ -242,12 +245,11 @@ void QThreadPrivate::finish(bool lockAnyway) noexcept
     QMutexLocker locker(lockAnyway ? &d->mutex : nullptr);
     d->threadState = QThreadPrivate::Finishing;
     d->priority = QThread::InheritPriority;
-    void **tls_data = reinterpret_cast<void **>(&d->data->tls);
     if (lockAnyway)
         locker.unlock();
     emit thr->finished(QThread::QPrivateSignal());
     QCoreApplicationPrivate::sendPostedEvents(nullptr, QEvent::DeferredDelete, d->data);
-    QThreadStorageData::finish(tls_data);
+    QThreadStoragePrivate::finish(&d->data->tls);
     if (lockAnyway)
         locker.relock();
 

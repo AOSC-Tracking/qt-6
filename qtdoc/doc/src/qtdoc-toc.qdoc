@@ -35,8 +35,8 @@
             \li \l {Introduction to Qt}{Introduction}
             \li \l {Get and Install Qt}{Get, install, and build Qt}
                 \list
-                    \li \l {Get and Install Qt with Command Line Interface}
                     \li \l {Get and Install Qt with \QOI}
+                    \li \l {Get and Install Qt with Command Line Interface}
                     \li \l {Building Qt Sources}
                         \list
                             \li \l {Getting Qt Sources from the Git repository}
@@ -46,10 +46,8 @@
                     \li \l {Install Qt Design Studio}
                 \endlist
             \li \l {Solutions for Application Development}
-            \li \l {Solutions for UI Design}
             \li \l {Mobile Development}
             \li \l {Tools for Qt Quick UIs}
-            \li \l {Tools for Qt Widget-Based UIs}
             \li \l {Create Your First Applications}
             \li \l {Qt Examples And Tutorials}{Examples And Tutorials}
             \li \l {Explore Qt}
@@ -169,9 +167,8 @@
                 \endlist
             \li \l {How to Report a Bug}
         \endlist
-    \li \l {Qt Overviews}{Overviews}
+    \li \l {All Overviews} {Overviews}
         \list
-            \li \l {All Overviews}
             \li \l {Development Tools}
                 \list
                     \li \l {Resource Compiler (rcc)}
@@ -183,7 +180,7 @@
             \li \l {Inter-process communication in Qt}{Inter-process communication}
             \li \l {Overview of Qt's Undo Framework}{Qt's Undo Framework}
             \li \l {Unicode in Qt}{Unicode Support in Qt}
-            \li \l {Thread Support in Qt}
+            \li \l {Multi-threading in Qt}
                 \list
                     \li \l {Multithreading Technologies in Qt}{Multithreading Technologies}
                     \li \l {Synchronizing Threads}
@@ -247,5 +244,7 @@
             \li \l {Why Does Qt Use Moc for Signals and Slots?}
             \li \l {Differences between String-Based and Functor-Based Connections}
         \endlist
+    \li \l {Qt Overviews}{List of Overviews}
+
     \endlist
 */

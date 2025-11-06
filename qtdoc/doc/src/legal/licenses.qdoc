@@ -35,9 +35,7 @@
     //! TODO: Use grouping for automatically-generated list
     \details {Modules available under GNU General Public License v3}
         \list
-            \li \l {qtcharts-index.html}{Qt Charts}
             \li \l {qtcoap-index.html}{Qt CoAP}
-            \li \l {qtdatavisualization-index.html}{Qt Data Visualization}
             \li \l {qtgraphs-index.html}{Qt Graphs}
             \li \l {qtgrpc-index.html}{Qt GRPC}
             \li \l {qthttpserver-index.html}{Qt HTTP Server}

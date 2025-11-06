@@ -1,5 +1,6 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qwebenginewebauthuxrequest.h"
 #include "qwebenginewebauthuxrequest_p.h"
@@ -267,7 +268,7 @@ QWebEngineWebAuthUxRequest::~QWebEngineWebAuthUxRequest() { }
     WebAuth dialog displays user names. The user needs to select an
     account to proceed.
 
-    \sa state setSelectedAccount() QWebEngineWebAuthUxRequest::userNames
+    \sa state, setSelectedAccount(), QWebEngineWebAuthUxRequest::userNames
 */
 /*!
     \property QWebEngineWebAuthUxRequest::userNames
@@ -313,7 +314,7 @@ QString QWebEngineWebAuthUxRequest::relyingPartyId() const
     WebAuth Dialog displays a PIN request dialog. The user needs to enter a PIN and
     invoke \l setPin() to proceed.
 
-    \sa QWebEngineWebAuthPinRequest CollectPin setPin()
+    \sa QWebEngineWebAuthPinRequest, CollectPin, setPin()
 */
 QWebEngineWebAuthPinRequest QWebEngineWebAuthUxRequest::pinRequest() const
 {
@@ -361,14 +362,14 @@ QWebEngineWebAuthUxRequest::WebAuthUxState QWebEngineWebAuthUxRequest::state() c
     WebAuth request is blocked until the user selects an account and
     invokes this method.
 
-    \sa WebEngineWebAuthUxRequest::userNames state
+    \sa WebEngineWebAuthUxRequest::userNames, state
 */
 /*!
     Sends the \a selectedAccount name to the authenticator.
     This is needed when the current WebAuth request's UX state is \l SelectAccount.
     The WebAuth request is blocked until the user selects an account and invokes this method.
 
-    \sa userNames SelectAccount
+    \sa userNames, SelectAccount
 */
 void QWebEngineWebAuthUxRequest::setSelectedAccount(const QString &selectedAccount)
 {
@@ -384,14 +385,14 @@ void QWebEngineWebAuthUxRequest::setSelectedAccount(const QString &selectedAccou
     WebEngineWebAuthUxRequest.WebAuthUxState.CollectPin. The WebAuth
     request is blocked until the user responds with a PIN.
 
-    \sa QWebEngineWebAuthPinRequest state
+    \sa QWebEngineWebAuthPinRequest, state
 */
 /*!
     Sends the \a pin to the authenticator that prompts for a PIN.
     This is needed when the current WebAuth request's UX state is \l CollectPin.
     The WebAuth request is blocked until the user responds with a PIN.
 
-    \sa QWebEngineWebAuthPinRequest CollectPin
+    \sa QWebEngineWebAuthPinRequest, CollectPin
 */
 void QWebEngineWebAuthUxRequest::setPin(const QString &pin)
 {

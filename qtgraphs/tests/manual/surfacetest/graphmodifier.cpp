@@ -25,6 +25,7 @@ GraphModifier::GraphModifier(Q3DSurfaceWidgetItem *graph)
       m_series2(new QSurface3DSeries),
       m_series3(new QSurface3DSeries),
       m_series4(new QSurface3DSeries),
+      m_lineSeries(new QSurface3DSeries),
       m_gridSliderX(0),
       m_gridSliderZ(0),
       m_axisRangeSliderX(0),
@@ -36,7 +37,7 @@ GraphModifier::GraphModifier(Q3DSurfaceWidgetItem *graph)
       m_activeSample(0),
       m_fontSize(40),
       m_rangeX(34.0),
-      m_rangeY(16.0),
+      m_rangeY(20.0),
       m_rangeZ(34.0),
       m_minX(-17.0),
       m_minY(-8.0),
@@ -50,6 +51,7 @@ GraphModifier::GraphModifier(Q3DSurfaceWidgetItem *graph)
       m_drawMode2(QSurface3DSeries::DrawSurfaceAndWireframe),
       m_drawMode3(QSurface3DSeries::DrawSurfaceAndWireframe),
       m_drawMode4(QSurface3DSeries::DrawSurfaceAndWireframe),
+      m_drawMode5(QSurface3DSeries::DrawSurface),
       m_offset(4.0f),
       m_ascendingX(true),
       m_ascendingZ(true)
@@ -96,6 +98,8 @@ GraphModifier::GraphModifier(Q3DSurfaceWidgetItem *graph)
 
     fillSeries();
     changeStyle();
+
+    m_lineSeries->setDrawMode(m_drawMode5);
 
     m_theSeries->setItemLabelFormat(QStringLiteral("@seriesName: (@xLabel, @zLabel): @yLabel"));
 
@@ -163,6 +167,27 @@ void GraphModifier::fillSeries()
     m_multiseries[1]->dataProxy()->resetArray(dataArray2);
     m_multiseries[2]->dataProxy()->resetArray(dataArray3);
     m_multiseries[3]->dataProxy()->resetArray(dataArray4);
+
+    QSurfaceDataArray lineDataArray;
+    lineDataArray.reserve(m_zCount);
+    for (int i = 0; i < m_zCount; i++) {
+        QSurfaceDataRow row;
+        float zAdjust = 0.0f;
+        float z = float(i) - m_limitZ + 0.5f + m_multiSampleOffsetZ[3] + zAdjust;
+
+        int j = m_xCount / 2;
+        float xAdjust = 0.0f;
+        if (j == 4)
+            xAdjust = 0.7f;
+        float x = float(j) - m_limitX + 0.5f + m_multiSampleOffsetX[3] + xAdjust;
+        float angle = (z * x) / full * 1.57f;
+        float y = (qSin(angle * float(qPow(1.3f, 4))) + 1.1f * 4) * 3.0f - 5.0f + xAdjust + zAdjust;
+        row.append(QSurfaceDataItem(x,y,z));
+
+        lineDataArray << row;
+    }
+
+    m_lineSeries->dataProxy()->resetArray(lineDataArray);
 }
 
 void GraphModifier::toggleSeries1(int enabled)
@@ -207,6 +232,15 @@ void GraphModifier::toggleSeries4(int enabled)
     } else {
         m_graph->removeSeries(m_multiseries[3]);
     }
+}
+
+void GraphModifier::toggleLineSeries(int enabled)
+{
+    qDebug() << __FUNCTION__ << " enabled = " << enabled;
+    if (enabled)
+        m_graph->addSeries(m_lineSeries);
+    else
+        m_graph->removeSeries(m_lineSeries);
 }
 
 void GraphModifier::toggleSmooth(int visible)
@@ -259,6 +293,20 @@ void GraphModifier::toggleSeriesVisible(int enable)
 #endif
 }
 
+void GraphModifier::toggleFill(int enable)
+{
+    qDebug() << "GraphModifier::toggleFill" << enable;
+    if (enable)
+        m_drawMode |= QSurface3DSeries::DrawFilledSurface;
+    else
+        m_drawMode &= ~QSurface3DSeries::DrawFilledSurface;
+
+    m_theSeries->setDrawMode(m_drawMode);
+#ifdef MULTI_SERIES
+    m_multiseries[0]->setDrawMode(m_drawMode);
+#endif
+}
+
 void GraphModifier::toggleSmoothS2(int visible)
 {
     qDebug() << __FUNCTION__ << visible;
@@ -296,6 +344,20 @@ void GraphModifier::toggleSeries2Visible(int enable)
 {
     qDebug() << __FUNCTION__ << enable;
     m_multiseries[1]->setVisible(enable);
+}
+
+void GraphModifier::toggleFillS2(int enable)
+{
+    qDebug() << "GraphModifier::toggleFill" << enable;
+    if (enable)
+        m_drawMode2 |= QSurface3DSeries::DrawFilledSurface;
+    else
+        m_drawMode2 &= ~QSurface3DSeries::DrawFilledSurface;
+
+    m_theSeries->setDrawMode(m_drawMode2);
+#ifdef MULTI_SERIES
+    m_multiseries[1]->setDrawMode(m_drawMode2);
+#endif
 }
 
 void GraphModifier::toggleSmoothS3(int enabled)
@@ -337,6 +399,20 @@ void GraphModifier::toggleSeries3Visible(int visible)
     m_multiseries[2]->setVisible(visible);
 }
 
+void GraphModifier::toggleFillS3(int enable)
+{
+    qDebug() << "GraphModifier::toggleFill" << enable;
+    if (enable)
+        m_drawMode3 |= QSurface3DSeries::DrawFilledSurface;
+    else
+        m_drawMode3 &= ~QSurface3DSeries::DrawFilledSurface;
+
+    m_theSeries->setDrawMode(m_drawMode3);
+#ifdef MULTI_SERIES
+    m_multiseries[2]->setDrawMode(m_drawMode3);
+#endif
+}
+
 void GraphModifier::toggleSmoothS4(int visible)
 {
     qDebug() << __FUNCTION__ << visible;
@@ -370,10 +446,47 @@ void GraphModifier::toggleSurfaceS4(int enable)
     m_multiseries[3]->setDrawMode(m_drawMode4);
 }
 
+void GraphModifier::toggleLineSurfaceGrid(int enable)
+{
+    qDebug() << __FUNCTION__ << enable;
+    if (enable)
+        m_drawMode5 |= QSurface3DSeries::DrawWireframe;
+    else
+        m_drawMode5 &= ~QSurface3DSeries::DrawWireframe;
+
+    m_lineSeries->setDrawMode(m_drawMode5);
+
+}
+
 void GraphModifier::toggleSeries4Visible(int enable)
 {
     qDebug() << __FUNCTION__ << enable;
     m_multiseries[3]->setVisible(enable);
+}
+
+void GraphModifier::toggleFillS4(int enable)
+{
+    qDebug() << "GraphModifier::toggleFill" << enable;
+    if (enable)
+        m_drawMode4 |= QSurface3DSeries::DrawFilledSurface;
+    else
+        m_drawMode4 &= ~QSurface3DSeries::DrawFilledSurface;
+
+    m_theSeries->setDrawMode(m_drawMode);
+#ifdef MULTI_SERIES
+    m_multiseries[3]->setDrawMode(m_drawMode4);
+#endif
+}
+
+void GraphModifier::toggleFillLine(int enable)
+{
+    qDebug() << "GraphModifier::toggleFill" << enable;
+    if (enable)
+        m_drawMode5 |= QSurface3DSeries::DrawFilledSurface;
+    else
+        m_drawMode5 &= ~QSurface3DSeries::DrawFilledSurface;
+
+    m_lineSeries->setDrawMode(m_drawMode5);
 }
 
 void GraphModifier::toggleSqrtSin(int enable)

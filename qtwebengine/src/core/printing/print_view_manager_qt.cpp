@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 // Loosely based on print_view_manager.cc and print_preview_message_handler.cc
 // Copyright 2013 The Chromium Authors. All rights reserved.
@@ -52,27 +53,15 @@ static QSharedPointer<QByteArray> GetStdVectorFromHandle(const base::ReadOnlySha
     return QSharedPointer<QByteArray>(new QByteArray(data, map.size()));
 }
 
-static scoped_refptr<base::RefCountedBytes>
-GetBytesFromHandle(const base::ReadOnlySharedMemoryRegion &handle)
-{
-    base::ReadOnlySharedMemoryMapping map = handle.Map();
-    if (!map.IsValid())
-        return nullptr;
-
-    const unsigned char* data = static_cast<const unsigned char*>(map.memory());
-    std::vector<unsigned char> dataVector(data, data + map.size());
-    return base::RefCountedBytes::TakeVector(&dataVector);
-}
-
 // Write the PDF file to disk.
-static void SavePdfFile(scoped_refptr<base::RefCountedBytes> data,
+static void SavePdfFile(scoped_refptr<base::RefCountedSharedMemoryMapping> data,
                         const base::FilePath &path,
                         QtWebEngineCore::PrintViewManagerQt::PrintToPDFFileCallback saveCallback)
 {
     DCHECK_GT(data->size(), 0U);
 
     printing::MetafileSkia metafile;
-    metafile.InitFromData(base::as_bytes(base::make_span(data->front(), data->size())));
+    metafile.InitFromData(*data);
 
     base::File file(path,
                     base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
@@ -100,7 +89,6 @@ static base::Value::Dict createPrintSettings()
     printSettings.Set(printing::kSettingCopies, 1);
     printSettings.Set(printing::kSettingPagesPerSheet, 1);
     printSettings.Set(printing::kSettingCollate, false);
-//    printSettings->SetBoolean(printing::kSettingGenerateDraftData, false);
     printSettings.Set(printing::kSettingPreviewModifiable, false);
 
     printSettings.Set(printing::kSettingShouldPrintSelectionOnly, base::Value(false));
@@ -432,9 +420,9 @@ void PrintViewManagerQt::MetafileReadyForPrinting(printing::mojom::DidPreviewDoc
         content::GetUIThreadTaskRunner({})->PostTask(FROM_HERE,
                        base::BindOnce(std::move(pdf_print_callback), data_array));
     } else {
-        scoped_refptr<base::RefCountedBytes> data_bytes = GetBytesFromHandle(params->content->metafile_data_region);
+        auto data_bytes = base::RefCountedSharedMemoryMapping::CreateFromWholeRegion(params->content->metafile_data_region);
         base::ThreadPool::PostTask(FROM_HERE, { base::MayBlock() },
-                                   base::BindOnce(&SavePdfFile, data_bytes, pdfOutputPath, std::move(pdf_save_callback)));
+                                   base::BindOnce(&SavePdfFile, std::move(data_bytes), pdfOutputPath, std::move(pdf_save_callback)));
     }
 }
 

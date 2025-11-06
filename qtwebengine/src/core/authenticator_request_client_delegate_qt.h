@@ -6,6 +6,7 @@
 
 #include "qtwebenginecoreglobal_p.h"
 #include "content/public/browser/authenticator_request_client_delegate.h"
+#include "content/public/browser/web_authentication_delegate.h"
 #include <unordered_map>
 #include <QSharedPointer>
 
@@ -46,9 +47,7 @@ public:
     void SelectAccount(
             std::vector<device::AuthenticatorGetAssertionResponse> responses,
             base::OnceCallback<void(device::AuthenticatorGetAssertionResponse)> callback) override;
-    void DisableUI() override;
-    bool IsWebAuthnUIEnabled() override;
-    void SetConditionalRequest(bool is_conditional) override;
+    void SetUIPresentation(UIPresentation ui_presentation) override;
 
     // device::FidoRequestHandlerBase::Observer overrides:
     // This method will not be invoked until the observer is set.
@@ -69,7 +68,6 @@ public:
 private:
     content::RenderFrameHost *m_renderFrameHost;
     bool m_isUiDisabled = false;
-    bool m_isConditionalRequest = false;
 
     base::OnceClosure m_cancelCallback;
     base::RepeatingClosure m_startOverCallback;

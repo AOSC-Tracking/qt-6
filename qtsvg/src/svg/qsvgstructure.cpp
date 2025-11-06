@@ -309,12 +309,9 @@ QList<PositionMarkerPair> markersForNode(const QSvgNode *node)
     }
     case QSvgNode::Polyline:
     case QSvgNode::Polygon: {
-        const QSvgPolyline *polyline = static_cast<const QSvgPolyline*>(node);
-        const QSvgPolygon *polygon = static_cast<const QSvgPolygon*>(node);
-
         const QPolygonF &polyData = (node->type() == QSvgNode::Polyline)
-                ? polyline->polygon()
-                : polygon->polygon();
+                ? static_cast<const QSvgPolyline*>(node)->polygon()
+                : static_cast<const QSvgPolygon*>(node)->polygon();
 
         if (node->hasMarkerStart() && polyData.size() > 1) {
             QLineF line(polyData.at(0), polyData.at(1));
@@ -800,6 +797,7 @@ QSvgPattern::QSvgPattern(QSvgNode *parent, QSvgRectF bounds, QRectF viewBox,
     m_rect(bounds),
     m_viewBox(viewBox),
     m_contentUnits(contentUnits),
+    m_isRendering(false),
     m_transform(transform)
 
 {
@@ -884,6 +882,13 @@ QImage QSvgPattern::renderPattern(QSize size, qreal contentScaleX, qreal content
         return defaultPattern();
     }
     pattern.fill(Qt::transparent);
+
+    if (m_isRendering) {
+        qCWarning(lcSvgDraw) << "The pattern is trying to render itself recursively. "
+                                "Returning a transparent QImage of the right size.";
+        return pattern;
+    }
+    QScopedValueRollback<bool> guard(m_isRendering, true);
 
     // Draw the pattern using our QPainter.
     QPainter patternPainter(&pattern);

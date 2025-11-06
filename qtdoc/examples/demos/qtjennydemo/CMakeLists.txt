@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(qtjenny_consumer VERSION 0.1 LANGUAGES CXX)
+project(QtJenny VERSION 0.1 LANGUAGES CXX)
 
 #! [0]
 if (ANDROID)
@@ -20,7 +20,7 @@ endif()
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 6.8 REQUIRED COMPONENTS Quick)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Quick CorePrivate)
 
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -45,7 +45,7 @@ set_target_properties(appqtjenny_consumer PROPERTIES
 target_compile_definitions(appqtjenny_consumer
     PRIVATE $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:QT_QML_DEBUG>)
 target_link_libraries(appqtjenny_consumer
-    PRIVATE Qt6::Quick
+    PRIVATE Qt6::Quick Qt6::CorePrivate
 )
 
 include(GNUInstallDirs)

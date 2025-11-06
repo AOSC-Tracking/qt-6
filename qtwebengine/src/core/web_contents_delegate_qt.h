@@ -25,6 +25,7 @@ class ColorChooser;
 class JavaScriptDialogManager;
 class WebContents;
 struct MediaStreamRequest;
+struct GlobalRenderFrameHostToken;
 }
 
 namespace QtWebEngineCore {
@@ -117,6 +118,7 @@ public:
     void UnregisterProtocolHandler(content::RenderFrameHost* frame_host, const std::string& protocol, const GURL& url, bool user_gesture) override;
     bool TakeFocus(content::WebContents *source, bool reverse) override;
     void ContentsZoomChange(bool zoom_in) override;
+    bool IsBackForwardCacheSupported(content::WebContents &) override;
 
     // WebContentsObserver overrides
     void RenderFrameCreated(content::RenderFrameHost *render_frame_host) override;
@@ -143,7 +145,7 @@ public:
     void overrideWebPreferences(content::WebContents *, blink::web_pref::WebPreferences*);
     void allowCertificateError(const QSharedPointer<CertificateErrorController> &);
     void selectClientCert(const QSharedPointer<ClientCertSelectController> &);
-    void requestFeaturePermission(QWebEnginePermission::PermissionType permissionType, const QUrl &requestingOrigin);
+    void requestFeaturePermission(QWebEnginePermission::PermissionType permissionType, const QUrl &requestingOrigin, const content::GlobalRenderFrameHostToken &frameToken);
     void launchExternalURL(const QUrl &url, ui::PageTransition page_transition, bool is_main_frame, bool has_user_gesture);
     FindTextHelper *findTextHelper();
 

@@ -541,6 +541,7 @@ void QQuickWindowPrivate::syncSceneGraph()
     if (pendingFontUpdate) {
         QFont::cleanup();
         invalidateFontData(contentItem);
+        context->invalidateGlyphCaches();
     }
 
     if (Q_UNLIKELY(!renderer)) {
@@ -568,7 +569,7 @@ void QQuickWindowPrivate::syncSceneGraph()
     renderer->setVisualizationMode(visualizationMode);
 
     if (pendingFontUpdate) {
-        context->invalidateGlyphCaches();
+        context->flushGlyphCaches();
         pendingFontUpdate = false;
     }
 
@@ -816,14 +817,16 @@ void QQuickWindowPrivate::init(QQuickWindow *c, QQuickRenderControl *control)
 
     animationController.reset(new QQuickAnimatorController(q));
 
-    QObject::connect(context, &QSGRenderContext::initialized, q, &QQuickWindow::sceneGraphInitialized, Qt::DirectConnection);
-    QObject::connect(context, &QSGRenderContext::invalidated, q, &QQuickWindow::sceneGraphInvalidated, Qt::DirectConnection);
-    QObject::connect(context, &QSGRenderContext::invalidated, q, &QQuickWindow::cleanupSceneGraph, Qt::DirectConnection);
+    connections = {
+        QObject::connect(context, &QSGRenderContext::initialized, q, &QQuickWindow::sceneGraphInitialized, Qt::DirectConnection),
+        QObject::connect(context, &QSGRenderContext::invalidated, q, &QQuickWindow::sceneGraphInvalidated, Qt::DirectConnection),
+        QObject::connect(context, &QSGRenderContext::invalidated, q, &QQuickWindow::cleanupSceneGraph, Qt::DirectConnection),
 
-    QObject::connect(q, &QQuickWindow::focusObjectChanged, q, &QQuickWindow::activeFocusItemChanged);
-    QObject::connect(q, &QQuickWindow::screenChanged, q, &QQuickWindow::handleScreenChanged);
-    QObject::connect(qApp, &QGuiApplication::applicationStateChanged, q, &QQuickWindow::handleApplicationStateChanged);
-    QObject::connect(q, &QQuickWindow::frameSwapped, q, &QQuickWindow::runJobsAfterSwap, Qt::DirectConnection);
+        QObject::connect(q, &QQuickWindow::focusObjectChanged, q, &QQuickWindow::activeFocusItemChanged),
+        QObject::connect(q, &QQuickWindow::screenChanged, q, &QQuickWindow::handleScreenChanged),
+        QObject::connect(qApp, &QGuiApplication::applicationStateChanged, q, &QQuickWindow::handleApplicationStateChanged),
+        QObject::connect(q, &QQuickWindow::frameSwapped, q, &QQuickWindow::runJobsAfterSwap, Qt::DirectConnection),
+    };
 
     if (QQmlInspectorService *service = QQmlDebugConnector::service<QQmlInspectorService>())
         service->addWindow(q);
@@ -1184,6 +1187,11 @@ QQuickWindow::~QQuickWindow()
         d->windowManager->windowDestroyed(this);
     }
 
+    disconnect(this, &QQuickWindow::focusObjectChanged, this, &QQuickWindow::activeFocusItemChanged);
+    disconnect(this, &QQuickWindow::screenChanged, this, &QQuickWindow::handleScreenChanged);
+    disconnect(qApp, &QGuiApplication::applicationStateChanged, this, &QQuickWindow::handleApplicationStateChanged);
+    disconnect(this, &QQuickWindow::frameSwapped, this, &QQuickWindow::runJobsAfterSwap);
+
     delete d->incubationController; d->incubationController = nullptr;
     QQuickRootItem *root = d->contentItem;
     d->contentItem = nullptr;
@@ -1207,6 +1215,9 @@ QQuickWindow::~QQuickWindow()
     // have their destructors loaded while they the library is still
     // loaded into memory.
     QQuickPixmap::purgeCache();
+
+    for (const QMetaObject::Connection &connection : d->connections)
+        disconnect(connection);
 }
 
 #if QT_CONFIG(quick_shadereffect)
@@ -1425,7 +1436,7 @@ bool QQuickWindow::event(QEvent *event)
             return false;
         {
             const bool wasAccepted = event->isAccepted();
-            QBoolBlocker windowEventDispatchGuard(d->windowEventDispatch, true);
+            QScopedValueRollback windowEventDispatchGuard(d->windowEventDispatch, true);
             qCDebug(lcPtr) << "dispatching to window functions in case of override" << event;
             QWindow::event(event);
             if (event->isAccepted() && !wasAccepted)
@@ -1807,7 +1818,7 @@ void QQuickWindowPrivate::updateCursor(const QPointF &scenePos, QQuickItem *root
     }
 }
 
-QPair<QQuickItem*, QQuickPointerHandler*> QQuickWindowPrivate::findCursorItemAndHandler(QQuickItem *item, const QPointF &scenePos) const
+std::pair<QQuickItem*, QQuickPointerHandler*> QQuickWindowPrivate::findCursorItemAndHandler(QQuickItem *item, const QPointF &scenePos) const
 {
     QQuickItemPrivate *itemPrivate = QQuickItemPrivate::get(item);
     if (itemPrivate->flags & QQuickItem::ItemClipsChildrenToShape) {
@@ -1965,7 +1976,8 @@ void QQuickWindowPrivate::rhiCreationFailureMessage(const QString &backendName,
 
 void QQuickWindowPrivate::cleanupNodes()
 {
-    qDeleteAll(std::exchange(cleanupNodeList, {}));
+    qDeleteAll(cleanupNodeList);
+    cleanupNodeList.clear();
 }
 
 void QQuickWindowPrivate::cleanupNodesOnShutdown(QQuickItem *item)

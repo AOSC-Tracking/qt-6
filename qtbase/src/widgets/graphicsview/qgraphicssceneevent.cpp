@@ -1797,10 +1797,8 @@ QDebug operator<<(QDebug debug, const QGraphicsSceneEvent *event)
 {
     QDebugStateSaver saver(debug);
     debug.nospace();
-    if (!event) {
-        debug << "QGraphicsSceneEvent(0)";
-        return debug;
-    }
+    if (!event)
+        return debug << "QGraphicsSceneEvent(0x0)";
 
     const QEvent::Type type = event->type();
     switch (type) {

@@ -29,14 +29,16 @@ QT_BEGIN_NAMESPACE
 
 namespace QQmlJS {
 
+enum class CodegenResult : quint8 { Success, Skip, Failure };
+
 struct Q_QMLCOMPILER_EXPORT AotStatsEntry
 {
     std::chrono::microseconds codegenDuration;
     QString functionName;
-    QString errorMessage;
+    QString message;
     int line = 0;
     int column = 0;
-    bool codegenSuccessful = true;
+    CodegenResult codegenResult = CodegenResult::Success;
 
     bool operator<(const AotStatsEntry &) const;
 };
@@ -61,7 +63,7 @@ public:
     static std::optional<AotStats> parseAotstatsFile(const QString &aotstatsPath);
     static std::optional<AotStats> aggregateAotstatsList(const QString &aotstatsListPath);
 
-    static AotStats fromJsonDocument(const QJsonDocument &);
+    static std::optional<AotStats> fromJsonDocument(const QJsonDocument &);
     QJsonDocument toJsonDocument() const;
 
 private:

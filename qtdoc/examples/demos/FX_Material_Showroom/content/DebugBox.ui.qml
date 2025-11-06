@@ -2,15 +2,13 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
 import QtQuick 6.4
-import QtQuick.Controls 6.4
 import QtQuick3D 6.4
-import QtQuick3D.Helpers 6.4
 
 Rectangle {
     id: debugBox
     property color colorBG: "#ca000000"
     property color colorText: "#ffffff"
-    property View3D sView: view3D
+    required property View3D sView
     property int secondaryinfoSize: 24
     property int fpsSize: 32
     property int fps: sView.renderStats.fps

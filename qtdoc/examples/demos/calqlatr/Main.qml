@@ -7,7 +7,6 @@ import QtQuick.Layouts
 import "content"
 import "content/calculator.js" as CalcEngine
 
-
 Window {
     visible: true
     width: 320
@@ -20,20 +19,24 @@ Window {
         id: root
         anchors.fill: parent
 
+        anchors.topMargin: parent.SafeArea.margins.top
+        anchors.leftMargin: parent.SafeArea.margins.left
+        anchors.rightMargin: parent.SafeArea.margins.right
+        anchors.bottomMargin: parent.SafeArea.margins.bottom
+
         readonly property int margin: 18
         readonly property color backgroundColor: "#222222"
         readonly property int minLandscapeModeWidth: numberPad.landscapeModeWidth
-                                                     + display.minWidth
-                                                     + margin * 3
+                                                     + display.minWidth + margin * 3
         property bool isPortraitMode: width < minLandscapeModeWidth
 
         onIsPortraitModeChanged: {
             if (isPortraitMode) {
-                portraitMode.visible = true
-                landscapeMode.visible = false
+                portraitMode.visible = true;
+                landscapeMode.visible = false;
             } else {
-                portraitMode.visible = false
-                landscapeMode.visible = true
+                portraitMode.visible = false;
+                landscapeMode.visible = true;
             }
         }
 
@@ -53,7 +56,7 @@ Window {
         }
 
         NumberPad {
-            id: numberPad;
+            id: numberPad
             Layout.margins: root.margin
         }
 
@@ -88,16 +91,16 @@ Window {
         }
 
         function operatorPressed(operator) {
-            CalcEngine.operatorPressed(operator, display)
+            CalcEngine.operatorPressed(operator, display);
         }
         function digitPressed(digit) {
-            CalcEngine.digitPressed(digit, display)
+            CalcEngine.digitPressed(digit, display);
         }
         function isButtonDisabled(op) {
-            return CalcEngine.isOperationDisabled(op, display)
+            return CalcEngine.isOperationDisabled(op, display);
         }
 
-        Keys.onPressed: function(event) {
+        Keys.onPressed: function (event) {
             switch (event.key) {
                 case Qt.Key_0: digitPressed("0"); break;
                 case Qt.Key_1: digitPressed("1"); break;

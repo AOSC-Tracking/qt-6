@@ -410,7 +410,7 @@ bool QQmlDomAstCreator::visit(UiPragma *el)
     }
     int i = 0;
     for (auto t = el->values; t; t = t->next) {
-        auto subMap = createMap(fileLocation, Path().field(Fields::values).index(i), t);
+        auto subMap = createMap(fileLocation, Path().withField(Fields::values).withIndex(i), t);
         FileLocations::addRegion(subMap, PragmaValuesRegion, t->location);
         ++i;
     }
@@ -509,7 +509,7 @@ bool QQmlDomAstCreator::visit(AST::UiPublicMember *el)
                 param.typeAnnotationStyle = MethodParameter::TypeAnnotationStyle::Prefix;
             mInfo.parameters.append(param);
             auto argLocs = FileLocations::ensure(nodeStack.last().fileLocations,
-                                                 Path::Field(Fields::parameters).index(idx));
+                                                 Path::fromField(Fields::parameters).withIndex(idx));
             FileLocations::addRegion(argLocs, MainRegion, combineLocations(args));
             FileLocations::addRegion(argLocs, IdentifierRegion, args->identifierToken);
             if (args->type) {
@@ -528,7 +528,9 @@ bool QQmlDomAstCreator::visit(AST::UiPublicMember *el)
         p.isReadonly = el->isReadonly();
         p.isDefaultMember = el->isDefaultMember();
         p.isRequired = el->isRequired();
+        p.isFinal = el->isFinal();
         p.isList = el->typeModifier == QLatin1String("list");
+        p.isFinal = el->isFinal();
         if (!el->typeModifier.isEmpty())
             p.typeName = el->typeModifier.toString() + QChar(u'<') + p.typeName + QChar(u'>');
         PropertyDefinition *pPtr;
@@ -540,7 +542,7 @@ bool QQmlDomAstCreator::visit(AST::UiPublicMember *el)
                                        fieldMemberExpressionForQualifiedId(el->memberType));
             pPtr->setNameIdentifiers(finalizeScriptExpression(
                     ScriptElementVariant::fromElement(qmlObjectType),
-                    pPathFromOwner.field(Fields::nameIdentifiers), rootMap));
+                    pPathFromOwner.withField(Fields::nameIdentifiers), rootMap));
             // skip binding identifiers of the binding inside the property definition, if there is
             // one
             m_skipBindingIdentifiers = el->binding;
@@ -564,6 +566,10 @@ bool QQmlDomAstCreator::visit(AST::UiPublicMember *el)
             FileLocations::addRegion(nodeStack.last().fileLocations, DefaultKeywordRegion,
                                      el->defaultToken());
         }
+        if (p.isFinal) {
+            FileLocations::addRegion(nodeStack.last().fileLocations, FinalKeywordRegion,
+                                     el->finalToken());
+        }
         if (p.isRequired) {
             FileLocations::addRegion(nodeStack.last().fileLocations, RequiredKeywordRegion,
                                      el->requiredToken());
@@ -586,7 +592,7 @@ bool QQmlDomAstCreator::visit(AST::UiPublicMember *el)
                                                                   AddOption::KeepExisting, &bPtr);
             FileLocations::Tree bLoc = createMap(DomType::Binding, bPathFromOwner, el->statement);
             FileLocations::addRegion(bLoc, ColonTokenRegion, el->colonToken);
-            FileLocations::Tree valueLoc = FileLocations::ensure(bLoc, Path::Field(Fields::value));
+            FileLocations::Tree valueLoc = FileLocations::ensure(bLoc, Path::fromField(Fields::value));
             FileLocations::addRegion(valueLoc, MainRegion, combineLocations(el->statement));
             // push it also: its needed in endVisit to add the scriptNode to it
             // do not use pushEl to avoid recreating the already created "bLoc" Map
@@ -608,9 +614,9 @@ void QQmlDomAstCreator::endVisit(AST::UiPublicMember *el)
         }
         if (m_enableScriptExpressions) {
             b.scriptExpressionValue()->setScriptElement(finalizeScriptExpression(
-                    currentScriptNodeEl().takeVariant(), Path().field(Fields::scriptElement),
+                    currentScriptNodeEl().takeVariant(), Path().withField(Fields::scriptElement),
                     FileLocations::ensure(currentNodeEl().fileLocations,
-                                          Path().field(Fields::value))));
+                                          Path().withField(Fields::value))));
             removeCurrentScriptNode({});
         }
 
@@ -634,9 +640,9 @@ void QQmlDomAstCreator::endVisit(AST::UiPublicMember *el)
                 for (QmlObject ann : pDef.annotations) {
                     ann.addAnnotation(duplicate);
                     it->addAnnotation(currentEl<QmlObject>()
-                                              .path.field(Fields::bindings)
-                                              .key(pDef.name)
-                                              .index(obj.m_bindings.values(pDef.name).size() - 1),
+                                              .path.withField(Fields::bindings)
+                                              .withKey(pDef.name)
+                                              .withIndex(obj.m_bindings.values(pDef.name).size() - 1),
                                       ann);
                 }
             }
@@ -796,7 +802,7 @@ bool QQmlDomAstCreator::visit(AST::FunctionDeclaration *fDef)
     FileLocations::Tree &fLoc = nodeStack.last().fileLocations;
     if (fDef->identifierToken.isValid())
         FileLocations::addRegion(fLoc, IdentifierRegion, fDef->identifierToken);
-    auto bodyTree = FileLocations::ensure(fLoc, Path::Field(Fields::body));
+    auto bodyTree = FileLocations::ensure(fLoc, Path::fromField(Fields::body));
     FileLocations::addRegion(bodyTree, MainRegion, bodyLoc);
     if (fDef->functionToken.isValid())
         FileLocations::addRegion(fLoc, FunctionKeywordRegion, fDef->functionToken);
@@ -840,7 +846,7 @@ bool QQmlDomAstCreator::visit(AST::FunctionDeclaration *fDef)
         index_type idx = index_type(mInfo.parameters.size());
         mInfo.parameters.append(param);
         auto argLocs = FileLocations::ensure(nodeStack.last().fileLocations,
-                                             Path::Field(Fields::parameters).index(idx));
+                                             Path::fromField(Fields::parameters).withIndex(idx));
         FileLocations::addRegion(argLocs, MainRegion, combineLocations(args));
         if (args->element->identifierToken.isValid())
             FileLocations::addRegion(argLocs, IdentifierRegion, args->element->identifierToken);
@@ -880,8 +886,8 @@ void QQmlDomAstCreator::endVisit(AST::FunctionDeclaration *fDef)
     --m_nestedFunctionDepth;
     MethodInfo &m = std::get<MethodInfo>(currentNode().value);
     const FileLocations::Tree bodyTree =
-            FileLocations::ensure(currentNodeEl().fileLocations, Path().field(Fields::body));
-    const Path bodyPath = Path().field(Fields::scriptElement);
+            FileLocations::ensure(currentNodeEl().fileLocations, Path().withField(Fields::body));
+    const Path bodyPath = Path().withField(Fields::scriptElement);
 
     if (!m_enableScriptExpressions)
         return;
@@ -892,8 +898,8 @@ void QQmlDomAstCreator::endVisit(AST::FunctionDeclaration *fDef)
 
     if (fDef->typeAnnotation) {
         auto argLoc = FileLocations::ensure(nodeStack.last().fileLocations,
-                                            Path().field(Fields::returnType));
-        const Path pathToReturnType = Path().field(Fields::scriptElement);
+                                            Path().withField(Fields::returnType));
+        const Path pathToReturnType = Path().withField(Fields::scriptElement);
 
         Q_SCRIPTELEMENT_EXIT_IF(!stackHasScriptVariant());
         ScriptElementVariant variant = currentScriptNodeEl().takeVariant();
@@ -909,8 +915,8 @@ void QQmlDomAstCreator::endVisit(AST::FunctionDeclaration *fDef)
         for (size_t idx = size - 1; idx < size; --idx) {
             auto argLoc = FileLocations::ensure(
                     nodeStack.last().fileLocations,
-                    Path().field(Fields::parameters).index(idx).field(Fields::value));
-            const Path pathToArgument = Path().field(Fields::scriptElement);
+                    Path().withField(Fields::parameters).withIndex(idx).withField(Fields::value));
+            const Path pathToArgument = Path().withField(Fields::scriptElement);
 
             ScriptElementVariant variant = parameterQList[idx];
             setFormalParameterKind(variant);
@@ -950,7 +956,7 @@ bool QQmlDomAstCreator::visit(AST::UiObjectDefinition *el)
             if (vals) {
                 int idx = vals->size();
                 vals->append(scope);
-                sPathFromOwner = currentNodeEl().path.field(Fields::value).index(idx);
+                sPathFromOwner = currentNodeEl().path.withField(Fields::value).withIndex(idx);
                 sPtr = &((*vals)[idx]);
                 sPtr->updatePathFromOwner(sPathFromOwner);
             } else {
@@ -986,7 +992,7 @@ bool QQmlDomAstCreator::visit(AST::UiObjectDefinition *el)
                                    fieldMemberExpressionForQualifiedId(el->qualifiedTypeNameId));
         sPtr->setNameIdentifiers(
                 finalizeScriptExpression(ScriptElementVariant::fromElement(qmlObjectType),
-                                         sPathFromOwner.field(Fields::nameIdentifiers), rootMap));
+                                         sPathFromOwner.withField(Fields::nameIdentifiers), rootMap));
     }
     pushEl(sPathFromOwner, *sPtr, el);
 
@@ -1019,13 +1025,13 @@ void QQmlDomAstCreator::endVisit(AST::UiObjectDefinition *)
         Path p = currentNodeEl().path;
         switch (containingObject.kind) {
         case DomType::QmlComponent:
-            if (p[p.length() - 2] == Path::Field(Fields::objects))
+            if (p[p.length() - 2] == Path::fromField(Fields::objects))
                 std::get<QmlComponent>(containingObject.value).m_objects[idx] = obj;
             else
                 Q_UNREACHABLE();
             break;
         case DomType::QmlObject:
-            if (p[p.length() - 2] == Path::Field(Fields::children))
+            if (p[p.length() - 2] == Path::fromField(Fields::children))
                 std::get<QmlObject>(containingObject.value).m_children[idx] = obj;
             else
                 Q_UNREACHABLE();
@@ -1046,7 +1052,7 @@ void QQmlDomAstCreator::setBindingIdentifiers(const Path &pathFromOwner,
 
     ScriptElementVariant bindable = fieldMemberExpressionForQualifiedId(identifiers);
     bindingPtr->setBindingIdentifiers(finalizeScriptExpression(
-            bindable, pathFromOwner.field(Fields::bindingIdentifiers), rootMap));
+            bindable, pathFromOwner.withField(Fields::bindingIdentifiers), rootMap));
 }
 
 bool QQmlDomAstCreator::visit(AST::UiObjectBinding *el)
@@ -1082,11 +1088,11 @@ bool QQmlDomAstCreator::visit(AST::UiObjectBinding *el)
                                    fieldMemberExpressionForQualifiedId(el->qualifiedTypeNameId));
         objValue->setNameIdentifiers(finalizeScriptExpression(
                 ScriptElementVariant::fromElement(qmlObjectType),
-                bPathFromOwner.field(Fields::value).field(Fields::nameIdentifiers), rootMap));
+                bPathFromOwner.withField(Fields::value).withField(Fields::nameIdentifiers), rootMap));
     }
 
     objValue->addPrototypePath(Paths::lookupTypePath(objValue->name()));
-    pushEl(bPathFromOwner.field(Fields::value), *objValue, el->initializer);
+    pushEl(bPathFromOwner.withField(Fields::value), *objValue, el->initializer);
     if (m_enableScriptExpressions && el->initializer) {
         FileLocations::addRegion(nodeStack.last().fileLocations, LeftBraceRegion,
                                  el->initializer->lbraceToken);
@@ -1132,7 +1138,7 @@ bool QQmlDomAstCreator::visit(AST::UiScriptBinding *el)
             QmlStackElement &containingObjectEl = currentEl<QmlObject>();
             QmlObject &containingObject = std::get<QmlObject>(containingObjectEl.item.value);
             QString idName = iExp->name.toString();
-            Id idVal(idName, qmlFile.canonicalPath().path(containingObject.pathFromOwner()));
+            Id idVal(idName, qmlFile.canonicalPath().withPath(containingObject.pathFromOwner()));
             idVal.value = script;
             containingObject.setIdStr(idName);
             FileLocations::addRegion(containingObjectEl.fileLocations, IdTokenRegion,
@@ -1201,9 +1207,9 @@ void QQmlDomAstCreator::setScriptExpression (const std::shared_ptr<ScriptExpress
         Q_SCRIPTELEMENT_DISABLE();
     if (m_enableScriptExpressions) {
         FileLocations::Tree valueLoc = FileLocations::ensure(currentNodeEl().fileLocations,
-                                                             Path().field(Fields::value));
+                                                             Path().withField(Fields::value));
         value->setScriptElement(finalizeScriptExpression(currentScriptNodeEl().takeVariant(),
-                                                         Path().field(Fields::scriptElement),
+                                                         Path().withField(Fields::scriptElement),
                                                          valueLoc));
         removeCurrentScriptNode({});
     }
@@ -1261,7 +1267,7 @@ bool QQmlDomAstCreator::visit(AST::UiArrayBinding *el)
     FileLocations::addRegion(currentNodeEl().fileLocations, ColonTokenRegion, el->colonToken);
     loadAnnotations(el);
     FileLocations::Tree arrayList =
-            createMap(currentNodeEl().fileLocations, Path::Field(Fields::value), nullptr);
+            createMap(currentNodeEl().fileLocations, Path::fromField(Fields::value), nullptr);
     FileLocations::addRegion(arrayList, LeftBracketRegion, el->lbracketToken);
     FileLocations::addRegion(arrayList, RightBracketRegion, el->rbracketToken);
     arrayBindingLevels.append(nodeStack.size());
@@ -1396,7 +1402,7 @@ bool QQmlDomAstCreator::visit(AST::UiInlineComponent *el)
                                          ScriptElementVariant::fromElement(typeName));
         compPtr->setNameIdentifiers(
                 finalizeScriptExpression(ScriptElementVariant::fromElement(inlineComponentType),
-                                         p.field(Fields::nameIdentifiers), rootMap));
+                                         p.withField(Fields::nameIdentifiers), rootMap));
     }
 
     pushEl(p, *compPtr, el);

@@ -204,20 +204,18 @@ bool Comment::iterateDirectSubpaths(const DomItem &self, DirectVisitor visitor) 
     return cont;
 }
 
-void Comment::write(OutWriter &lw, SourceLocation *commentLocation) const
+void Comment::write(OutWriter &lw) const
 {
     if (newlinesBefore())
         lw.ensureNewline(newlinesBefore());
     CommentInfo cInfo = info();
     lw.ensureSpace(cInfo.preWhitespace());
     QStringView cBody = cInfo.comment();
-    PendingSourceLocationId cLoc = lw.lineWriter.startSourceLocation(commentLocation);
     lw.write(cBody.mid(0, 1));
     bool indentOn = lw.indentNextlines;
     lw.indentNextlines = false;
     lw.write(cBody.mid(1));
     lw.indentNextlines = indentOn;
-    lw.lineWriter.endSourceLocation(cLoc);
     lw.write(cInfo.postWhitespace());
 }
 
@@ -249,22 +247,21 @@ bool CommentedElement::iterateDirectSubpaths(const DomItem &self, DirectVisitor 
     return cont;
 }
 
-void CommentedElement::writePre(OutWriter &lw, QList<SourceLocation> *locs) const
+static inline void writeComments(OutWriter &lw, const QList<Comment> &comments)
 {
-    if (locs)
-        locs->resize(m_preComments.size());
-    int i = 0;
-    for (const Comment &c : m_preComments)
-        c.write(lw, (locs ? &((*locs)[i++]) : nullptr));
+    for (const auto &comment : comments) {
+        comment.write(lw);
+    }
 }
 
-void CommentedElement::writePost(OutWriter &lw, QList<SourceLocation> *locs) const
+void CommentedElement::writePre(OutWriter &lw) const
 {
-    if (locs)
-        locs->resize(m_postComments.size());
-    int i = 0;
-    for (const Comment &c : m_postComments)
-        c.write(lw, (locs ? &((*locs)[i++]) : nullptr));
+    return writeComments(lw, m_preComments);
+}
+
+void CommentedElement::writePost(OutWriter &lw) const
+{
+    return writeComments(lw, m_postComments);
 }
 
 using namespace QQmlJS::AST;
@@ -464,7 +461,7 @@ void AstRangesVisitor::addItemRanges(
     {
         auto subMaps = itemLocations->subItems();
         for (auto it = subMaps.begin(), end = subMaps.end(); it != end; ++it) {
-            addItemRanges(item.path(it.key()), it.value(), currentP.path(it.key()));
+            addItemRanges(item.path(it.key()), it.value(), currentP.withPath(it.key()));
         }
     }
 }
@@ -806,7 +803,7 @@ void CommentCollector::collectComments(
                 // update file locations with the comment region
                 const auto base = FileLocations::treeOf(currentItem);
                 const auto fileLocations = FileLocations::ensure(
-                        base, Path::Field(Fields::comments).path(commentPath));
+                        base, Path::fromField(Fields::comments).withPath(commentPath));
 
                 FileLocations::addRegion(fileLocations, MainRegion,
                                          comment.info().sourceLocation());
@@ -826,7 +823,7 @@ bool RegionComments::iterateDirectSubpaths(const DomItem &self, DirectVisitor vi
         cont = cont
                 && self.dvItemField(visitor, Fields::regionComments, [this, &self]() -> DomItem {
                        const Path pathFromOwner =
-                               self.pathFromOwner().field(Fields::regionComments);
+                               self.pathFromOwner().withField(Fields::regionComments);
                        auto map = Map::fromFileRegionMap(pathFromOwner, m_regionComments);
                        return self.subMapItem(map);
                    });

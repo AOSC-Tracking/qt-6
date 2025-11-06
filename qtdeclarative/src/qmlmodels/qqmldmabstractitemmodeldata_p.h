@@ -169,9 +169,10 @@ public:
 
         const QQmlAdaptorModel *const model
                 = static_cast<QQmlDMAbstractItemModelData *>(o->d()->item)->type()->model;
-        if (o->d()->item->index >= 0) {
+        if (o->d()->item->modelIndex() >= 0) {
             if (const QAbstractItemModel *const aim = model->aim())
-                RETURN_RESULT(QV4::Encode(aim->hasChildren(aim->index(o->d()->item->index, 0, model->rootIndex))));
+                RETURN_RESULT(QV4::Encode(aim->hasChildren(
+                        aim->index(o->d()->item->modelIndex(), 0, model->rootIndex))));
         }
         RETURN_RESULT(QV4::Encode(false));
     }
@@ -245,7 +246,7 @@ public:
     {
         if (!metaObject) {
             VDMAbstractItemModelDataType *dataType = const_cast<VDMAbstractItemModelDataType *>(this);
-            dataType->initializeMetaType(model);
+            dataType->initializeMetaObject(model);
         }
 
         if (const QAbstractItemModel *aim = model.aim()) {
@@ -306,11 +307,11 @@ public:
             int index, int row, int column) override
     {
         if (!metaObject)
-            initializeMetaType(model);
+            initializeMetaObject(model);
         return new QQmlDMAbstractItemModelData(metaType, this, index, row, column);
     }
 
-    void initializeMetaType(const QQmlAdaptorModel &model)
+    void initializeMetaObject(const QQmlAdaptorModel &model)
     {
         QMetaObjectBuilder builder;
         QQmlAdaptorModelEngineData::setModelDataType<QQmlDMAbstractItemModelData>(&builder, this);
@@ -322,7 +323,9 @@ public:
             const int propertyId = propertyRoles.size();
             propertyRoles.append(it.key());
             roleNames.insert(it.value(), it.key());
-            QQmlAdaptorModelEngineData::addProperty(&builder, propertyId, it.value(), propertyType);
+            QQmlAdaptorModelEngineData::addProperty(
+                    &builder, propertyId, it.value(), propertyType,
+                    model.delegateModelAccess != QQmlDelegateModel::ReadOnly);
         }
 
         metaObject.reset(builder.toMetaObject());

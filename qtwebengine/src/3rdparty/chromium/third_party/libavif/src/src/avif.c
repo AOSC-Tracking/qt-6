@@ -104,11 +104,9 @@ const char * avifResultToString(avifResult result)
         case AVIF_RESULT_CANNOT_CHANGE_SETTING:         return "Cannot change some setting during encoding";
         case AVIF_RESULT_INCOMPATIBLE_IMAGE:            return "The image is incompatible with already encoded images";
         case AVIF_RESULT_INTERNAL_ERROR:                return "Internal error";
-#if defined(AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP)
         case AVIF_RESULT_ENCODE_GAIN_MAP_FAILED:        return "Encoding of gain map planes failed";
         case AVIF_RESULT_DECODE_GAIN_MAP_FAILED:        return "Decoding of gain map planes failed";
         case AVIF_RESULT_INVALID_TONE_MAPPED_IMAGE:     return "Invalid tone mapped image item";
-#endif
 #if defined(AVIF_ENABLE_EXPERIMENTAL_SAMPLE_TRANSFORM)
         case AVIF_RESULT_ENCODE_SAMPLE_TRANSFORM_FAILED: return "Encoding of sample transformed image failed";
         case AVIF_RESULT_DECODE_SAMPLE_TRANSFORM_FAILED: return "Decoding of sample transformed image failed";
@@ -228,6 +226,31 @@ void avifImageCopySamples(avifImage * dstImage, const avifImage * srcImage, avif
     }
 }
 
+static avifResult avifImageCopyProperties(avifImage * dstImage, const avifImage * srcImage)
+{
+    for (size_t i = 0; i < dstImage->numProperties; ++i) {
+        avifRWDataFree(&dstImage->properties[i].boxPayload);
+    }
+    avifFree(dstImage->properties);
+    dstImage->properties = NULL;
+    dstImage->numProperties = 0;
+
+    if (srcImage->numProperties != 0) {
+        dstImage->properties = (avifImageItemProperty *)avifAlloc(srcImage->numProperties * sizeof(srcImage->properties[0]));
+        AVIF_CHECKERR(dstImage->properties != NULL, AVIF_RESULT_OUT_OF_MEMORY);
+        memset(dstImage->properties, 0, srcImage->numProperties * sizeof(srcImage->properties[0]));
+        dstImage->numProperties = srcImage->numProperties;
+        for (size_t i = 0; i < srcImage->numProperties; ++i) {
+            memcpy(dstImage->properties[i].boxtype, srcImage->properties[i].boxtype, sizeof(srcImage->properties[i].boxtype));
+            memcpy(dstImage->properties[i].usertype, srcImage->properties[i].usertype, sizeof(srcImage->properties[i].usertype));
+            AVIF_CHECKRES(avifRWDataSet(&dstImage->properties[i].boxPayload,
+                                        srcImage->properties[i].boxPayload.data,
+                                        srcImage->properties[i].boxPayload.size));
+        }
+    }
+    return AVIF_RESULT_OK;
+}
+
 avifResult avifImageCopy(avifImage * dstImage, const avifImage * srcImage, avifPlanesFlags planes)
 {
     avifImageFreePlanes(dstImage, AVIF_PLANES_ALL);
@@ -237,6 +260,8 @@ avifResult avifImageCopy(avifImage * dstImage, const avifImage * srcImage, avifP
 
     AVIF_CHECKRES(avifRWDataSet(&dstImage->exif, srcImage->exif.data, srcImage->exif.size));
     AVIF_CHECKRES(avifImageSetMetadataXMP(dstImage, srcImage->xmp.data, srcImage->xmp.size));
+
+    AVIF_CHECKRES(avifImageCopyProperties(dstImage, srcImage));
 
     if ((planes & AVIF_PLANES_YUV) && srcImage->yuvPlanes[AVIF_CHAN_Y]) {
         if ((srcImage->yuvFormat != AVIF_PIXEL_FORMAT_YUV400) &&
@@ -256,13 +281,21 @@ avifResult avifImageCopy(avifImage * dstImage, const avifImage * srcImage, avifP
     }
     avifImageCopySamples(dstImage, srcImage, planes);
 
-#if defined(AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP)
     if (srcImage->gainMap) {
         if (!dstImage->gainMap) {
             dstImage->gainMap = avifGainMapCreate();
             AVIF_CHECKERR(dstImage->gainMap, AVIF_RESULT_OUT_OF_MEMORY);
         }
-        dstImage->gainMap->metadata = srcImage->gainMap->metadata;
+        for (int c = 0; c < 3; ++c) {
+            dstImage->gainMap->gainMapMin[c] = srcImage->gainMap->gainMapMin[c];
+            dstImage->gainMap->gainMapMax[c] = srcImage->gainMap->gainMapMax[c];
+            dstImage->gainMap->gainMapGamma[c] = srcImage->gainMap->gainMapGamma[c];
+            dstImage->gainMap->baseOffset[c] = srcImage->gainMap->baseOffset[c];
+            dstImage->gainMap->alternateOffset[c] = srcImage->gainMap->alternateOffset[c];
+        }
+        dstImage->gainMap->baseHdrHeadroom = srcImage->gainMap->baseHdrHeadroom;
+        dstImage->gainMap->alternateHdrHeadroom = srcImage->gainMap->alternateHdrHeadroom;
+        dstImage->gainMap->useBaseColorSpace = srcImage->gainMap->useBaseColorSpace;
         AVIF_CHECKRES(avifRWDataSet(&dstImage->gainMap->altICC, srcImage->gainMap->altICC.data, srcImage->gainMap->altICC.size));
         dstImage->gainMap->altColorPrimaries = srcImage->gainMap->altColorPrimaries;
         dstImage->gainMap->altTransferCharacteristics = srcImage->gainMap->altTransferCharacteristics;
@@ -284,7 +317,6 @@ avifResult avifImageCopy(avifImage * dstImage, const avifImage * srcImage, avifP
         avifGainMapDestroy(dstImage->gainMap);
         dstImage->gainMap = NULL;
     }
-#endif // defined(AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP)
 
     return AVIF_RESULT_OK;
 }
@@ -325,15 +357,19 @@ avifResult avifImageSetViewRect(avifImage * dstImage, const avifImage * srcImage
 
 void avifImageDestroy(avifImage * image)
 {
-#if defined(AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP)
     if (image->gainMap) {
         avifGainMapDestroy(image->gainMap);
     }
-#endif
     avifImageFreePlanes(image, AVIF_PLANES_ALL);
     avifRWDataFree(&image->icc);
     avifRWDataFree(&image->exif);
     avifRWDataFree(&image->xmp);
+    for (size_t i = 0; i < image->numProperties; ++i) {
+        avifRWDataFree(&image->properties[i].boxPayload);
+    }
+    avifFree(image->properties);
+    image->properties = NULL;
+    image->numProperties = 0;
     avifFree(image);
 }
 
@@ -345,6 +381,49 @@ avifResult avifImageSetProfileICC(avifImage * image, const uint8_t * icc, size_t
 avifResult avifImageSetMetadataXMP(avifImage * image, const uint8_t * xmp, size_t xmpSize)
 {
     return avifRWDataSet(&image->xmp, xmp, xmpSize);
+}
+
+avifResult avifImagePushProperty(avifImage * image, const uint8_t boxtype[4], const uint8_t usertype[16], const uint8_t * boxPayload, size_t boxPayloadSize)
+{
+    AVIF_CHECKERR(image->numProperties < SIZE_MAX / sizeof(avifImageItemProperty), AVIF_RESULT_INVALID_ARGUMENT);
+    // Shallow copy the current properties.
+    const size_t numProperties = image->numProperties + 1;
+    avifImageItemProperty * const properties = (avifImageItemProperty *)avifAlloc(numProperties * sizeof(properties[0]));
+    AVIF_CHECKERR(properties != NULL, AVIF_RESULT_OUT_OF_MEMORY);
+    if (image->numProperties != 0) {
+        memcpy(properties, image->properties, image->numProperties * sizeof(properties[0]));
+    }
+    // Free the old array and replace it by the new one.
+    avifFree(image->properties);
+    image->properties = properties;
+    image->numProperties = numProperties;
+    // Set the new property.
+    avifImageItemProperty * const property = &image->properties[image->numProperties - 1];
+    memset(property, 0, sizeof(*property));
+    memcpy(property->boxtype, boxtype, sizeof(property->boxtype));
+    memcpy(property->usertype, usertype, sizeof(property->usertype));
+    AVIF_CHECKRES(avifRWDataSet(&property->boxPayload, boxPayload, boxPayloadSize));
+    return AVIF_RESULT_OK;
+}
+
+avifResult avifImageAddOpaqueProperty(avifImage * image, const uint8_t boxtype[4], const uint8_t * data, size_t dataSize)
+{
+    const uint8_t uuid[16] = { 0 };
+    // Do not allow adding properties that are also handled by libavif
+    if (avifIsKnownPropertyType(boxtype)) {
+        return AVIF_RESULT_INVALID_ARGUMENT;
+    }
+    return avifImagePushProperty(image, boxtype, uuid, data, dataSize);
+}
+
+avifResult avifImageAddUUIDProperty(avifImage * image, const uint8_t uuid[16], const uint8_t * data, size_t dataSize)
+{
+    const uint8_t boxtype[4] = { 'u', 'u', 'i', 'd' };
+    // Do not allow adding invalid UUIDs, or using uuid representation of properties that are also handled by libavif
+    if (!avifIsValidUUID(uuid)) {
+        return AVIF_RESULT_INVALID_ARGUMENT;
+    }
+    return avifImagePushProperty(image, boxtype, uuid, data, dataSize);
 }
 
 avifResult avifImageAllocatePlanes(avifImage * image, avifPlanesFlags planes)
@@ -717,7 +796,7 @@ avifBool avifCropRectConvertCleanApertureBox(avifCropRect * cropRect,
 {
     avifDiagnosticsClearError(diag);
 
-    // ISO/IEC 14496-12:2020, Section 12.1.4.1:
+    // ISO/IEC 14496-12:2022, Section 12.1.4.1:
     //   For horizOff and vertOff, D shall be strictly positive and N may be
     //   positive or negative. For cleanApertureWidth and cleanApertureHeight,
     //   N shall be positive and D shall be strictly positive.
@@ -738,6 +817,15 @@ avifBool avifCropRectConvertCleanApertureBox(avifCropRect * cropRect,
         avifDiagnosticsPrintf(diag, "[Strict] clap width or height is negative");
         return AVIF_FALSE;
     }
+
+    // ISO/IEC 23000-22:2019/Amd. 2:2021, Section 7.3.6.7:
+    //   The clean aperture property is restricted according to the chroma
+    //   sampling format of the input image (4:4:4, 4:2:2:, 4:2:0, or 4:0:0) as
+    //   follows:
+    //   - cleanApertureWidth and cleanApertureHeight shall be integers;
+    //   - The leftmost pixel and the topmost line of the clean aperture as
+    //     defined in ISO/IEC 14496-12:2020, Section 12.1.4.1 shall be integers;
+    //   ...
 
     if ((widthN % widthD) != 0) {
         avifDiagnosticsPrintf(diag, "[Strict] clap width %d/%d is not an integer", widthN, widthD);
@@ -1171,7 +1259,6 @@ void avifCodecVersions(char outBuffer[256])
     }
 }
 
-#if defined(AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP)
 avifGainMap * avifGainMapCreate(void)
 {
     avifGainMap * gainMap = (avifGainMap *)avifAlloc(sizeof(avifGainMap));
@@ -1183,7 +1270,18 @@ avifGainMap * avifGainMapCreate(void)
     gainMap->altTransferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_UNSPECIFIED;
     gainMap->altMatrixCoefficients = AVIF_MATRIX_COEFFICIENTS_UNSPECIFIED;
     gainMap->altYUVRange = AVIF_RANGE_FULL;
-    gainMap->metadata.useBaseColorSpace = AVIF_TRUE;
+    gainMap->useBaseColorSpace = AVIF_TRUE;
+    // Set all denominators to valid values (1).
+    for (int i = 0; i < 3; ++i) {
+        gainMap->gainMapMin[i].d = 1;
+        gainMap->gainMapMax[i].d = 1;
+        gainMap->gainMapGamma[i].n = 1;
+        gainMap->gainMapGamma[i].d = 1;
+        gainMap->baseOffset[i].d = 1;
+        gainMap->alternateOffset[i].d = 1;
+    }
+    gainMap->baseHdrHeadroom.d = 1;
+    gainMap->alternateHdrHeadroom.d = 1;
     return gainMap;
 }
 
@@ -1195,4 +1293,3 @@ void avifGainMapDestroy(avifGainMap * gainMap)
     avifRWDataFree(&gainMap->altICC);
     avifFree(gainMap);
 }
-#endif // AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP

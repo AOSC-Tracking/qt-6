@@ -41,8 +41,10 @@
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "components/guest_view/browser/guest_view_manager.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_protocols.h"
 #include "extensions/browser/pref_names.h"
+#include "extensions/browser/pref_types.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/common/constants.h"
 #endif
@@ -122,6 +124,9 @@ void PrefServiceAdapter::setup(const ProfileAdapter &profileAdapter)
     registry->RegisterListPref(extensions::pref_names::kNativeMessagingAllowlist);
     registry->RegisterBooleanPref(extensions::pref_names::kNativeMessagingUserLevelHosts, true);
     registry->RegisterListPref(extensions::pref_names::kExtendedBackgroundLifetimeForPortConnectionsToUrls);
+    registry->RegisterDictionaryPref(extensions::kUserPermissions.name);
+    // Should match "kExternalUninstalls" in extensions/browser/extension_prefs.cc
+    registry->RegisterListPref("extensions.external_uninstalls");
 #endif // BUILDFLAG(ENABLE_EXTENSIONS)
 
     // Media device salt id key

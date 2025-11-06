@@ -1667,6 +1667,22 @@ void QQuickListViewPrivate::fixup(AxisData &data, qreal minExtent, qreal maxExte
     qreal viewPos = isContentFlowReversed() ? -position()-size() : position();
 
     if (snapMode != QQuickListView::NoSnap && moveReason != QQuickListViewPrivate::SetIndex) {
+        /*
+        There are many ways items can "snap" (align) when a flick by mouse/touch is about to end.
+        The following table describes how things are snapped for a TopToBottom ListView (the
+        behavior of the other orientations can be derived from TopToBottom):
+
+        | header\\range     | No highlight range            | Has a highlight range |
+        |------------------ | ----------------------------- | --------------------- |
+        | No header         | Snaps to ListView top         | Snaps to preferredHighlightBegin position [1] |
+        | InlineHeader      | Snaps to ListView top         | Snaps to preferredHighlightBegin position [1] |
+        | OverlayHeader     | Snaps to header               | Snaps to neither [!] |
+        | PullbackHeader    | Snaps to header/ListView top  | Snaps to preferredHighlightBegin when header is pulled back. Snaps to neither when header is pulled in. |
+
+        Notes:
+        [1]: If there is no item below preferredHighlightBegin, it will snap to preferredHighlightEnd
+        [!]: This is likely not intended behavior
+        */
         qreal tempPosition = isContentFlowReversed() ? -position()-size() : position();
         if (snapMode == QQuickListView::SnapOneItem && moveReason == Mouse) {
             // if we've been dragged < averageSize/2 then bias towards the next item
@@ -2438,6 +2454,13 @@ QQuickListView::~QQuickListView()
 
     \sa {Stacking Order in ListView}
 */
+
+/*!
+    \qmlproperty enumeration QtQuick::ListView::delegateModelAccess
+
+    \include delegatemodelaccess.qdocinc
+*/
+
 /*!
     \qmlproperty int QtQuick::ListView::currentIndex
     \qmlproperty Item QtQuick::ListView::currentItem

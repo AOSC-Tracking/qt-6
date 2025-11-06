@@ -12,7 +12,13 @@
 #include <QtCore/qlibraryinfo.h>
 #include <QtCore/qprocess.h>
 #include <QtCore/qdiriterator.h>
+
+#if QT_CONFIG(settings)
+#  include <QtCore/qsettings.h>
+#endif
+
 #include <QtQmlDom/private/qqmldomtop_p.h>
+#include <QtQmlCompiler/private/qqmljsutils_p.h>
 
 #include <memory>
 #include <algorithm>
@@ -418,6 +424,8 @@ void QQmlCodeModel::addFileWatches(const DomItem &qmlFile)
 {
     const auto filesToWatch = fileNamesToWatch(qmlFile);
     const QStringList filepathsToWatch = findFilePathsFromFileNames(filesToWatch);
+    if (filepathsToWatch.isEmpty())
+        return;
     const auto unwatchedPaths = m_cppFileWatcher.addPaths(filepathsToWatch);
     if (!unwatchedPaths.isEmpty()) {
         qCDebug(codeModelLog) << "Cannot watch paths" << unwatchedPaths << "from requested"
@@ -567,7 +575,7 @@ static bool isNotSeparator(char c)
     return c != '/';
 }
 
-QStringList QQmlCodeModel::importPathsForFile(const QString &fileName) const
+QStringList QQmlCodeModel::importPathsForFile(const QString &fileName)
 {
     QStringList result = importPaths();
 
@@ -575,6 +583,10 @@ QStringList QQmlCodeModel::importPathsForFile(const QString &fileName) const
     if (m_settings && m_settings->search(fileName) && m_settings->isSet(importPaths)) {
         result.append(m_settings->value(importPaths).toString().split(QDir::listSeparator()));
     }
+
+    const QStringList buildPath = buildPathsForFileUrl(m_path2url[fileName]);
+    m_buildInformation.loadSettingsFrom(buildPath);
+    result.append(m_buildInformation.importPathsFor(fileName));
 
     return result;
 }
@@ -773,6 +785,54 @@ QDebug OpenDocumentSnapshot::dump(QDebug dbg, DumpOptions options)
     dbg << "}";
     return dbg;
 }
+
+void QQmllsBuildInformation::loadSettingsFrom(const QStringList &buildPaths)
+{
+#if QT_CONFIG(settings)
+    for (const QString &path : buildPaths) {
+        if (m_seenSettings.contains(path))
+            continue;
+        m_seenSettings.insert(path);
+
+        const QString iniPath = QString(path).append("/.qt/.qmlls.build.ini"_L1);
+        if (!QFile::exists(iniPath))
+            continue;
+
+        QSettings settings(iniPath, QSettings::IniFormat);
+        m_docDir = settings.value("docDir"_L1).toString();
+        for (const QString &group : settings.childGroups()) {
+            settings.beginGroup(group);
+
+            ModuleSetting moduleSetting;
+            moduleSetting.sourceFolder = group;
+            moduleSetting.sourceFolder.replace("<SLASH>"_L1, "/"_L1);
+            moduleSetting.importPaths = settings.value("importPaths"_L1)
+                                                .toString()
+                                                .split(QDir::listSeparator(), Qt::SkipEmptyParts);
+            m_moduleSettings.append(moduleSetting);
+            settings.endGroup();
+        }
+    }
+#else
+    Q_UNUSED(buildPaths);
+#endif
+}
+
+QStringList QQmllsBuildInformation::importPathsFor(const QString &filePath)
+{
+    QStringList result;
+    qsizetype longestMatch = 0;
+    for (const ModuleSetting &setting : m_moduleSettings) {
+        const qsizetype matchLength = setting.sourceFolder.size();
+        if (filePath.startsWith(setting.sourceFolder) && matchLength > longestMatch) {
+            result = setting.importPaths;
+            longestMatch = matchLength;
+        }
+    }
+    return result;
+}
+
+QQmllsBuildInformation::QQmllsBuildInformation() { }
 
 } // namespace QmlLsp
 

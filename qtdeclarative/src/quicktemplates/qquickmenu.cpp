@@ -464,9 +464,16 @@ void QQuickMenuPrivate::syncWithNativeMenu()
     qCDebug(lcNativeMenus) << "... finished syncing" << q;
 }
 
+/*!
+    \internal
+
+    Removes the native menu, including its native menu items.
+
+    \note this doesn't remove any QQuickMenuItems from the contentModel;
+    it merely removes the associated native menu items.
+*/
 void QQuickMenuPrivate::removeNativeMenu()
 {
-    // Remove the native menu, including it's native menu items
     Q_Q(QQuickMenu);
     const int qtyItemsToRemove = nativeItems.size();
     if (qtyItemsToRemove != 0)
@@ -497,44 +504,6 @@ void QQuickMenuPrivate::syncWithUseNativeMenu()
         // Try to create a native menu.
         nativeHandle();
     }
-}
-
-/*!
-    \internal
-
-    Recursively destroys native sub-menus of \a menu.
-
-    This function checks if each native item in \c menu has a sub-menu,
-    and if so:
-    \list
-    \li Calls itself with that sub-menu
-    \li Resets the item's data (important to avoid accessing a deleted QQuickAction
-        when printing in QQuickNativeMenuItem's destructor)
-    \li Deletes (eventually) the native item
-    \endlist
-
-    Similar (besides the recursion) to removeNativeItem(), except that
-    we can avoid repeated calls to syncWithNativeMenu().
-*/
-void QQuickMenuPrivate::recursivelyDestroyNativeSubMenus(QQuickMenu *menu)
-{
-    auto *menuPrivate = QQuickMenuPrivate::get(menu);
-    Q_ASSERT(menuPrivate->handle);
-    qCDebug(lcNativeMenus) << "recursivelyDestroyNativeSubMenus called with" << menu << "...";
-
-    while (!menuPrivate->nativeItems.isEmpty()) {
-        std::unique_ptr<QQuickNativeMenuItem> item(menuPrivate->nativeItems.takeFirst());
-        qCDebug(lcNativeMenus) << "- taking and destroying" << item->debugText();
-        if (QQuickMenu *subMenu = item->subMenu())
-            recursivelyDestroyNativeSubMenus(subMenu);
-
-        if (item->handle())
-            menuPrivate->handle->removeMenuItem(item->handle());
-    }
-
-    menuPrivate->resetNativeData();
-
-    qCDebug(lcNativeMenus) << "... finished destroying native sub-menus of" << menu;
 }
 
 static QWindow *effectiveWindow(QWindow *window, QPoint *offset)
@@ -728,7 +697,17 @@ void QQuickMenuPrivate::removeItem(int index, QQuickItem *item, DestructionPolic
         printContentModelItems();
 }
 
-void QQuickMenuPrivate::removeNativeItem(int index)
+/*!
+    \internal
+
+    Removes the native menu item at \a index from this menu.
+
+    \note this doesn't remove the QQuickMenuItem from the contentModel;
+    it merely removes the associated native menu item. It's for this reason
+    that this is a separate function to removeItem, which \e does remove
+    the QQuickMenuItem.
+*/
+void QQuickMenuPrivate::removeNativeItem(int index, SyncPolicy syncPolicy)
 {
     // Either we're still using native menus and are removing item(s), or we've switched
     // to a non-native menu; either way, we should actually have items to remove before we're called.
@@ -741,12 +720,28 @@ void QQuickMenuPrivate::removeNativeItem(int index)
     std::unique_ptr<QQuickNativeMenuItem> nativeItem(nativeItems.takeAt(index));
     qCDebug(lcNativeMenus) << "removing native item" << nativeItem->debugText() << "at index" << index
         << "from" << q_func() << "...";
-    if (QQuickMenu *subMenu = nativeItem->subMenu())
-        recursivelyDestroyNativeSubMenus(subMenu);
+    QQuickMenu *subMenu = nativeItem->subMenu();
+    if (subMenu) {
+        Q_ASSERT(nativeItem->handle());
+        auto *subMenuPrivate = QQuickMenuPrivate::get(subMenu);
+        while (!subMenuPrivate->nativeItems.isEmpty()) {
+            subMenuPrivate->removeNativeItem(0, SyncPolicy::DoNotSync);
+        }
+    }
 
-    if (nativeItem->handle()) {
-        handle->removeMenuItem(nativeItem->handle());
+    Q_ASSERT(nativeItem->handle());
+    handle->removeMenuItem(nativeItem->handle());
+    if (syncPolicy == SyncPolicy::Sync)
         syncWithNativeMenu();
+
+    if (subMenu) {
+        auto *subMenuPrivate = QQuickMenuPrivate::get(subMenu);
+        // Reset the item's data. This is important as it avoids accessing a deleted
+        // QQuickAction when printing in QQuickNativeMenuItem's destructor.
+        // It's also important that we do this _after_ the removeMenuItem call above,
+        // because otherwise we sever the connection between the sub and parent menu,
+        // which causes warnings in QCocoaMenu::removeMenuItem.
+        subMenuPrivate->resetNativeData();
     }
 
     qCDebug(lcNativeMenus).nospace() << "... after removing item at index " << index
@@ -889,10 +884,16 @@ void QQuickMenuPrivate::itemSiblingOrderChanged(QQuickItem *)
 
 void QQuickMenuPrivate::itemDestroyed(QQuickItem *item)
 {
-    QQuickPopupPrivate::itemDestroyed(item);
-    int index = contentModel->indexOf(item, nullptr);
-    if (index != -1)
-        removeItem(index, item);
+    if (item == contentItem) {
+        resetContentItem();
+    } else {
+        QQuickPopupPrivate::itemDestroyed(item);
+        if (contentModel) {
+            int index = contentModel->indexOf(item, nullptr);
+            if (index != -1)
+                removeItem(index, item);
+        }
+    }
 }
 
 void QQuickMenuPrivate::itemGeometryChanged(QQuickItem *item, QQuickGeometryChange, const QRectF &)
@@ -1325,6 +1326,20 @@ void QQuickMenuPrivate::contentData_clear(QQmlListProperty<QObject> *prop)
     QQuickMenuPrivate::get(q)->contentData.clear();
 }
 
+void QQuickMenuPrivate::resetContentItem()
+{
+    if (contentItem) {
+        QQuickItemPrivate::get(contentItem)->removeItemChangeListener(this, QQuickItemPrivate::Children);
+        QQuickItemPrivate::get(contentItem)->removeItemChangeListener(this, QQuickItemPrivate::Destroyed);
+        QQuickItemPrivate::get(contentItem)->removeItemChangeListener(this, QQuickItemPrivate::Geometry);
+
+        const auto children = contentItem->childItems();
+        for (QQuickItem *child : std::as_const(children))
+            QQuickItemPrivate::get(child)->removeItemChangeListener(this, QQuickItemPrivate::SiblingOrder);
+        contentItem = nullptr;
+    }
+}
+
 QQuickMenu::QQuickMenu(QObject *parent)
     : QQuickPopup(*(new QQuickMenuPrivate), parent)
 {
@@ -1341,6 +1356,15 @@ QQuickMenu::~QQuickMenu()
                           << "item count:"
                           << d->contentModel->count()
                           << "native item count:" << d->nativeItems.count();
+    // It would be better to reset the sub-menu within the menu-item during its destruction
+    // as there can be a chance that the parent menu use invalid reference leading to
+    // application crash (as mentioned in the bug report QTBUG-137160)
+    if (auto *menuItem = qobject_cast<QQuickMenuItem *>(d->parentItem)) {
+        if (menuItem->subMenu() == this) {
+            auto *menuItemPriv = QQuickMenuItemPrivate::get(menuItem);
+            menuItemPriv->setSubMenu(nullptr);
+        }
+    }
     // We have to remove items to ensure that our change listeners on the item
     // are removed. It's too late to do this in ~QQuickMenuPrivate, as
     // contentModel has already been destroyed before that is called.
@@ -1349,14 +1373,7 @@ QQuickMenu::~QQuickMenu()
     while (d->contentModel->count() > 0)
         d->removeItem(0, d->itemAt(0), QQuickMenuPrivate::DestructionPolicy::Destroy);
 
-    if (d->contentItem) {
-        QQuickItemPrivate::get(d->contentItem)->removeItemChangeListener(d, QQuickItemPrivate::Children);
-        QQuickItemPrivate::get(d->contentItem)->removeItemChangeListener(d, QQuickItemPrivate::Geometry);
-
-        const auto children = d->contentItem->childItems();
-        for (QQuickItem *child : std::as_const(children))
-            QQuickItemPrivate::get(child)->removeItemChangeListener(d, QQuickItemPrivate::SiblingOrder);
-    }
+    d->resetContentItem();
 }
 
 /*!
@@ -2138,10 +2155,12 @@ void QQuickMenu::contentItemChange(QQuickItem *newItem, QQuickItem *oldItem)
 
     if (oldItem) {
         QQuickItemPrivate::get(oldItem)->removeItemChangeListener(d, QQuickItemPrivate::Children);
+        QQuickItemPrivate::get(newItem)->removeItemChangeListener(d, QQuickItemPrivate::Destroyed);
         QQuickItemPrivate::get(oldItem)->removeItemChangeListener(d, QQuickItemPrivate::Geometry);
     }
     if (newItem) {
         QQuickItemPrivate::get(newItem)->addItemChangeListener(d, QQuickItemPrivate::Children);
+        QQuickItemPrivate::get(newItem)->addItemChangeListener(d, QQuickItemPrivate::Destroyed);
         QQuickItemPrivate::get(newItem)->updateOrAddGeometryChangeListener(d, QQuickGeometryChange::Width);
     }
 

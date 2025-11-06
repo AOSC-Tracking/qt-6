@@ -51,6 +51,7 @@
 #include <QtFFmpegMediaPluginImpl/private/qffmpegcodeccontext_p.h>
 #include <QtFFmpegMediaPluginImpl/private/qffmpegplaybackutils_p.h>
 #include <QtFFmpegMediaPluginImpl/private/qffmpegtime_p.h>
+#include <QtMultimedia/qplaybackoptions.h>
 
 #include <QtCore/qpointer.h>
 
@@ -63,6 +64,7 @@ class QVideoSink;
 class QAudioOutput;
 class QAudioBufferOutput;
 class QFFmpegMediaPlayer;
+class QPlaybackOptions;
 
 namespace QFFmpeg
 {
@@ -71,7 +73,7 @@ class PlaybackEngine : public QObject
 {
     Q_OBJECT
 public:
-    PlaybackEngine();
+    explicit PlaybackEngine(const QPlaybackOptions &options);
 
     ~PlaybackEngine() override;
 
@@ -119,6 +121,8 @@ public:
     const QMediaMetaData &metaData() const;
 
     int activeTrack(QPlatformMediaPlayer::TrackType type) const;
+
+    void setPitchCompensation(bool enabled);
 
 signals:
     void endOfStream();
@@ -175,7 +179,7 @@ private:
 
     void onFirsPacketFound(quint64 id, TrackPosition absSeekPos);
 
-    void onRendererSynchronized(quint64 id, RealClock::time_point timePoint,
+    void onRendererSynchronized(quint64 id, SteadyClock::time_point timePoint,
                                 TrackPosition trackPosition);
 
     void onRendererFinished();
@@ -199,6 +203,8 @@ private:
     void updateVideoSinkSize(QVideoSink *prevSink = nullptr);
 
     TrackPosition boundPosition(TrackPosition position) const;
+
+    AudioRenderer *getAudioRenderer();
 
 private:
     MediaDataHolder m_media;
@@ -224,6 +230,9 @@ private:
     std::array<std::optional<CodecContext>, QPlatformMediaPlayer::NTrackTypes> m_codecContexts;
     int m_loops = QMediaPlayer::Once;
     LoopOffset m_currentLoopOffset;
+
+    bool m_pitchCompensation = true;
+    QPlaybackOptions m_options;
 };
 
 template<typename T, typename... Args>

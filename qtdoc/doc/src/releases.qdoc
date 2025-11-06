@@ -120,8 +120,12 @@
         \li Latest release
         \li Standard support until
     \row
+        \li Qt 6.10
+        \li Qt 6.10.0
+        \li 2026-10-07
+    \row
         \li Qt 6.9
-        \li Qt 6.9.2
+        \li Qt 6.9.3
         \li 2026-03-31
     \row
         \li Qt 6.8 LTS
@@ -129,7 +133,7 @@
         \li 2029-10-08
     \row
         \li Qt 6.5 LTS
-        \li Qt 6.5.9 (LTS, commercial only)
+        \li Qt 6.5.10 (LTS, commercial only)
         \li 2026-03-30
     \row
         \li Qt 5.15 LTS
@@ -153,8 +157,12 @@
         \li Latest release
         \li Standard support until
     \row
+        \li \b{Qt 6.10}
+        \li Qt 6.10.0
+        \li 2026-10-07
+    \row
         \li \b{Qt 6.9}
-        \li Qt 6.9.2
+        \li Qt 6.9.3
         \li 2026-03-31
     \row
         \li \b{Qt 6.8 LTS}

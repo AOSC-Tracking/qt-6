@@ -5,6 +5,7 @@
 #include "qwindowsvistastyle_p_p.h"
 #include "qwindowsvistaanimation_p.h"
 #include <qoperatingsystemversion.h>
+#include <qpainterstateguard.h>
 #include <qscreen.h>
 #include <qstylehints.h>
 #include <qwindow.h>
@@ -204,11 +205,15 @@ void QWindowsVistaStylePrivate::cleanup(bool force)
 
 bool QWindowsVistaStylePrivate::transitionsEnabled() const
 {
-    BOOL animEnabled = false;
-    if (SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, &animEnabled, 0))
-    {
-        if (animEnabled)
-            return true;
+    Q_Q(const QWindowsVistaStyle);
+    if (q->property("_q_no_animation").toBool())
+        return false;
+    if (QApplication::desktopSettingsAware()) {
+        BOOL animEnabled = false;
+        if (SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, &animEnabled, 0)) {
+            if (animEnabled)
+                return true;
+        }
     }
     return false;
 }
@@ -2041,10 +2046,6 @@ void QWindowsVistaStyle::drawPrimitive(PrimitiveElement element, const QStyleOpt
         const QDialogButtonBox *buttonBox = nullptr;
         if (qobject_cast<const QMessageBox *> (widget))
             buttonBox = widget->findChild<const QDialogButtonBox *>(QLatin1String("qt_msgbox_buttonbox"));
-#if QT_CONFIG(inputdialog)
-        else if (qobject_cast<const QInputDialog *> (widget))
-            buttonBox = widget->findChild<const QDialogButtonBox *>(QLatin1String("qt_inputdlg_buttonbox"));
-#endif // QT_CONFIG(inputdialog)
         if (buttonBox) {
             //draw white panel part
             QWindowsThemeData theme(widget, painter,
@@ -2107,10 +2108,9 @@ void QWindowsVistaStyle::drawPrimitive(PrimitiveElement element, const QStyleOpt
             QPixmap pixmap;
 
             if (vopt->backgroundBrush.style() != Qt::NoBrush) {
-                const QPointF oldBrushOrigin = painter->brushOrigin();
+                QPainterStateGuard psg(painter);
                 painter->setBrushOrigin(vopt->rect.topLeft());
                 painter->fillRect(vopt->rect, vopt->backgroundBrush);
-                painter->setBrushOrigin(oldBrushOrigin);
             }
 
             if (hover || selected) {
@@ -4669,16 +4669,6 @@ void QWindowsVistaStyle::polish(QWidget *widget)
                 buttonBox->setContentsMargins(0, 9, 0, 0);
 #endif
         }
-#if QT_CONFIG(inputdialog)
-        else if (qobject_cast<QInputDialog *> (widget)) {
-            widget->setAttribute(Qt::WA_StyledBackground);
-#if QT_CONFIG(dialogbuttonbox)
-            QDialogButtonBox *buttonBox = widget->findChild<QDialogButtonBox *>(QLatin1String("qt_inputdlg_buttonbox"));
-            if (buttonBox)
-                buttonBox->setContentsMargins(0, 9, 0, 0);
-#endif
-        }
-#endif // QT_CONFIG(inputdialog)
 }
 
 /*!
@@ -4750,16 +4740,6 @@ void QWindowsVistaStyle::unpolish(QWidget *widget)
                 buttonBox->setContentsMargins(0, 0, 0, 0);
 #endif
         }
-#if QT_CONFIG(inputdialog)
-        else if (qobject_cast<QInputDialog *> (widget)) {
-            widget->setAttribute(Qt::WA_StyledBackground, false);
-#if QT_CONFIG(dialogbuttonbox)
-            QDialogButtonBox *buttonBox = widget->findChild<QDialogButtonBox *>(QLatin1String("qt_inputdlg_buttonbox"));
-            if (buttonBox)
-                buttonBox->setContentsMargins(0, 0, 0, 0);
-#endif
-        }
-#endif // QT_CONFIG(inputdialog)
         else if (QTreeView *tree = qobject_cast<QTreeView *> (widget)) {
             tree->viewport()->setAttribute(Qt::WA_Hover, false);
         }

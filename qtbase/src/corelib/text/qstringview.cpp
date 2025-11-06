@@ -1,5 +1,6 @@
 // Copyright (C) 2017 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Marc Mutz <marc.mutz@kdab.com>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:docs-only
 
 #include "qstringview.h"
 
@@ -67,7 +68,7 @@ QT_BEGIN_NAMESPACE
     allowed in \c constexpr functions). You can use an indexed loop and/or utf16() in
     \c constexpr contexts instead.
 
-    \sa QString
+    \sa {Which string class to use?}, QString
 */
 
 /*!
@@ -858,7 +859,7 @@ or the character \a ch
 /*!
     \fn qsizetype QStringView::indexOf(QStringView str, qsizetype from = 0, Qt::CaseSensitivity cs = Qt::CaseSensitive) const
     \fn qsizetype QStringView::indexOf(QLatin1StringView l1, qsizetype from = 0, Qt::CaseSensitivity cs = Qt::CaseSensitive) const
-    \fn qsizetype QStringView::indexOf(QChar c, qsizetype from = 0, Qt::CaseSensitivity cs = Qt::CaseSensitive) const
+    \fn qsizetype QStringView::indexOf(QChar ch, qsizetype from = 0, Qt::CaseSensitivity cs = Qt::CaseSensitive) const
     \since 5.14
 
     Returns the index position of the first occurrence of
@@ -876,7 +877,7 @@ or the character \a ch
 /*!
     \fn bool QStringView::contains(QStringView str, Qt::CaseSensitivity cs) const
     \fn bool QStringView::contains(QLatin1StringView l1, Qt::CaseSensitivity cs) const
-    \fn bool QStringView::contains(QChar c, Qt::CaseSensitivity cs) const
+    \fn bool QStringView::contains(QChar ch, Qt::CaseSensitivity cs) const
     \since 5.14
 
     Returns \c true if this string view contains an occurrence of
@@ -891,7 +892,7 @@ or the character \a ch
 /*!
     \fn qsizetype QStringView::lastIndexOf(QStringView str, qsizetype from, Qt::CaseSensitivity cs) const
     \fn qsizetype QStringView::lastIndexOf(QLatin1StringView l1, qsizetype from, Qt::CaseSensitivity cs) const
-    \fn qsizetype QStringView::lastIndexOf(QChar c, qsizetype from, Qt::CaseSensitivity cs) const
+    \fn qsizetype QStringView::lastIndexOf(QChar ch, qsizetype from, Qt::CaseSensitivity cs) const
     \since 5.14
 
     Returns the index position of the last occurrence of
@@ -901,7 +902,7 @@ or the character \a ch
 
     \include qstring.qdocinc negative-index-start-search-from-end
 
-    Returns -1 if \a str, \a l1 or \a c is not found, respectively.
+    Returns -1 if \a str, \a l1 or \a ch is not found, respectively.
 
     \include qstring.qdocinc {search-comparison-case-sensitivity} {search}
 
@@ -933,7 +934,7 @@ or the character \a ch
 */
 
 /*!
-    \fn QStringView::lastIndexOf(QChar c, Qt::CaseSensitivity cs) const
+    \fn QStringView::lastIndexOf(QChar ch, Qt::CaseSensitivity cs) const
     \since 6.3
     \overload lastIndexOf()
 */
@@ -1494,6 +1495,46 @@ or the character \a ch
     This function is provided for STL compatibility.
 
     Returns maxSize().
+*/
+
+/*!
+    \fn Qt::Literals::StringLiterals::operator""_sv(const char16_t *str, size_t size)
+
+    \internal
+    \relates QStringView
+
+    Literal operator that creates a QStringView out of the first
+    \a size characters in the char16_t string literal \a str.
+
+    There is rarely need to explicitly construct a QStringView from a
+    char16_t string literal, as QStringView is implicitly constructible
+    from one:
+
+    \code
+    QStringView greeting = u"hello"; // OK even without _sv
+
+    void print(QStringView s);
+    print(u"world"); // OK even without _sv
+    \endcode
+
+    To use this operator, you need to be using the corresponding
+    namespace(s):
+
+    \code
+    using namespace Qt::Literals::StringLiterals;
+    auto sv = u"peace"_sv;
+    \endcode
+
+    Note that the returned QStringView will span over any NUL embedded
+    in the string literal. This is different from passing the string
+    literal to QStringView's constructor (explicitly or implicitly):
+
+    \code
+    QStringView sv1 = u"abc\0def";    // sv1 == "abc"
+    QStringView sv2 = u"abc\0def"_sv; // sv2 == "abc\0def"
+    \endcode
+
+    \sa Qt::Literals::StringLiterals
 */
 
 QT_END_NAMESPACE

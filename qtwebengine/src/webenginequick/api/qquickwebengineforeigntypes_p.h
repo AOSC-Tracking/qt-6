@@ -17,22 +17,30 @@
 //
 
 #include <QtQml/qqml.h>
-#include <QtWebEngineCore/qwebenginedownloadrequest.h>
-#include <QtWebEngineCore/qwebenginenavigationrequest.h>
-#include <QtWebEngineCore/qwebenginescript.h>
-#include <QtWebEngineCore/qwebenginenewwindowrequest.h>
-#include <QtWebEngineCore/qwebengineloadinginfo.h>
-#include <QtWebEngineCore/qwebenginehistory.h>
-#include <QtWebEngineCore/qwebenginequotarequest.h>
-#include <QtWebEngineCore/qwebenginenotification.h>
-#include <QtWebEngineCore/qwebenginefindtextresult.h>
 #include <QtWebEngineCore/qwebenginecertificateerror.h>
-#include <QtWebEngineCore/qwebenginefullscreenrequest.h>
+#include <QtWebEngineCore/qwebengineclienthints.h>
 #include <QtWebEngineCore/qwebenginecontextmenurequest.h>
-#include <QtWebEngineCore/qwebengineregisterprotocolhandlerrequest.h>
+#include <QtWebEngineCore/qwebenginedesktopmediarequest.h>
+#include <QtWebEngineCore/qwebenginedownloadrequest.h>
 #include <QtWebEngineCore/qwebenginefilesystemaccessrequest.h>
-#include <QtWebEngineCore/qwebenginewebauthuxrequest.h>
+#include <QtWebEngineCore/qwebenginefindtextresult.h>
+#include <QtWebEngineCore/qwebengineframe.h>
+#include <QtWebEngineCore/qwebenginefullscreenrequest.h>
+#include <QtWebEngineCore/qwebenginehistory.h>
+#include <QtWebEngineCore/qwebengineloadinginfo.h>
+#include <QtWebEngineCore/qwebenginenavigationrequest.h>
+#include <QtWebEngineCore/qwebenginenewwindowrequest.h>
+#include <QtWebEngineCore/qwebenginenotification.h>
+#include <QtWebEngineCore/qwebenginequotarequest.h>
 #include <QtWebEngineCore/qwebenginepermission.h>
+#include <QtWebEngineCore/qwebengineregisterprotocolhandlerrequest.h>
+#include <QtWebEngineCore/qwebenginescript.h>
+#include <QtWebEngineCore/qwebenginewebauthuxrequest.h>
+
+#if QT_CONFIG(webengine_extensions)
+#include <QtWebEngineCore/qwebengineextensioninfo.h>
+#include <QtWebEngineCore/qwebengineextensionmanager.h>
+#endif
 
 QT_BEGIN_NAMESPACE
 
@@ -111,10 +119,10 @@ struct ForeignWebEngineScript
 {
     Q_GADGET
     QML_FOREIGN(QWebEngineScript)
+    QML_STRUCTURED_VALUE
     QML_NAMED_ELEMENT(webEngineScript)
     QML_ADDED_IN_VERSION(1, 1)
     QML_EXTRA_VERSION(2, 0)
-    QML_UNCREATABLE("")
 };
 
 struct ForeignWebEngineHistory
@@ -263,6 +271,50 @@ struct ForeignWebEnginePermission
     QML_VALUE_TYPE(webEnginePermission)
     QML_ADDED_IN_VERSION(6, 8)
     QML_UNCREATABLE("")
+};
+
+struct ForeignWebEngineDesktopMediaRequest
+{
+    Q_GADGET
+    QML_FOREIGN(QWebEngineDesktopMediaRequest)
+    QML_ANONYMOUS
+    QML_ADDED_IN_VERSION(6, 10)
+};
+
+struct ForeignWebEngineClientHints : public QObject
+{
+    Q_OBJECT
+    QML_FOREIGN(QWebEngineClientHints)
+    QML_NAMED_ELEMENT(WebEngineClientHints)
+    QML_ADDED_IN_VERSION(6, 8)
+    QML_UNCREATABLE("")
+};
+
+#if QT_CONFIG(webengine_extensions)
+struct ForeignWebEngineExtensionInfo
+{
+    Q_GADGET
+    QML_VALUE_TYPE(webEngineExtension)
+    QML_FOREIGN(QWebEngineExtensionInfo)
+    QML_ADDED_IN_VERSION(6, 10)
+};
+
+struct ForeignWebEngineExtensionManager
+{
+    Q_GADGET
+    QML_NAMED_ELEMENT(WebEngineExtensionManager)
+    QML_FOREIGN(QWebEngineExtensionManager)
+    QML_ADDED_IN_VERSION(6, 10)
+    QML_UNCREATABLE("")
+};
+#endif
+
+struct ForeignWebEngineFrame
+{
+    Q_GADGET
+    QML_FOREIGN(QWebEngineFrame)
+    QML_VALUE_TYPE(webEngineFrame)
+    QML_ADDED_IN_VERSION(6, 8)
 };
 
 QT_END_NAMESPACE

@@ -1,6 +1,7 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // Copyright (C) 2016 Intel Corporation.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qthread.h"
 #include "qthread_p.h"
@@ -144,12 +145,12 @@ int pthread_timedjoin_np(...) { return ENOSYS; }    // pretend
 // Finally, for the thread that called ::exit() (which in most cases happens by
 // returning from the main() function), finish() and cleanup() happen at
 // function-local static destructor time, and the deref & delete happens later,
-// at global static destruction time. This is important so QLibraryStore can
-// unload plugins between those two steps: it is also destroyed by a global
-// static destructor, but with a lower priority than ours. The order needs to
-// be this way so we delete the event dispatcher before plugins unload, as
-// often the dispatcher for the main thread is provided by a QPA plugin, but
-// the QThreadData object must still be alive when the plugins do unload.
+// at global static destruction time. That way, we delete the event dispatcher
+// before QLibraryStore's clean up runs and unloads remaining plugins. This
+// strategy was chosen because of crashes observed while running the event
+// dispatcher's destructor, and though the cause of the crash was something
+// else (QFactoryLoader always loads with PreventUnloadHint set), other plugins
+// may still attempt to access QThreadData in their global destructors.
 
 Q_CONSTINIT static thread_local QThreadData *currentThreadData = nullptr;
 
@@ -386,6 +387,8 @@ void *QThreadPrivate::start(void *arg)
 #endif
     QThread *thr = reinterpret_cast<QThread *>(arg);
     QThreadData *data = QThreadData::get2(thr);
+    // If a QThread is restarted, reuse the QBindingStatus, too
+    data->reuseBindingStatusForNewNativeThread();
 
     // this ensures the thread-local is created as early as possible
     set_thread_data(data);
@@ -460,8 +463,7 @@ void QThreadPrivate::finish()
         emit thr->finished(QThread::QPrivateSignal());
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 
-        void *data = &d->data->tls;
-        QThreadStorageData::finish((void **)data);
+        QThreadStoragePrivate::finish(&d->data->tls);
     });
 
     if constexpr (QT_CONFIG(broken_threadlocal_dtors))
@@ -530,6 +532,11 @@ Qt::HANDLE QThread::currentThreadIdImpl() noexcept
 int QThreadPrivate::idealThreadCount = 1;
 #endif
 
+#if QT_CONFIG(trivial_auto_var_init_pattern) && defined(Q_CC_GNU_ONLY)
+// Don't pre-fill the automatic-storage arrays used in this function
+// (important for the FreeBSD & Linux code using a VLA).
+__attribute__((optimize("trivial-auto-var-init=uninitialized")))
+#endif
 int QThread::idealThreadCount() noexcept
 {
     int cores = 1;
@@ -543,28 +550,24 @@ int QThread::idealThreadCount() noexcept
         cores = (int)psd.psd_proc_cnt;
     }
 #elif (defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)) || defined(Q_OS_FREEBSD)
-#  if defined(Q_OS_FREEBSD) && !defined(CPU_COUNT_S)
-#    define CPU_COUNT_S(setsize, cpusetp)   ((int)BIT_COUNT(setsize, cpusetp))
-    // match the Linux API for simplicity
-    using cpu_set_t = cpuset_t;
-    auto sched_getaffinity = [](pid_t, size_t cpusetsize, cpu_set_t *mask) {
-        return cpuset_getaffinity(CPU_LEVEL_WHICH, CPU_WHICH_PID, -1, cpusetsize, mask);
-    };
+    QT_WARNING_PUSH
+#  if defined(Q_CC_CLANG) && Q_CC_CLANG >= 1800
+    QT_WARNING_DISABLE_CLANG("-Wvla-cxx-extension")
 #  endif
 
     // get the number of threads we're assigned, not the total in the system
-    QVarLengthArray<cpu_set_t, 1> cpuset(1);
-    int size = 1;
-    if (Q_UNLIKELY(sched_getaffinity(0, sizeof(cpu_set_t), cpuset.data()) < 0)) {
-        for (size = 2; size <= 4; size *= 2) {
-            cpuset.resize(size);
-            if (sched_getaffinity(0, sizeof(cpu_set_t) * size, cpuset.data()) == 0)
-                break;
+    constexpr qsizetype MaxCpuCount = 1024 * 1024;
+    constexpr qsizetype MaxCpuSetArraySize = MaxCpuCount / sizeof(cpu_set_t) / 8;
+    qsizetype size = 1;
+    do {
+        cpu_set_t cpuset[size];
+        if (sched_getaffinity(0, sizeof(cpu_set_t) * size, cpuset) == 0) {
+            cores = CPU_COUNT_S(sizeof(cpu_set_t) * size, cpuset);
+            break;
         }
-        if (size > 4)
-            return 1;
-    }
-    cores = CPU_COUNT_S(sizeof(cpu_set_t) * size, cpuset.data());
+        size *= 4;
+    } while (size < MaxCpuSetArraySize);
+    QT_WARNING_POP
 #elif defined(Q_OS_BSD4)
     // OpenBSD, NetBSD, BSD/OS, Darwin (macOS, iOS, etc.)
     size_t len = sizeof(cores);

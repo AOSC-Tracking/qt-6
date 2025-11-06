@@ -30,7 +30,7 @@
 
     \list 1
         \li Select \uicontrol{Downloads}
-        \li Download \QOI for your host: Linux, macOS, or Windows
+        \li Download \QOI for your host: Linux (ARM64 or x64), macOS, or Windows (ARM64 or x64)
     \endlist
 
     See \l{Get and Install Qt with \QOI} for more information
@@ -43,9 +43,8 @@
 
     \section1 Using \QMT
 
-    Once Qt is installed, you can use \QMT under <install_dir>
-    to add components and to update or remove installed components. \QMT is
-    included in each Qt installation.
+    After you install Qt, you can use \QMT under <install_dir> to
+    add, update, or remove installed components.
 
     For more information about how to use \QMT with the command line
     interface, see \l{Get and Install Qt with Command Line Interface}.
@@ -58,6 +57,7 @@
     scenarios, for example, if no prebuilt packages exist for your
     platform, if you need to modify Qt during debugging, or if you plan
     to contribute to Qt. See \l{Building Qt Sources} for instructions on
-    obtaining the Qt source code, information about Qt's prerequisites,
-    and guidelines on configuring and building Qt.
+    \l{Getting Qt Sources from the Git repository}{obtaining the Qt source code},
+    information about Qt's prerequisites, and guidelines on configuring and
+    building Qt.
 */

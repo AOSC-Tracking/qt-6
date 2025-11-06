@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qthreadstorage.h"
 #include "qthreadstorage_p.h"
@@ -141,10 +142,9 @@ void QThreadStoragePrivate::init()
     destructors();
 }
 
-void QThreadStorageData::finish(void **p)
+void QThreadStoragePrivate::finish(QList<void *> *tls)
 {
-    QList<void *> *tls = reinterpret_cast<QList<void *> *>(p);
-    if (!tls || tls->isEmpty() || !destructors())
+    if (tls->isEmpty() || !destructors())
         return; // nothing to do
 
     DEBUG_MSG("QThreadStorageData: Destroying storage for thread %p", QThread::currentThread());
@@ -165,7 +165,7 @@ void QThreadStorageData::finish(void **p)
         locker.unlock();
 
         if (!destructor) {
-            if (QCoreApplicationPrivate::isAlive())
+            if (QCoreApplication::instanceExists())
                 qWarning("QThreadStorage: entry %d destroyed before end of thread %p",
                          i, QThread::currentThread());
             continue;

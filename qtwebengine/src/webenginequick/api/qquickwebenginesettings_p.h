@@ -64,6 +64,7 @@ class Q_WEBENGINEQUICK_EXPORT QQuickWebEngineSettings : public QObject {
     Q_PROPERTY(bool printHeaderAndFooter READ printHeaderAndFooter WRITE setPrintHeaderAndFooter NOTIFY printHeaderAndFooterChanged REVISION(6,9) FINAL)
     Q_PROPERTY(bool preferCSSMarginsForPrinting READ preferCSSMarginsForPrinting WRITE setPreferCSSMarginsForPrinting NOTIFY preferCSSMarginsForPrintingChanged REVISION(6,9) FINAL)
     Q_PROPERTY(bool touchEventsApiEnabled READ touchEventsApiEnabled WRITE setTouchEventsApiEnabled NOTIFY touchEventsApiEnabledChanged REVISION(6,9) FINAL)
+    Q_PROPERTY(bool backForwardCacheEnabled READ backForwardCacheEnabled WRITE setBackForwardCacheEnabled NOTIFY backForwardCacheEnabledChanged REVISION(6,10) FINAL)
 
     QML_NAMED_ELEMENT(WebEngineSettings)
     QML_ADDED_IN_VERSION(1, 1)
@@ -127,6 +128,7 @@ public:
     bool printHeaderAndFooter() const;
     bool preferCSSMarginsForPrinting() const;
     bool touchEventsApiEnabled() const;
+    bool backForwardCacheEnabled() const;
 
     void setAutoLoadImages(bool on);
     void setJavascriptEnabled(bool on);
@@ -167,6 +169,7 @@ public:
     void setPrintHeaderAndFooter(bool on);
     void setPreferCSSMarginsForPrinting(bool on);
     void setTouchEventsApiEnabled(bool on);
+    void setBackForwardCacheEnabled(bool on);
 
 signals:
     void autoLoadImagesChanged();
@@ -208,6 +211,7 @@ signals:
     Q_REVISION(6,9) void printHeaderAndFooterChanged();
     Q_REVISION(6,9) void preferCSSMarginsForPrintingChanged();
     Q_REVISION(6,9) void touchEventsApiEnabledChanged();
+    Q_REVISION(6,10) void backForwardCacheEnabledChanged();
 
 private:
     explicit QQuickWebEngineSettings(QQuickWebEngineSettings *parentSettings = nullptr);

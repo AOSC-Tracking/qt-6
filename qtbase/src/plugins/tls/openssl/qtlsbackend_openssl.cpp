@@ -389,7 +389,8 @@ QList<QSslCertificate> systemCaCertificates()
     {
         const QList<QByteArray> directories = QSslSocketPrivate::unixRootCertDirectories();
         QSet<QString> certFiles = {
-            QStringLiteral("/etc/pki/tls/certs/ca-bundle.crt"), // Fedora, Mandriva
+            QStringLiteral("/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem"), // Red Hat 2013+
+            QStringLiteral("/etc/pki/tls/certs/ca-bundle.crt"), // Red Hat older, Mandriva
             QStringLiteral("/usr/local/share/certs/ca-root-nss.crt") // FreeBSD's ca_root_nss
         };
 
@@ -411,7 +412,7 @@ QList<QSslCertificate> systemCaCertificates()
             }
         }
         for (const QString& file : std::as_const(certFiles))
-            systemCerts.append(QSslCertificate::fromPath(file, QSsl::Pem));
+            systemCerts.append(QSslCertificate::fromFile(file, QSsl::Pem));
     }
 #endif // platform
 #ifdef QSSLSOCKET_DEBUG

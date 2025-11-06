@@ -315,7 +315,7 @@ class QGraphicsAnchorPrivate : public QObjectPrivate
     Q_DECLARE_PUBLIC(QGraphicsAnchor)
 
 public:
-    explicit QGraphicsAnchorPrivate(int version = QObjectPrivateVersion);
+    explicit QGraphicsAnchorPrivate(decltype(QObjectPrivateVersion) = QObjectPrivateVersion);
     ~QGraphicsAnchorPrivate();
 
     void setSpacing(qreal value);

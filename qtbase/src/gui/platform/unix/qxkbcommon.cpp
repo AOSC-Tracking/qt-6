@@ -376,6 +376,7 @@ static constexpr const auto KeyTbl = qMakeArray(
         Xkb2Qt<XKB_KEY_XF86TouchpadOn,          Qt::Key_TouchpadOn>,
         Xkb2Qt<XKB_KEY_XF86TouchpadOff,         Qt::Key_TouchpadOff>,
         Xkb2Qt<XKB_KEY_XF86AudioMicMute,        Qt::Key_MicMute>,
+        Xkb2Qt<XKB_KEY_XF86Keyboard,            Qt::Key_Keyboard>,
         Xkb2Qt<XKB_KEY_XF86Launch0,             Qt::Key_Launch0>,
         Xkb2Qt<XKB_KEY_XF86Launch1,             Qt::Key_Launch1>,
         Xkb2Qt<XKB_KEY_XF86Launch2,             Qt::Key_Launch2>,

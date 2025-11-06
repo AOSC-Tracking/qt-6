@@ -5,6 +5,8 @@
 #define QQUICKWEBENGINEPROFILEPROTOTYPE_P_P_H
 
 #include "qquickwebengineprofile_p.h"
+
+#include <QScopedPointer>
 //
 //  W A R N I N G
 //  -------------
@@ -23,6 +25,7 @@ struct QQuickWebEngineProfilePrototypePrivate
     QString m_storageName;
     QString m_persistentStoragePath;
     QString m_cachePath;
+    QStringList m_additionalTrustedCertificateFiles;
     QQuickWebEngineProfile::HttpCacheType m_httpCacheType = QQuickWebEngineProfile::DiskHttpCache;
     QQuickWebEngineProfile::PersistentCookiesPolicy m_persistentCookiesPolicy =
             QQuickWebEngineProfile::AllowPersistentCookies;

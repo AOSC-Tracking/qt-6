@@ -17,7 +17,6 @@
 #include <qtqmlcompilerexports.h>
 
 #include "qqmljslogger_p.h"
-#include "qqmljsregistercontent_p.h"
 #include "qqmljsresourcefilemapper_p.h"
 #include "qqmljsscope_p.h"
 #include "qqmljsmetatypes_p.h"
@@ -74,13 +73,13 @@ struct Q_QMLCOMPILER_EXPORT QQmlJSUtils
         Returns escaped version of \a s. This function is mostly useful for code
         generators.
     */
-    static QString escapeString(QString s)
+    template<typename String, typename CharacterLiteral, typename StringView>
+    static String escapeString(String s)
     {
-        using namespace Qt::StringLiterals;
-        return s.replace('\\'_L1, "\\\\"_L1)
-                .replace('"'_L1, "\\\""_L1)
-                .replace('\n'_L1, "\\n"_L1)
-                .replace('?'_L1, "\\?"_L1);
+        return s.replace(CharacterLiteral('\\'), StringView("\\\\"))
+                .replace(CharacterLiteral('"'), StringView("\\\""))
+                .replace(CharacterLiteral('\n'), StringView("\\n"))
+                .replace(CharacterLiteral('?'), StringView("\\?"));
     }
 
     /*! \internal
@@ -90,9 +89,14 @@ struct Q_QMLCOMPILER_EXPORT QQmlJSUtils
 
         \note This function escapes \a s before wrapping it.
     */
-    static QString toLiteral(const QString &s, QStringView ctor = u"QStringLiteral")
+    template<
+            typename String = QString,
+            typename CharacterLiteral = QLatin1Char,
+            typename StringView = QLatin1StringView>
+    static String toLiteral(const String &s, StringView ctor = StringView("QStringLiteral"))
     {
-        return ctor % u"(\"" % escapeString(s) % u"\")";
+        return ctor % StringView("(\"")
+                % escapeString<String, CharacterLiteral, StringView>(s) % StringView("\")");
     }
 
     /*! \internal

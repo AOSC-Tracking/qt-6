@@ -1,9 +1,15 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
+#include <httpsserver.h>
+#include <util.h>
 #include <QtTest/QtTest>
+#include <QtTest/private/qtesthelpers_p.h>
 #include <QTemporaryDir>
 #include <QtWebEngineCore/qwebengineprofilebuilder.h>
+#include <QtWebEngineCore/qwebenginecertificateerror.h>
+#include <QtWebEngineCore/qwebengineclientcertificatestore.h>
+#include <QtWebEngineCore/qwebenginesettings.h>
 
 class tst_QWebEngineProfileBuilder : public QObject
 {
@@ -21,6 +27,7 @@ private Q_SLOTS:
     void httpCacheSize();
     void persistentPermissionsPolicy_data();
     void persistentPermissionsPolicy();
+    void additionalTrustedCertificates();
     void useSameDataPathForProfiles();
 };
 
@@ -273,6 +280,97 @@ void tst_QWebEngineProfileBuilder::persistentPermissionsPolicy()
             ? StandardAppDataLocation() + QStringLiteral("/QtWebEngine/OffTheRecord")
             : StandardAppDataLocation() + QStringLiteral("/QtWebEngine/Test");
     QCOMPARE(profile->persistentStoragePath(), storagePath);
+}
+
+void tst_QWebEngineProfileBuilder::additionalTrustedCertificates()
+{
+    if (QTestPrivate::isSecureTransportBlockingTest()) {
+        QSKIP("SecureTransport will block the test server while accessing the login keychain");
+    }
+
+    QFile certFile(":/resources/server.pem");
+    QVERIFY2(certFile.open(QIODevice::ReadOnly), qPrintable(certFile.errorString()));
+    const QSslCertificate cert(&certFile, QSsl::Pem);
+
+    QFile keyFile(":/resources/server.key");
+    QVERIFY2(keyFile.open(QIODevice::ReadOnly), qPrintable(keyFile.errorString()));
+    const QSslKey sslKey(&keyFile, QSsl::Rsa, QSsl::Pem, QSsl::PrivateKey, "");
+
+    HttpsServer server(":/resources/server.pem", ":/resources/server.key", ":/resources/ca.pem");
+    server.setExpectError(false);
+    QVERIFY(server.start());
+
+    connect(&server, &HttpsServer::newRequest, [](HttpReqRep *rr) {
+        rr->setResponseBody(QByteArrayLiteral("<html><body>TEST</body></html>"));
+        rr->sendResponse();
+    });
+
+    {
+        QWebEnginePage page;
+        page.settings()->setAttribute(QWebEngineSettings::ErrorPageEnabled, false);
+
+        page.profile()->clientCertificateStore()->add(cert, sslKey);
+
+        connect(&page, &QWebEnginePage::selectClientCertificate, &page,
+            [](QWebEngineClientCertificateSelection selection) {
+                    Q_UNUSED(selection)
+                    QFAIL("Should have rejected handshake already.");
+                });
+
+        QSignalSpy certificateErrorSpy(&page, &QWebEnginePage::certificateError);
+        page.setUrl(server.url());
+
+        QTRY_COMPARE_WITH_TIMEOUT(certificateErrorSpy.size() > 0, true, 20000);
+
+        auto error = certificateErrorSpy.takeFirst().at(0).value<QWebEngineCertificateError>();
+        QCOMPARE(error.type(), QWebEngineCertificateError::CertificateAuthorityInvalid);
+    }
+
+    // Add the appropriate server certificate, connection should work then.
+
+    QList<QSslCertificate> certs;
+
+    for (QString filename : {":/resources/server.pem", ":/resources/ca.pem"}) {
+        QFile file(filename);
+        QVERIFY2(file.open(QIODevice::ReadOnly), qPrintable(file.errorString()));
+        certs.emplace_back(&file, QSsl::Pem);
+        QVERIFY(!certs.back().isNull());
+    }
+
+    QWebEngineProfileBuilder profileBuilder;
+    profileBuilder.setAdditionalTrustedCertificates(certs);
+    QScopedPointer<QWebEngineProfile> profile(profileBuilder.createProfile(QStringLiteral("Test")));
+    QVERIFY(profile);
+
+    QCOMPARE(profile->additionalTrustedCertificates(), certs);
+
+    {
+        QWebEnginePage page(profile.get());
+        page.settings()->setAttribute(QWebEngineSettings::ErrorPageEnabled, false);
+
+        page.profile()->clientCertificateStore()->add(cert, sslKey);
+
+        connect(&page, &QWebEnginePage::selectClientCertificate, &page,
+            [&cert](QWebEngineClientCertificateSelection selection) {
+                QVERIFY(!selection.certificates().isEmpty());
+                for (const QSslCertificate &sCert : selection.certificates()) {
+                    if (cert == sCert) {
+                        selection.select(sCert);
+                        return;
+                    }
+                }
+                QFAIL("No certificate found.");
+            });
+
+        QSignalSpy loadFinishedSpy(&page, &QWebEnginePage::loadFinished);
+        page.setUrl(server.url());
+
+        QTRY_COMPARE_WITH_TIMEOUT(loadFinishedSpy.size() > 0, true, 20000);
+        QCOMPARE(loadFinishedSpy.takeFirst().at(0).toBool(), true);
+        QCOMPARE(toPlainTextSync(&page), QStringLiteral("TEST"));
+    }
+
+    QVERIFY(server.stop());
 }
 
 void tst_QWebEngineProfileBuilder::useSameDataPathForProfiles()

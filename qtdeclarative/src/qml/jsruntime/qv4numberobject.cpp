@@ -15,12 +15,14 @@ using namespace QV4;
 DEFINE_OBJECT_VTABLE(NumberCtor);
 DEFINE_OBJECT_VTABLE(NumberObject);
 
+namespace {
 struct NumberLocaleHolder : public NumberLocale
 {
     NumberLocaleHolder() {}
 };
 
 Q_GLOBAL_STATIC(NumberLocaleHolder, numberLocaleHolder)
+} // namespace
 
 NumberLocale::NumberLocale() : QLocale(QLocale::C),
     // -128 means shortest string that can accurately represent the number.

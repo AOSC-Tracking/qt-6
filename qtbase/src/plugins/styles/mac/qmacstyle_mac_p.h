@@ -28,9 +28,12 @@ class QMacStylePrivate;
 class QMacStyle : public QCommonStyle
 {
     Q_OBJECT
-public:
+protected:
     QMacStyle();
+public:
     virtual ~QMacStyle();
+
+    static QMacStyle *create();
 
     void polish(QWidget *w);
     void unpolish(QWidget *w);

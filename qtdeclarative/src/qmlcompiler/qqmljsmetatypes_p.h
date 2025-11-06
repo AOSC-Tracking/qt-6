@@ -43,6 +43,7 @@ QT_BEGIN_NAMESPACE
 
 enum ScriptBindingValueType : unsigned int {
     ScriptValue_Unknown,
+    ScriptValue_Function, // binding to a function, arrow, lambda or a {}-block
     ScriptValue_Undefined // property int p: undefined
 };
 
@@ -232,7 +233,7 @@ public:
     void setReturnType(QWeakPointer<const QQmlJSScope> type) { m_returnType.setType(type); }
 
     QList<QQmlJSMetaParameter> parameters() const { return m_parameters; }
-    QPair<QList<QQmlJSMetaParameter>::iterator, QList<QQmlJSMetaParameter>::iterator>
+    std::pair<QList<QQmlJSMetaParameter>::iterator, QList<QQmlJSMetaParameter>::iterator>
     mutableParametersRange()
     {
         return { m_parameters.begin(), m_parameters.end() };
@@ -341,7 +342,7 @@ public:
 
     friend size_t qHash(const QQmlJSMetaMethod &method, size_t seed = 0)
     {
-        QtPrivate::QHashCombine combine;
+        QtPrivate::QHashCombine combine(seed);
 
         seed = combine(seed, method.m_name);
         seed = combine(seed, method.m_sourceLocation);
@@ -798,7 +799,7 @@ public:
 
     QString regExpValue() const;
 
-    QQmlTranslation translationDataValue(QString qmlFileNameForContext = QStringLiteral("")) const;
+    QQmlTranslation translationDataValue(QString qmlFileNameForContext = QString()) const;
 
     QSharedPointer<const QQmlJSScope> literalType(const QQmlJSTypeResolver *resolver) const;
 

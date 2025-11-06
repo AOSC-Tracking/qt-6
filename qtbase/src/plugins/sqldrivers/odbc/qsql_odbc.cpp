@@ -329,21 +329,15 @@ static void qSqlWarning(const QString &message, T &&val)
         qCWarning(lcOdbc) << message << "\tError:" << addMsg;
 }
 
+template <typename T>
 static QSqlError qMakeError(const QString &err,
                             QSqlError::ErrorType type,
-                            const QODBCResultPrivate *p)
+                            const T *p)
 {
     return errorFromDiagRecords(err, type, qODBCWarn(p));
 }
 
-static QSqlError qMakeError(const QString &err,
-                            QSqlError::ErrorType type,
-                            const QODBCDriverPrivate *p)
-{
-    return errorFromDiagRecords(err, type, qODBCWarn(p));
-}
-
-static QMetaType qDecodeODBCType(SQLSMALLINT sqltype, bool isSigned = true)
+static QMetaType qDecodeODBCType(SQLSMALLINT sqltype, bool isSigned)
 {
     int type = QMetaType::UnknownType;
     switch (sqltype) {
@@ -526,65 +520,45 @@ static QVariant qGetBinaryData(SQLHANDLE hStmt, int column)
     return fieldVal;
 }
 
-static QVariant qGetIntData(SQLHANDLE hStmt, int column, bool isSigned = true)
+template <typename T>
+static QVariant qGetIntData(SQLHANDLE hStmt, int column)
 {
-    SQLINTEGER intbuf = 0;
+    constexpr auto isSigned = std::is_signed<T>();
+    constexpr auto is16BitType = sizeof(T) == 2;
+    constexpr auto is32BitType = sizeof(T) == 4;
+    constexpr auto is64BitType = sizeof(T) == 8;
+    constexpr auto tgtType =
+        is16BitType ? (isSigned ? SQL_C_SSHORT : SQL_C_USHORT)
+                    : is32BitType ? (isSigned ? SQL_C_SLONG : SQL_C_ULONG)
+                                  : (isSigned ? SQL_C_SBIGINT : SQL_C_UBIGINT);
+    static_assert(is16BitType || is32BitType || is64BitType,
+                  "Can only handle 16, 32 or 64 bit integer");
+    T intbuf = 0;
     SQLLEN lengthIndicator = 0;
-    SQLRETURN r = SQLGetData(hStmt,
-                              column+1,
-                              isSigned ? SQL_C_SLONG : SQL_C_ULONG,
-                              (SQLPOINTER)&intbuf,
-                              sizeof(intbuf),
-                              &lengthIndicator);
+    SQLRETURN r = SQLGetData(hStmt, column + 1, tgtType,
+                            (SQLPOINTER)&intbuf, sizeof(intbuf), &lengthIndicator);
     if (!SQL_SUCCEEDED(r))
         return QVariant();
     if (lengthIndicator == SQL_NULL_DATA)
-        return QVariant(QMetaType::fromType<int>());
-    if (isSigned)
-        return int(intbuf);
-    else
-        return uint(intbuf);
+        return QVariant(QMetaType::fromType<T>());
+    return QVariant::fromValue<T>(intbuf);
 }
 
-static QVariant qGetDoubleData(SQLHANDLE hStmt, int column)
+template <typename T>
+static QVariant qGetFloatingPointData(SQLHANDLE hStmt, int column)
 {
-    SQLDOUBLE dblbuf;
+    constexpr auto tgtType = sizeof(T) == 4 ? SQL_C_FLOAT : SQL_C_DOUBLE;
+    static_assert(std::is_same_v<T, float> || std::is_same_v<T, double>,
+                  "Can only handle float or double");
+    T buffer = 0;
     SQLLEN lengthIndicator = 0;
-    SQLRETURN r = SQLGetData(hStmt,
-                              column+1,
-                              SQL_C_DOUBLE,
-                              (SQLPOINTER) &dblbuf,
-                              0,
-                              &lengthIndicator);
-    if (!SQL_SUCCEEDED(r)) {
-        return QVariant();
-    }
-    if (lengthIndicator == SQL_NULL_DATA)
-        return QVariant(QMetaType::fromType<double>());
-
-    return (double) dblbuf;
-}
-
-
-static QVariant qGetBigIntData(SQLHANDLE hStmt, int column, bool isSigned = true)
-{
-    SQLBIGINT lngbuf = 0;
-    SQLLEN lengthIndicator = 0;
-    SQLRETURN r = SQLGetData(hStmt,
-                              column+1,
-                              isSigned ? SQL_C_SBIGINT : SQL_C_UBIGINT,
-                              (SQLPOINTER) &lngbuf,
-                              sizeof(lngbuf),
-                              &lengthIndicator);
+    SQLRETURN r = SQLGetData(hStmt, column + 1, tgtType,
+                             (SQLPOINTER)&buffer, sizeof(buffer), &lengthIndicator);
     if (!SQL_SUCCEEDED(r))
         return QVariant();
     if (lengthIndicator == SQL_NULL_DATA)
-        return QVariant(QMetaType::fromType<qlonglong>());
-
-    if (isSigned)
-        return qint64(lngbuf);
-    else
-        return quint64(lngbuf);
+        return QVariant(QMetaType::fromType<T>());
+    return QVariant::fromValue<T>(buffer);
 }
 
 static bool isAutoValue(const SQLHANDLE hStmt, int column)
@@ -605,13 +579,13 @@ static bool isAutoValue(const SQLHANDLE hStmt, int column)
 static QSqlField qMakeFieldInfo(const SQLHANDLE hStmt, const QODBCDriverPrivate* p)
 {
     QString fname = qGetStringData(hStmt, 3, -1, p->unicode).toString();
-    int type = qGetIntData(hStmt, 4).toInt(); // column type
-    QSqlField f(fname, qDecodeODBCType(type, p));
-    QVariant var = qGetIntData(hStmt, 6);
+    int type = qGetIntData<int>(hStmt, 4).toInt();     // column type
+    QSqlField f(fname, qDecodeODBCType(type, true));    // signed, we don't know better here
+    QVariant var = qGetIntData<int>(hStmt, 6);
     f.setLength(var.isNull() ? -1 : var.toInt()); // column size
-    var = qGetIntData(hStmt, 8).toInt();
+    var = qGetIntData<int>(hStmt, 8).toInt();
     f.setPrecision(var.isNull() ? -1 : var.toInt()); // precision
-    int required = qGetIntData(hStmt, 10).toInt(); // nullable-flag
+    int required = qGetIntData<int>(hStmt, 10).toInt(); // nullable-flag
     // required can be SQL_NO_NULLS, SQL_NULLABLE or SQL_NULLABLE_UNKNOWN
     if (required == SQL_NO_NULLS)
         f.setRequired(true);
@@ -1002,9 +976,8 @@ bool QODBCResult::reset (const QString& query)
     SQLNumResultCols(d->hStmt, &count);
     if (count) {
         setSelect(true);
-        for (SQLSMALLINT i = 0; i < count; ++i) {
+        for (SQLSMALLINT i = 0; i < count; ++i)
             d->rInf.append(qMakeFieldInfo(d, i));
-        }
         d->fieldCache.resize(count);
     } else {
         setSelect(false);
@@ -1175,20 +1148,25 @@ QVariant QODBCResult::data(int field)
         // some servers do not support fetching column n after we already
         // fetched column n+1, so cache all previous columns here
         const QSqlField info = d->rInf.field(i);
-        switch (info.metaType().id()) {
+        const auto metaTypeId = info.metaType().id();
+        switch (metaTypeId) {
         case QMetaType::LongLong:
-            d->fieldCache[i] = qGetBigIntData(d->hStmt, i);
-        break;
-        case QMetaType::ULongLong:
-            d->fieldCache[i] = qGetBigIntData(d->hStmt, i, false);
+            d->fieldCache[i] = qGetIntData<int64_t>(d->hStmt, i);
             break;
         case QMetaType::Int:
+            d->fieldCache[i] = qGetIntData<int32_t>(d->hStmt, i);
+            break;
         case QMetaType::Short:
-            d->fieldCache[i] = qGetIntData(d->hStmt, i);
+            d->fieldCache[i] = qGetIntData<int16_t>(d->hStmt, i);
+            break;
+        case QMetaType::ULongLong:
+            d->fieldCache[i] = qGetIntData<uint64_t>(d->hStmt, i);
             break;
         case QMetaType::UInt:
+            d->fieldCache[i] = qGetIntData<uint32_t>(d->hStmt, i);
+            break;
         case QMetaType::UShort:
-            d->fieldCache[i] = qGetIntData(d->hStmt, i, false);
+            d->fieldCache[i] = qGetIntData<uint16_t>(d->hStmt, i);
             break;
         case QMetaType::QDate:
             DATE_STRUCT dbuf;
@@ -1236,20 +1214,23 @@ QVariant QODBCResult::data(int field)
         case QMetaType::QString:
             d->fieldCache[i] = qGetStringData(d->hStmt, i, info.length(), d->unicode);
             break;
+        case QMetaType::Float:
         case QMetaType::Double:
-            switch(numericalPrecisionPolicy()) {
+            switch (numericalPrecisionPolicy()) {
                 case QSql::LowPrecisionInt32:
-                    d->fieldCache[i] = qGetIntData(d->hStmt, i);
+                    d->fieldCache[i] = qGetIntData<int32_t>(d->hStmt, i);
                     break;
                 case QSql::LowPrecisionInt64:
-                    d->fieldCache[i] = qGetBigIntData(d->hStmt, i);
+                    d->fieldCache[i] = qGetIntData<int64_t>(d->hStmt, i);
                     break;
                 case QSql::LowPrecisionDouble:
-                    d->fieldCache[i] = qGetDoubleData(d->hStmt, i);
+                    if (metaTypeId == QMetaType::Float)
+                        d->fieldCache[i] = qGetFloatingPointData<float>(d->hStmt, i);
+                    else
+                        d->fieldCache[i] = qGetFloatingPointData<double>(d->hStmt, i);
                     break;
                 case QSql::HighPrecision:
-                    const int extra = info.precision() > 0 ? 1 : 0;
-                    d->fieldCache[i] = qGetStringData(d->hStmt, i, info.length() + extra, false);
+                    d->fieldCache[i] = qGetStringData(d->hStmt, i, -1, false);
                     break;
             }
             break;
@@ -1300,6 +1281,9 @@ bool QODBCResult::prepare(const QString& query)
     SQLRETURN r;
 
     d->rInf.clear();
+    d->fieldCache.clear();
+    d->fieldCacheIdx = 0;
+
     if (d->hStmt && d->isStmtHandleValid()) {
         r = SQLFreeHandle(SQL_HANDLE_STMT, d->hStmt);
         if (r != SQL_SUCCESS) {
@@ -1676,9 +1660,8 @@ bool QODBCResult::exec()
     SQLNumResultCols(d->hStmt, &count);
     if (count) {
         setSelect(true);
-        for (SQLSMALLINT i = 0; i < count; ++i) {
+        for (SQLSMALLINT i = 0; i < count; ++i)
             d->rInf.append(qMakeFieldInfo(d, i));
-        }
         d->fieldCache.resize(count);
     } else {
         setSelect(false);

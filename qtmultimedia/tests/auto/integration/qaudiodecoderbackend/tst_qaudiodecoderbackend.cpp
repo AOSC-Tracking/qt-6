@@ -1,7 +1,7 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#include <QtTest/QtTest>
+#include <QtTest/qtest.h>
 #include <QtCore/qdebug.h>
 #include <QtMultimedia/qaudiodecoder.h>
 
@@ -66,7 +66,7 @@ private:
 #endif
 
     MediaFileSelector m_mediaSelector;
-    MaybeUrl m_wavFile = MaybeUrl{ QUnexpect{} };
+    MaybeUrl m_wavFile = MaybeUrl{ q23::unexpect };
 };
 
 void tst_QAudioDecoderBackend::init()

@@ -1,5 +1,6 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:data-parser
 
 #ifndef QWEBENGINEPROFILEBUILDER_H
 #define QWEBENGINEPROFILEBUILDER_H
@@ -27,6 +28,8 @@ public:
     Q_WEBENGINECORE_EXPORT QWebEngineProfileBuilder &setHttpCacheMaximumSize(int maxSizeInBytes);
     Q_WEBENGINECORE_EXPORT QWebEngineProfileBuilder &setPersistentPermissionsPolicy(
             QWebEngineProfile::PersistentPermissionsPolicy persistentPermissionPolicy);
+    Q_WEBENGINECORE_EXPORT QWebEngineProfileBuilder &
+    setAdditionalTrustedCertificates(const QList<QSslCertificate> &additionalTrustedCertificates);
 
 private:
     Q_DISABLE_COPY_MOVE(QWebEngineProfileBuilder)

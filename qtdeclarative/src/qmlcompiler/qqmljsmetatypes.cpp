@@ -84,13 +84,13 @@ QSharedPointer<const QQmlJSScope> QQmlJSMetaPropertyBinding::literalType(const Q
     case BindingType::BoolLiteral:
         return resolver->boolType();
     case BindingType::NumberLiteral:
-        return resolver->typeForName(QLatin1String("double"));
+        return resolver->realType();
     case BindingType::Translation: // translations are strings
     case BindingType::TranslationById:
     case BindingType::StringLiteral:
         return resolver->stringType();
     case BindingType::RegExpLiteral:
-        return resolver->typeForName(QLatin1String("regexp"));
+        return resolver->regexpType();
     case BindingType::Null:
         return resolver->nullType();
     case BindingType::Invalid:

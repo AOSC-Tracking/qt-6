@@ -9,7 +9,7 @@ this file manually, you might introduce QML code that is not supported by Qt Des
 Check out https://doc.qt.io/qtcreator/creator-quick-ui-forms.html for details on .ui.qml files.
 */
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import ThermostatCustomControls
 import Thermostat
@@ -17,7 +17,7 @@ import Thermostat
 ScrollView {
     id: scrollView
 
-    required property var model
+    required property Room room
 
     property bool isOneColumn: false
     property bool isBackgroundVisible: false
@@ -72,20 +72,18 @@ ScrollView {
                 id: statisticsChart
 
                 anchors.fill: parent
-                energyValuesModel: model.energyStats
-                tempValuesModel: model.tempStats
+                energyValues: scrollView.room.energyStats
+                tempValues: scrollView.room.tempStats
             }
         }
 
         TemperatureInfo {
             id: tempInfo
-
             Layout.preferredHeight: scrollView.delegateHeight
             Layout.preferredWidth: scrollView.delegateWidth
             Layout.alignment: Qt.AlignHCenter
-            maxTempValue: statisticsChart.maxValue
-            minTempValue: statisticsChart.minValue
-            avgTempValue: statisticsChart.avgValue
+
+            temperatureValues: scrollView.room.tempStats
         }
 
         HumidityInfo {
@@ -94,7 +92,7 @@ ScrollView {
             Layout.preferredWidth: scrollView.delegateWidth
             Layout.alignment: Qt.AlignHCenter
 
-            humidityValuesModel: model.humidityStats
+            humidityValues: scrollView.room.humidityStats
         }
 
         EnergyInfo {
@@ -103,7 +101,7 @@ ScrollView {
             Layout.preferredWidth: scrollView.delegateWidth
             Layout.alignment: Qt.AlignHCenter
 
-            energyValuesModel: model.energyStats
+            energyValues: scrollView.room.energyStats
         }
     }
 

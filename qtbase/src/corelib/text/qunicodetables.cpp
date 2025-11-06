@@ -8,6 +8,7 @@
 QT_BEGIN_NAMESPACE
 
 namespace QUnicodeTables {
+static constexpr char32_t MaxSeparatorCodepoint = 0x3000;
 
 static constexpr unsigned short uc_property_trie[] = {
     // [0x0..0x11000)
@@ -10832,7 +10833,8 @@ static constexpr Properties uc_properties[] = {
     { 12, 0, 0, 0, 0, -1, 0, 2, 0, 0, { {0, 0}, {0, 0}, {0, 0}, {0, 0} }, 0, 0, 15, 0, 0, 0 }
 };
 
-Q_DECL_CONST_FUNCTION static inline const Properties *qGetProp(char32_t ucs4) noexcept
+Q_DECL_CONST_FUNCTION static Q_ALWAYS_INLINE
+const Properties *qGetProp(char32_t ucs4) noexcept
 {
     Q_ASSERT(ucs4 <= QChar::LastValidCodePoint);
     if (ucs4 < 0x11000)
@@ -10842,19 +10844,9 @@ Q_DECL_CONST_FUNCTION static inline const Properties *qGetProp(char32_t ucs4) no
         + uc_property_trie[uc_property_trie[((ucs4 - 0x11000) >> 8) + 0x880] + (ucs4 & 0xff)];
 }
 
-Q_DECL_CONST_FUNCTION static inline const Properties *qGetProp(char16_t ucs2) noexcept
-{
-    return uc_properties + uc_property_trie[uc_property_trie[ucs2 >> 5] + (ucs2 & 0x1f)];
-}
-
-Q_DECL_CONST_FUNCTION Q_CORE_EXPORT const Properties * QT_FASTCALL properties(char32_t ucs4) noexcept
+const Properties * QT_FASTCALL properties(char32_t ucs4) noexcept
 {
     return qGetProp(ucs4);
-}
-
-Q_DECL_CONST_FUNCTION Q_CORE_EXPORT const Properties * QT_FASTCALL properties(char16_t ucs2) noexcept
-{
-    return qGetProp(ucs2);
 }
 
 Q_CORE_EXPORT GraphemeBreakClass QT_FASTCALL graphemeBreakClass(char32_t ucs4) noexcept

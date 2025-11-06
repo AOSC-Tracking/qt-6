@@ -22,8 +22,6 @@
 #include <QtQml/private/qqmldirparser_p.h>
 #include <QtQml/private/qqmljsast_p.h>
 
-#include <memory>
-
 QT_BEGIN_NAMESPACE
 
 namespace QQmlJS {
@@ -64,7 +62,8 @@ private:
 
 enum QQmlJSImporterFlag {
     UseOptionalImports = 0x1,
-    PreferQmlFilesFromSourceFolder = 0x2
+    PreferQmlFilesFromSourceFolder = 0x2,
+    TolerateFileSelectors = 0x4, // if we find a type "twice", check if one looks like it's from a file selector and use the other
 };
 Q_DECLARE_FLAGS(QQmlJSImporterFlags, QQmlJSImporterFlag)
 
@@ -259,7 +258,7 @@ private:
 
     QStringList m_importPaths;
 
-    QHash<QPair<QString, QTypeRevision>, QString> m_seenImports;
+    QHash<std::pair<QString, QTypeRevision>, QString> m_seenImports;
     QHash<QQmlJS::Import, QSharedPointer<AvailableTypes>> m_cachedImportTypes;
     QHash<QString, Import> m_seenQmldirFiles;
 

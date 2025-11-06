@@ -65,6 +65,11 @@ function(qt_auto_detect_wasm)
 endfunction()
 
 function(qt_auto_detect_android)
+    # Don't assume an Android build if we're requesting to build Java documentation on the host.
+    if(QT_BUILD_HOST_JAVA_DOCS)
+        return()
+    endif()
+
     # We assume an Android build if any of the ANDROID_* cache variables are set.
     if(DEFINED ANDROID_SDK_ROOT
             OR DEFINED ANDROID_NDK_ROOT
@@ -243,6 +248,11 @@ function(qt_auto_detect_apple)
 
     if(QT_APPLE_SDK)
         set(CMAKE_OSX_SYSROOT "${QT_APPLE_SDK}" CACHE STRING "")
+    elseif(NOT CMAKE_SYSTEM_NAME)
+        # Persist SDK name for macOS builds, since CMake 4.x will pick arbitrary
+        # SDK paths, ignoring xcode-select, if not given an explicit SDK.
+        _qt_internal_get_apple_sdk_name(sdk_name)
+        set(CMAKE_OSX_SYSROOT "${sdk_name}" CACHE STRING "")
     endif()
 
     if(CMAKE_SYSTEM_NAME STREQUAL iOS OR CMAKE_SYSTEM_NAME STREQUAL visionOS)

@@ -456,6 +456,10 @@ void QQuadPath::addElement(const QVector2D &control, const QVector2D &endPoint, 
 
     isLine = isLine || isPointNearLine(control, m_currentPoint, endPoint); // Turn flat quad into line
 
+    if (!m_subPathToStart) {
+        Q_ASSERT(!m_elements.isEmpty());
+        m_elements.last().m_isSubpathEnd = false;
+    }
     m_elements.resize(m_elements.size() + 1);
     Element &elem = m_elements.last();
     elem.sp = m_currentPoint;
@@ -464,6 +468,7 @@ void QQuadPath::addElement(const QVector2D &control, const QVector2D &endPoint, 
     elem.m_isLine = isLine;
     elem.m_isSubpathStart = m_subPathToStart;
     m_subPathToStart = false;
+    elem.m_isSubpathEnd = true;
     m_currentPoint = endPoint;
 }
 
@@ -478,16 +483,22 @@ void QQuadPath::addElement(const Element &e)
 #  define QQUICKSHAPECURVERENDERER_CONVEX_CHECK_ERROR_MARGIN (1.0f / 32.0f)
 #endif
 
-QQuadPath::Element::CurvatureFlags QQuadPath::coordinateOrderOfElement(const QQuadPath::Element &element) const
+QQuadPath::Element::FillSide QQuadPath::coordinateOrderOfElement(const QQuadPath::Element &element) const
 {
     QVector2D baseLine = element.endPoint() - element.startPoint();
     QVector2D midPoint = element.midPoint();
     // At the midpoint, the tangent of a quad is parallel to the baseline
     QVector2D normal = QVector2D(-baseLine.y(), baseLine.x()).normalized();
     float delta = qMin(element.extent() / 100, QQUICKSHAPECURVERENDERER_CONVEX_CHECK_ERROR_MARGIN);
-    QVector2D justRightOfMid = midPoint + (normal * delta);
-    bool pathContainsPoint = contains(justRightOfMid);
-    return pathContainsPoint ? Element::FillOnRight : Element::CurvatureFlags(0);
+    QVector2D offset = (normal * delta);
+    bool pathContainsPointToRight = contains(midPoint + offset);
+    bool pathContainsPointToLeft = contains(midPoint - offset);
+    Element::FillSide res = Element::FillSideUndetermined;
+    if (pathContainsPointToRight)
+        res = (pathContainsPointToLeft ? Element::FillSideBoth : Element::FillSideRight);
+    else if (pathContainsPointToLeft)
+        res = Element::FillSideLeft;
+    return res;
 }
 
 QQuadPath QQuadPath::fromPainterPath(const QPainterPath &path, PathHints hints)
@@ -551,24 +562,48 @@ void QQuadPath::addCurvatureData()
     // determine if the direction already follows the convention or not, and then we
     // can easily detect curvature of all subsequent elements in the subpath.
 
+    auto isSingleSided = [](Element::FillSide fillSide) {
+        return fillSide == Element::FillSideLeft || fillSide == Element::FillSideRight;
+    };
+
+    auto flagFromFillSide = [](Element::FillSide fillSide) {
+        if (fillSide == Element::FillSideRight || fillSide == Element::FillSideBoth)
+            return Element::FillOnRight;
+        else
+            return Element::CurvatureUndetermined;
+    };
+
     static bool checkAnomaly = qEnvironmentVariableIntValue("QT_QUICKSHAPES_CHECK_ALL_CURVATURE") != 0;
     const bool pathHasFillOnRight = testHint(PathFillOnRight);
 
     Element::CurvatureFlags flags = Element::CurvatureUndetermined;
-    for (QQuadPath::Element &element : m_elements) {
+    for (int i = 0; i < m_elements.size(); i++) {
+        QQuadPath::Element &element = m_elements[i];
         Q_ASSERT(element.childCount() == 0);
         if (element.isSubpathStart()) {
-            if (pathHasFillOnRight && !checkAnomaly)
+            if (pathHasFillOnRight && !checkAnomaly) {
                 flags = Element::FillOnRight;
-            else
-                flags = coordinateOrderOfElement(element);
+            } else {
+                Element::FillSide fillSide = Element::FillSideUndetermined;
+                for (int j = i; !isSingleSided(fillSide) && j < m_elements.size(); j++) {
+                    const QQuadPath::Element &subElem = m_elements.at(j);
+                    if (j > i && subElem.isSubpathStart())
+                        break;
+                    fillSide = coordinateOrderOfElement(subElem);
+                }
+                flags = flagFromFillSide(fillSide);
+            }
         } else if (checkAnomaly) {
-            Element::CurvatureFlags newFlags = coordinateOrderOfElement(element);
-            if (flags != newFlags) {
-                qDebug() << "Curvature anomaly detected:" << element
-                         << "Subpath fill on right:" << (flags & Element::FillOnRight)
-                         << "Element fill on right:" << (newFlags & Element::FillOnRight);
-                flags = newFlags;
+            Element::FillSide fillSide = coordinateOrderOfElement(element);
+            if (isSingleSided(fillSide)) {
+                Element::CurvatureFlags newFlags = flagFromFillSide(fillSide);
+                if (flags != newFlags) {
+                    qCDebug(lcSGCurveProcessor)
+                            << "Curvature anomaly detected:" << element
+                            << "Subpath fill on right:" << (flags & Element::FillOnRight)
+                            << "Element fill on right:" << (newFlags & Element::FillOnRight);
+                    flags = newFlags;
+                }
             }
         }
 

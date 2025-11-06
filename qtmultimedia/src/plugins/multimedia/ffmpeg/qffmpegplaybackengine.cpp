@@ -40,10 +40,11 @@ inline static Array defaultObjectsArray()
 //
 static constexpr bool shouldPauseStreams = false;
 
-PlaybackEngine::PlaybackEngine()
+PlaybackEngine::PlaybackEngine(const QPlaybackOptions &options)
     : m_demuxer({}, {}),
       m_streams(defaultObjectsArray<decltype(m_streams)>()),
-      m_renderers(defaultObjectsArray<decltype(m_renderers)>())
+      m_renderers(defaultObjectsArray<decltype(m_renderers)>()),
+      m_options{ options }
 {
     qCDebug(qLcPlaybackEngine) << "Create PlaybackEngine";
     qRegisterMetaType<QFFmpeg::Packet>();
@@ -108,8 +109,8 @@ void PlaybackEngine::onFirsPacketFound(quint64 id, TrackPosition absSeekPos)
         return;
 
     if (m_shouldUpdateTimeOnFirstPacket) {
-        const auto timePoint = RealClock::now();
-        const RealClock::time_point expectedTimePoint =
+        const auto timePoint = SteadyClock::now();
+        const SteadyClock::time_point expectedTimePoint =
                 m_timeController.timeFromPosition(absSeekPos);
         const auto delay = std::chrono::duration_cast<std::chrono::microseconds>(
                 timePoint - expectedTimePoint);
@@ -122,7 +123,7 @@ void PlaybackEngine::onFirsPacketFound(quint64 id, TrackPosition absSeekPos)
     forEachExistingObject<Renderer>([&](auto &renderer) { renderer->start(m_timeController); });
 }
 
-void PlaybackEngine::onRendererSynchronized(quint64 id, RealClock::time_point tp, TrackPosition pos)
+void PlaybackEngine::onRendererSynchronized(quint64 id, SteadyClock::time_point tp, TrackPosition pos)
 {
     if (!hasRenderer(id))
         return;
@@ -223,7 +224,8 @@ PlaybackEngine::createRenderer(QPlatformMediaPlayer::TrackType trackType)
                            : RendererPtr{ {}, {} };
     case QPlatformMediaPlayer::AudioStream:
         return m_audioOutput || m_audioBufferOutput
-                ? createPlaybackEngineObject<AudioRenderer>(m_timeController, m_audioOutput, m_audioBufferOutput)
+                ? createPlaybackEngineObject<AudioRenderer>(
+                          m_timeController, m_audioOutput, m_audioBufferOutput, m_pitchCompensation)
                 : RendererPtr{ {}, {} };
     case QPlatformMediaPlayer::SubtitleStream:
         return m_videoSink
@@ -396,7 +398,7 @@ std::optional<CodecContext> PlaybackEngine::codecContextForTrack(QPlatformMediaP
         qCDebug(qLcPlaybackEngine)
                 << "Create codec for stream:" << streamIndex << "trackType:" << trackType;
         auto maybeCodecContext = CodecContext::create(m_media.avContext()->streams[streamIndex],
-                                                      m_media.avContext());
+                                                      m_media.avContext(), m_options);
 
         if (!maybeCodecContext) {
             emit errorOccured(QMediaPlayer::FormatError,
@@ -567,6 +569,13 @@ int PlaybackEngine::activeTrack(QPlatformMediaPlayer::TrackType type) const
     return m_media.activeTrack(type);
 }
 
+void PlaybackEngine::setPitchCompensation(bool enabled)
+{
+    m_pitchCompensation = enabled;
+    if (AudioRenderer *renderer = getAudioRenderer())
+        renderer->setPitchCompensation(enabled);
+}
+
 void PlaybackEngine::setActiveTrack(QPlatformMediaPlayer::TrackType trackType, int streamNumber)
 {
     if (!m_media.setActiveTrack(trackType, streamNumber))
@@ -615,8 +624,7 @@ bool PlaybackEngine::hasRenderer(quint64 id) const
 template <typename AudioOutput>
 void PlaybackEngine::updateActiveAudioOutput(AudioOutput *output)
 {
-    if (auto renderer =
-                qobject_cast<AudioRenderer *>(m_renderers[QPlatformMediaPlayer::AudioStream].get()))
+    if (AudioRenderer *renderer = getAudioRenderer())
         renderer->setOutput(output);
 }
 
@@ -661,6 +669,12 @@ TrackPosition PlaybackEngine::boundPosition(TrackPosition position) const
     position = qMax(position, TrackPosition(0));
     return duration() > TrackDuration(0) ? qMin(position, duration().asTimePoint()) : position;
 }
+
+AudioRenderer *PlaybackEngine::getAudioRenderer()
+{
+    return qobject_cast<AudioRenderer *>(m_renderers[QPlatformMediaPlayer::AudioStream].get());
+}
+
 } // namespace QFFmpeg
 
 QT_END_NAMESPACE

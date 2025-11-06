@@ -214,8 +214,14 @@ bool UrlObject::setSearch(QString search)
 {
     QUrl url = toQUrl();
 
-    if (search.startsWith(QLatin1Char('?')))
+    if (search.startsWith(QLatin1Char('?'))) {
         search = search.mid(1);
+    } else if (search.isEmpty()) {
+        // In JS, setting an empty query removes the '?' as well. QUrl only does that for a null QString.
+        // The way to get a lone '?' in JS is to set the search property to "?". That is why this is in
+        // the else branch.
+        search = QString(); // it's null now
+    }
 
     url.setQuery(search);
 
@@ -1135,13 +1141,14 @@ QV4::Heap::String * UrlSearchParamsObject::valueAtRaw(int index) const
     return stringAtRaw(index, 1);
 }
 
-
+namespace {
 struct UrlSearchParamsObjectOwnPropertyKeyIterator : ObjectOwnPropertyKeyIterator
 {
     ~UrlSearchParamsObjectOwnPropertyKeyIterator() override = default;
     PropertyKey next(const QV4::Object *o, Property *pd = nullptr,
                      PropertyAttributes *attrs = nullptr) override;
 };
+} // namespace
 
 PropertyKey UrlSearchParamsObjectOwnPropertyKeyIterator::next(const QV4::Object *o, Property *pd,
                                                               PropertyAttributes *attrs)

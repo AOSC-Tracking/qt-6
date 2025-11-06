@@ -108,7 +108,7 @@ extern bool qt_sendSpontaneousEvent(QObject*, QEvent*); // qapplication.cpp
 static void setAttribute_internal(Qt::WidgetAttribute attribute,
     bool on, QWidgetData *data, QWidgetPrivate *d);
 
-QWidgetPrivate::QWidgetPrivate(int version)
+QWidgetPrivate::QWidgetPrivate(decltype(QObjectPrivateVersion) version)
     : QObjectPrivate(version)
       , focus_next(nullptr)
       , focus_prev(nullptr)
@@ -168,16 +168,6 @@ QWidgetPrivate::QWidgetPrivate(int version)
         qFatal("QWidget: Must construct a QApplication before a QWidget");
         return;
     }
-
-#ifdef QT_BUILD_INTERNAL
-    // Don't check the version parameter in internal builds.
-    // This allows incompatible versions to be loaded, possibly for testing.
-    Q_UNUSED(version);
-#else
-    if (Q_UNLIKELY(version != QObjectPrivateVersion))
-        qFatal("Cannot mix incompatible Qt library (version 0x%x) with this library (version 0x%x)",
-                version, QObjectPrivateVersion);
-#endif
 
     willBeWidget = true; // used in QObject's ctor
     memset(high_attributes, 0, sizeof(high_attributes));
@@ -9502,14 +9492,14 @@ void QWidget::changeEvent(QEvent * event)
     tracking is switched on, mouse move events occur even if no mouse
     button is pressed.
 
-    QMouseEvent::pos() reports the position of the mouse cursor,
+    QMouseEvent::position() reports the position of the mouse cursor,
     relative to this widget. For press and release events, the
     position is usually the same as the position of the last mouse
     move event, but it might be different if the user's hand shakes.
     This is a feature of the underlying window system, not Qt.
 
     If you want to show a tooltip immediately, while the mouse is
-    moving (e.g., to get the mouse coordinates with QMouseEvent::pos()
+    moving (e.g., to get the mouse coordinates with QMouseEvent::position()
     and show them as a tooltip), you must first enable mouse tracking
     as described above. Then, to ensure that the tooltip is updated
     immediately, you must call QToolTip::showText() instead of
@@ -10917,10 +10907,12 @@ void QWidget::setParent(QWidget *parent, Qt::WindowFlags f)
                         << "to support" << surfaceType;
                     const auto windowStateBeforeDestroy = newParentWithWindow->windowState();
                     const auto visibilityBeforeDestroy = newParentWithWindow->isVisible();
+                    const auto positionBeforeDestroy = newParentWithWindow->pos();
                     newParentWithWindow->destroy();
                     newParentWithWindow->create();
                     Q_ASSERT(newParentWithWindow->windowHandle());
                     newParentWithWindow->windowHandle()->setWindowStates(windowStateBeforeDestroy);
+                    newParentWithWindow->move(positionBeforeDestroy);
                     QWidgetPrivate::get(newParentWithWindow)->setVisible(visibilityBeforeDestroy);
                 } else if (auto *backingStore = newParentWithWindow->backingStore()) {
                     // If we don't recreate we still need to make sure the native parent

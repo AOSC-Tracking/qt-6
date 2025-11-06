@@ -17,6 +17,8 @@
 
 #include <QtCore/qstring.h>
 
+QT_BEGIN_NAMESPACE
+
 namespace Utils {
 
 class TextDocument;
@@ -69,5 +71,7 @@ private:
 };
 
 } // namespace Utils
+
+QT_END_NAMESPACE
 
 #endif // TEXTBLOCK_P_H

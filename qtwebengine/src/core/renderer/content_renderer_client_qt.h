@@ -1,5 +1,7 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
+
 #ifndef CONTENT_RENDERER_CLIENT_QT_H
 #define CONTENT_RENDERER_CLIENT_QT_H
 
@@ -94,6 +96,26 @@ public:
     chrome::WebRtcLoggingAgentImpl *GetWebRtcLoggingAgent();
 #endif
 
+#if QT_CONFIG(webengine_extensions)
+    void WillEvaluateServiceWorkerOnWorkerThread(
+            blink::WebServiceWorkerContextProxy *context_proxy, v8::Local<v8::Context> v8_context,
+            int64_t service_worker_version_id, const GURL &service_worker_scope,
+            const GURL &script_url, const blink::ServiceWorkerToken &service_worker_token) override;
+
+    void WillDestroyServiceWorkerContextOnWorkerThread(v8::Local<v8::Context> context,
+                                                       int64_t service_worker_version_id,
+                                                       const GURL &service_worker_scope,
+                                                       const GURL &script_url) override;
+
+    void DidInitializeServiceWorkerContextOnWorkerThread(
+            blink::WebServiceWorkerContextProxy *context_proxy, const GURL &service_worker_scope,
+            const GURL &script_url) override;
+
+    void DidStartServiceWorkerContextOnWorkerThread(int64_t service_worker_version_id,
+                                                    const GURL &service_worker_scope,
+                                                    const GURL &script_url) override;
+    bool AllowScriptExtensionForServiceWorker(const url::Origin &script_origin) override;
+#endif
 
 private:
 #if QT_CONFIG(webengine_spellchecker)

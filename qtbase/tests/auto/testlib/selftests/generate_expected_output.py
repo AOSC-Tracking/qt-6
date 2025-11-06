@@ -239,7 +239,7 @@ def baseEnv(platname=None,
             keep += preserveLib
 
         cached = dict(
-            LC_ALL = 'en-US.UTF-8', # Use standard locale
+            LC_ALL = 'C.UTF-8', # Use standard locale
             # Avoid interference from any qtlogging.ini files, e.g. in
             # /etc/xdg/QtProject/, (must match tst_selftests.cpp's
             # processEnvironment()'s value):

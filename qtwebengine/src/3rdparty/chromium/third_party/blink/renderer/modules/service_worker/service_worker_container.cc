@@ -90,16 +90,17 @@ bool HasFiredDomContentLoaded(const Document& document) {
   return !document.GetTiming().DomContentLoadedEventStart().is_null();
 }
 
-mojom::blink::ServiceWorkerUpdateViaCache ParseUpdateViaCache(
-    const String& value) {
-  if (value == "imports")
-    return mojom::blink::ServiceWorkerUpdateViaCache::kImports;
-  if (value == "all")
-    return mojom::blink::ServiceWorkerUpdateViaCache::kAll;
-  if (value == "none")
-    return mojom::blink::ServiceWorkerUpdateViaCache::kNone;
-  // Default value.
-  return mojom::blink::ServiceWorkerUpdateViaCache::kImports;
+mojom::blink::ServiceWorkerUpdateViaCache V8EnumToUpdateViaCache(
+    V8ServiceWorkerUpdateViaCache::Enum value) {
+  switch (value) {
+    case V8ServiceWorkerUpdateViaCache::Enum::kImports:
+      return mojom::blink::ServiceWorkerUpdateViaCache::kImports;
+    case V8ServiceWorkerUpdateViaCache::Enum::kAll:
+      return mojom::blink::ServiceWorkerUpdateViaCache::kAll;
+    case V8ServiceWorkerUpdateViaCache::Enum::kNone:
+      return mojom::blink::ServiceWorkerUpdateViaCache::kNone;
+  }
+  NOTREACHED();
 }
 
 class GetRegistrationCallback : public WebServiceWorkerProvider::
@@ -336,10 +337,9 @@ ServiceWorkerContainer::registerServiceWorker(
   }
 
   mojom::blink::ServiceWorkerUpdateViaCache update_via_cache =
-      ParseUpdateViaCache(options->updateViaCache());
-  std::optional<mojom::blink::ScriptType> script_type =
-      Script::ParseScriptType(options->type());
-  DCHECK(script_type);
+      V8EnumToUpdateViaCache(options->updateViaCache().AsEnum());
+  mojom::blink::ScriptType script_type =
+      Script::V8WorkerTypeToScriptType(options->type().AsEnum());
 
   WebFetchClientSettingsObject fetch_client_settings_object(
       execution_context->Fetcher()
@@ -688,6 +688,7 @@ void ServiceWorkerContainer::DispatchMessageEvent(
         msg.message->CanDeserializeIn(context)) {
       event = MessageEvent::Create(ports, std::move(msg.message),
                                    context->GetSecurityOrigin()->ToString(),
+                                   MessageEvent::kMessageIsSameOrigin,
                                    String() /* lastEventId */, service_worker);
     } else {
       event = MessageEvent::CreateError(

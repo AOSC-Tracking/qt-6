@@ -30,9 +30,8 @@
 
     \section2 Loading Web Pages
 
-    An application can load pages into the WebEngineView, using either the \l url property or the
-    \l loadHtml method and navigate within the view's session history. The GET
-    method is always used to load URLs.
+    An application can load pages into the WebEngineView using either the \l url property, or the
+    \l loadHtml method. The GET method is always used to load URLs.
 
     The history is represented by a WebEngineHistory data model that is held by
     the \l history property.
@@ -70,7 +69,7 @@
 
     The \l {WebEngineSettings::focusOnNavigationEnabled} {focusOnNavigationEnabled} setting can be
     used to make the view automatically receive focus when a navigation operation occurs
-    (like loading or reloading a page or navigating through history).
+    (like loading or reloading a page, or navigating through history).
 
     The \l linkHovered() signal is emitted when a mouse pointer passes over a link and thus
     corresponds to the \c{mouseover} DOM event.
@@ -110,7 +109,7 @@
 
     \section2 Platform Features
 
-    Web pages can request access to platform features, such as geolocation or audio and video
+    Web pages can request access to platform features such as geolocation, or audio and video
     capture devices. The \l permissionRequested() signal is emitted when a web page requests
     to make use of a resource. The supported platform features are described by the QWebEnginePermission::Feature
     property.
@@ -361,6 +360,19 @@
     is the base URL, then an image referenced with the relative URL, \c diagram.png,
     should be at \c{http://www.example.com/documents/diagram.png}.
 
+    When using this method, the web engine assumes that external resources, such as JavaScript
+    programs or style sheets, are encoded in UTF-8, unless otherwise specified. For example,
+    the encoding of an external script can be specified through the charset attribute of the
+    HTML script tag. It is also possible for the encoding to be specified by the web server.
+
+    \note This method will not affect session or global history for the page.
+
+    \warning This function works only for HTML.
+
+    \warning The content will be percent encoded before being sent to the renderer.
+    This may increase its size. The maximum size of the percent encoded content is
+    2 megabytes minus 30 bytes.
+
     \sa url
 */
 
@@ -574,7 +586,7 @@
     This signal is emitted when \a request is issued to load a page in a separate
     web engine view. This can either be because the current page requested it explicitly
     through a JavaScript call to \c window.open, or because the user clicked on a link
-    while holding Shift, Ctrl, or a built-in combination that triggers the page to open
+    while holding Shift, Cmd/Ctrl, or a built-in combination that triggers the page to open
     in a new window.
 
     The signal is handled by calling acceptAsNewWindow() on the destination view.
@@ -1098,7 +1110,7 @@
     \a recentlyAudible, is changed, due to audio being played or stopped.
 
     \note The signal is also emitted when the \l audioMuted property changes.
-    Also if the audio is paused, this signal is emitted with an approximate \b{two-second
+    Also, if the audio is paused this signal is emitted with an approximate \b{two-second
     delay}, from the moment the audio is paused.
 
     If a web page contains two videos that are started in sequence, this signal
@@ -1173,7 +1185,7 @@
     \since QtWebEngine 1.3
 
     This signal is emitted when the page's audible state, specified by
-    \a wasRecentlyAudible, is changed, due to audio being played or stopped.
+    \a wasRecentlyAudible, is changed due to audio being played or stopped.
 
     \note The signal is also emitted when calling the setAudioMuted method.
 */
@@ -1453,7 +1465,7 @@
     Setting the lifecycle state to a lower resource usage state than the
     recommended state may cause side-effects such as stopping background audio
     playback or loss of HTML form input. Setting the lifecycle state to a higher
-    resource state is however completely safe.
+    resource state is, however, completely safe.
 
     \sa lifecycleState, {Page Lifecycle API}, {WebEngine Lifecycle Example}
 */
@@ -1627,14 +1639,14 @@
 */
 
 /*!
-    \qmlsignal WebEngineView::desktopMediaRequested(WebEngineDesktopMediaRequest request)
+    \qmlsignal WebEngineView::desktopMediaRequested(webEngineDesktopMediaRequest request)
     \since QtWebEngine 6.7
 
     This signal is emitted when a web application requests access to the contents of a display.
 
     The \a request argument holds references to data models for windows and screens available
     for capturing. To accept the request, the signal handler can call either
-    WebEngineDesktopMediaRequest::selectScreen() or WebEngineDesktopMediaRequest::selectWindow().
+    webEngineDesktopMediaRequest::selectScreen() or webEngineDesktopMediaRequest::selectWindow().
 */
 
 /*!

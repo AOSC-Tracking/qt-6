@@ -123,8 +123,8 @@ std::optional<QQmlJSFixSuggestion> QQmlJSUtils::didYouMean(const QString &userIn
          * Roughly based on
          * https://en.wikipedia.org/wiki/Levenshtein_distance#Iterative_with_two_matrix_rows.
          */
-        QList<int> v0(candidate.size() + 1);
-        QList<int> v1(candidate.size() + 1);
+        QVarLengthArray<int> v0(candidate.size() + 1);
+        QVarLengthArray<int> v1(candidate.size() + 1);
 
         std::iota(v0.begin(), v0.end(), 0);
 

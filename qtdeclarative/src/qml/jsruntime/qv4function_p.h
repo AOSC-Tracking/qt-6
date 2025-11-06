@@ -132,6 +132,8 @@ public:
             return nullptr;
         return executableCompilationUnit()->runtimeFunctions[compiledFunction->nestedFunctionIndex];
     }
+
+    bool isJittable() const { return kind != Function::AotCompiled && !isGenerator(); }
 };
 
 }

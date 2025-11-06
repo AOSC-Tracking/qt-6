@@ -7,7 +7,6 @@
 #include "qqmljsimporter_p.h"
 #include "qqmljsutils_p.h"
 #include "qqmlsa.h"
-#include "qqmlsa_p.h"
 
 #include <QtCore/qqueue.h>
 #include <QtCore/qsharedpointer.h>
@@ -15,7 +14,6 @@
 #include <private/qduplicatetracker_p.h>
 
 #include <algorithm>
-#include <type_traits>
 
 QT_BEGIN_NAMESPACE
 
@@ -854,7 +852,7 @@ void QQmlJSScope::addOwnPropertyBinding(const QQmlJSMetaPropertyBinding &binding
     // NB: insert() prepends \a binding to the list of bindings, but we need
     // append, so rotate
     using iter = typename QMultiHash<QString, QQmlJSMetaPropertyBinding>::iterator;
-    QPair<iter, iter> r = m_propertyBindings.equal_range(binding.propertyName());
+    std::pair<iter, iter> r = m_propertyBindings.equal_range(binding.propertyName());
     std::rotate(r.first, std::next(r.first), r.second);
 
     // additionally store bindings in the QmlIR compatible order
@@ -1294,9 +1292,9 @@ QQmlJSScope::InlineComponentOrDocumentRootName QQmlJSScope::enclosingInlineCompo
     return RootDocumentNameType();
 }
 
-QVector<QQmlJSScope::ConstPtr> QQmlJSScope::childScopes() const
+QList<QQmlJSScope::ConstPtr> QQmlJSScope::childScopes() const
 {
-    QVector<QQmlJSScope::ConstPtr> result;
+    QList<QQmlJSScope::ConstPtr> result;
     result.reserve(m_childScopes.size());
     for (const auto &child : m_childScopes)
         result.append(child);

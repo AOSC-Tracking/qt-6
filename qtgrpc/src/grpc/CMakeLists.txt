@@ -4,13 +4,14 @@
 qt_internal_add_module(Grpc
     SOURCES
         qgrpcoperation.h qgrpcoperation_p.h qgrpcoperation.cpp
-        qgrpcoperationcontext.h qgrpcoperationcontext.cpp
+        qgrpcoperationcontext.h qgrpcoperationcontext_p.h qgrpcoperationcontext.cpp
         qgrpccallreply.h qgrpccallreply.cpp
         qgrpcstream.h qgrpcstream.cpp
         qgrpcstatus.h qgrpcstatus.cpp
         qabstractgrpcchannel.h qabstractgrpcchannel_p.h qabstractgrpcchannel.cpp
         qgrpchttp2channel.h qgrpchttp2channel.cpp
         qgrpcclientbase.h qgrpcclientbase.cpp
+        qgrpccommonoptions_p.h qgrpccommonoptions.cpp
         qgrpccalloptions.h qgrpccalloptions.cpp
         qgrpcchanneloptions.h qgrpcchanneloptions.cpp
         qtgrpcglobal.h

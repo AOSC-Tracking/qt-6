@@ -1,5 +1,6 @@
 // Copyright (C) 2024 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef EGL_HELPER_H
 #define EGL_HELPER_H
@@ -62,6 +63,7 @@ private:
     QScopedPointer<EGLFunctions> m_functions;
     QScopedPointer<QOffscreenSurface> m_offscreenSurface;
     bool m_isDmaBufSupported = false;
+    bool m_isCreateDRMImageMesaSupported = false;
 };
 
 QT_END_NAMESPACE

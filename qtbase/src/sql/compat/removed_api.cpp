@@ -119,3 +119,15 @@ QVariant QSqlQuery::value(const QString &name) const
 }
 
 #endif // QT_SQL_REMOVED_SINCE(6, 8)
+
+#if QT_SQL_REMOVED_SINCE(6, 10)
+
+#include "qsqldatabase.h"
+
+const char *QSqlDatabase::defaultConnection = QSqlDatabaseDefaultConnectionName::defaultConnection;
+
+// #include <qotherheader.h>
+// // implement removed functions from qotherheader.h
+// order sections alphabetically to reduce chances of merge conflicts
+
+#endif // QT_SQL_REMOVED_SINCE(6, 10)

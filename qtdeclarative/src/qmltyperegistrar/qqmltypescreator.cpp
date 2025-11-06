@@ -34,8 +34,10 @@ static QString convertPrivateClassToUsableForm(QAnyStringView s)
 
 void QmlTypesCreator::writeClassProperties(const QmlTypesClassDescription &collector)
 {
-    if (!collector.file.isEmpty())
+    if (!collector.file.isEmpty()) {
         m_qml.writeStringBinding(S_FILE, collector.file);
+        m_qml.writeNumberBinding(S_LINE_NUMBER, collector.lineNumber);
+    }
     m_qml.writeStringBinding(S_NAME, collector.className);
 
     if (!collector.primitiveAliases.isEmpty())

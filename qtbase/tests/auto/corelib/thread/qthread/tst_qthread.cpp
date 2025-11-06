@@ -716,19 +716,18 @@ void noop(void*) { }
 class NativeThreadWrapper
 {
 public:
-    NativeThreadWrapper() : qthread(nullptr), waitForStop(false) {}
+    NativeThreadWrapper() : qthread(nullptr), stopSemaphore(1) {}
     void start(FunctionPointer functionPointer = noop, void *data = nullptr);
     void startAndWait(FunctionPointer functionPointer = noop, void *data = nullptr);
     void join();
-    void setWaitForStop() { waitForStop = true; }
+    void setWaitForStop() { stopSemaphore.acquire(); }
     void stop();
 
     ThreadHandle nativeThreadHandle;
     QThread *qthread;
-    QWaitCondition startCondition;
-    QMutex mutex;
-    bool waitForStop;
-    QWaitCondition stopCondition;
+    QSemaphore startSemaphore;
+    QSemaphore stopSemaphore;
+
 protected:
     static void *runUnix(void *data);
     static unsigned WIN_FIX_STDCALL runWin(void *data);
@@ -752,9 +751,8 @@ void NativeThreadWrapper::start(FunctionPointer functionPointer, void *data)
 
 void NativeThreadWrapper::startAndWait(FunctionPointer functionPointer, void *data)
 {
-    QMutexLocker locker(&mutex);
     start(functionPointer, data);
-    startCondition.wait(locker.mutex());
+    startSemaphore.acquire();
 }
 
 void NativeThreadWrapper::join()
@@ -775,20 +773,13 @@ void *NativeThreadWrapper::runUnix(void *that)
     nativeThreadWrapper->qthread = QThread::currentThread();
 
     // Release main thread.
-    {
-        QMutexLocker lock(&nativeThreadWrapper->mutex);
-        nativeThreadWrapper->startCondition.wakeOne();
-    }
+    nativeThreadWrapper->startSemaphore.release();
 
     // Run function.
     nativeThreadWrapper->functionPointer(nativeThreadWrapper->data);
 
     // Wait for stop.
-    {
-        QMutexLocker lock(&nativeThreadWrapper->mutex);
-        if (nativeThreadWrapper->waitForStop)
-            nativeThreadWrapper->stopCondition.wait(lock.mutex());
-    }
+    nativeThreadWrapper->stopSemaphore.acquire();
 
     return nullptr;
 }
@@ -801,9 +792,7 @@ unsigned WIN_FIX_STDCALL NativeThreadWrapper::runWin(void *data)
 
 void NativeThreadWrapper::stop()
 {
-    QMutexLocker lock(&mutex);
-    waitForStop = false;
-    stopCondition.wakeOne();
+    stopSemaphore.release();
 }
 
 static bool threadAdoptedOk = false;
@@ -993,13 +982,11 @@ void tst_QThread::adoptMultipleThreadsOverlap()
     for (int i = 0; i < numThreads; ++i) {
         nativeThreads.append(new NativeThreadWrapper());
         nativeThreads.at(i)->setWaitForStop();
-        nativeThreads.at(i)->mutex.lock();
         nativeThreads.at(i)->start();
     }
     for (int i = 0; i < numThreads; ++i) {
-        nativeThreads.at(i)->startCondition.wait(&nativeThreads.at(i)->mutex);
+        nativeThreads.at(i)->startSemaphore.acquire();
         QObject::connect(nativeThreads.at(i)->qthread, SIGNAL(finished()), &recorder, SLOT(slot()));
-        nativeThreads.at(i)->mutex.unlock();
     }
 
     QObject::connect(nativeThreads.at(numThreads - 1)->qthread, SIGNAL(finished()), &QTestEventLoop::instance(), SLOT(exitLoop()));
@@ -1023,7 +1010,7 @@ void tst_QThread::adoptedThreadBindingStatus()
     nativeThread.startAndWait();
     QVERIFY(nativeThread.qthread);
     auto privThread = static_cast<QThreadPrivate *>(QObjectPrivate::get(nativeThread.qthread));
-    QVERIFY(privThread->m_statusOrPendingObjects.bindingStatus());
+    QVERIFY(privThread->data->m_statusOrPendingObjects.bindingStatus());
 
     nativeThread.stop();
     nativeThread.join();
@@ -2129,7 +2116,7 @@ void tst_QThread::bindingListCleanupAfterDelete()
     auto optr = std::make_unique<QObject>();
     optr->moveToThread(&t);
     auto threadPriv =  static_cast<QThreadPrivate *>(QObjectPrivate::get(&t));
-    auto list = threadPriv->m_statusOrPendingObjects.list();
+    auto list = threadPriv->data->m_statusOrPendingObjects.list();
     QVERIFY(list);
     optr.reset();
     QVERIFY(list->empty());

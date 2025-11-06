@@ -40,7 +40,6 @@ public:
         T_BYTE = T_RESERVED_WORD,
         T_CHAR = T_RESERVED_WORD,
         T_DOUBLE = T_RESERVED_WORD,
-        T_FINAL = T_RESERVED_WORD,
         T_FLOAT = T_RESERVED_WORD,
         T_GOTO = T_RESERVED_WORD,
         T_IMPLEMENTS = T_RESERVED_WORD,
@@ -231,7 +230,7 @@ public:
     void setState(const State &state);
 
 protected:
-    static int classify(const QChar *s, int n, int parseModeFlags);
+    static int classify(QStringView s, int parseModeFlags);
 
 private:
     int parseModeFlags() const;

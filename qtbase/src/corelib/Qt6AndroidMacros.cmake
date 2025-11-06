@@ -1494,17 +1494,8 @@ function(_qt_internal_configure_android_multiabi_target target)
         return()
     endif()
 
-    get_target_property(target_abis ${target} QT_ANDROID_ABIS)
-    if(target_abis)
-        # Use target-specific Qt for Android ABIs.
-        set(android_abis ${target_abis})
-    elseif(QT_ANDROID_BUILD_ALL_ABIS)
-        # Use autodetected Qt for Android ABIs.
-        set(android_abis ${QT_DEFAULT_ANDROID_ABIS})
-    elseif(QT_ANDROID_ABIS)
-        # Use project-wide Qt for Android ABIs.
-        set(android_abis ${QT_ANDROID_ABIS})
-    else()
+    _qt_internal_android_get_target_abis(android_abis ${target})
+    if(NOT android_abis)
         # User have an empty list of Qt for Android ABIs.
         message(FATAL_ERROR
             "The list of Android ABIs is empty, when building ${target}.\n"
@@ -1752,14 +1743,25 @@ function(_qt_internal_android_create_runner_wrapper target)
         endif()
     endforeach()
 
-    get_target_property(target_binary_dir ${target} BINARY_DIR)
+    get_target_property(wrapper_output_dir ${target} RUNTIME_OUTPUT_DIRECTORY)
+    if(NOT wrapper_output_dir AND CMAKE_RUNTIME_OUTPUT_DIRECTORY)
+        set(wrapper_output_dir "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+    endif()
+    if(NOT wrapper_output_dir)
+        get_target_property(wrapper_output_dir ${target} BINARY_DIR)
+    endif()
+
+    get_target_property(output_name ${target} OUTPUT_NAME)
+    if(NOT output_name)
+        set(output_name ${target})
+    endif()
 
     if(CMAKE_HOST_WIN32)
         set(script_content "${formatted_command} ${args_splitter}\n    %*\n")
-        set(wrapper_path "${target_binary_dir}/${target}.bat")
+        set(wrapper_path "${wrapper_output_dir}/${output_name}.bat")
     else()
         set(script_content "#!/bin/sh\n\n${formatted_command} ${args_splitter}\n    $@\n")
-        set(wrapper_path "${target_binary_dir}/${target}")
+        set(wrapper_path "${wrapper_output_dir}/${output_name}")
     endif()
 
     get_property(__qt_core_macros_module_base_dir GLOBAL PROPERTY __qt_core_macros_module_base_dir)
@@ -1861,6 +1863,24 @@ function(_qt_internal_android_get_deployment_type_option out_var release_flag de
     else()
         set(${out_var} "${debug_flag}" PARENT_SCOPE)
     endif()
+endfunction()
+
+function(_qt_internal_android_get_target_abis out_abis target)
+    get_target_property(target_abis ${target} QT_ANDROID_ABIS)
+    if(target_abis)
+        # Use target-specific Qt for Android ABIs.
+        set(android_abis ${target_abis})
+    elseif(QT_ANDROID_BUILD_ALL_ABIS)
+        # Use autodetected Qt for Android ABIs.
+        set(android_abis ${QT_DEFAULT_ANDROID_ABIS})
+    elseif(QT_ANDROID_ABIS)
+        # Use project-wide Qt for Android ABIs.
+        set(android_abis ${QT_ANDROID_ABIS})
+    else()
+        set(android_abis "")
+    endif()
+
+    set(${out_abis} "${android_abis}" PARENT_SCOPE)
 endfunction()
 
 function(_qt_internal_android_find_asan_runtime_lib out_asan_lib_path)
