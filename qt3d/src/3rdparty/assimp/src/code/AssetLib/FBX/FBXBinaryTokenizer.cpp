@@ -56,6 +56,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <assimp/DefaultLogger.hpp>
 #include <assimp/StringUtils.h>
 
+#include <cstdint>
+
 namespace Assimp {
 namespace FBX {
 

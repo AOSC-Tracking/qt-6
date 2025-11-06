@@ -59,6 +59,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <exception>
 
+#include <exception>
+#include <stdexcept>
+
 namespace Assimp {
 // =======================================================================
 // Public interface to Assimp
