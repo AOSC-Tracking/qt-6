@@ -232,7 +232,10 @@ _PLATFORMS = [
               bazel_platform='//:linux_aarch64'),
     _Platform(gn_cpu='riscv64',
               bazel_cpu='riscv64',
-              bazel_platform='//:linux_riscv64')
+              bazel_platform='//:linux_riscv64'),
+_Platform(gn_cpu='loong64',
+              bazel_cpu='loongarch64',
+              bazel_platform='//:linux_loongarch64')
 ]
 
 
@@ -345,7 +348,7 @@ def _run_bazel_cmd(args: list[str]) -> str:
       Exception if the command failed.
     """
     # Use standard Bazel install instead of the one included with depot_tools.
-    exec_path = "/usr/bin/bazel"
+    exec_path = os.getenv("BAZEL_PATH_OVERRIDE") or "/usr/bin/bazel"
     if not exec_path:
         raise Exception(
             "bazel is not installed. Please run `sudo apt-get install " +

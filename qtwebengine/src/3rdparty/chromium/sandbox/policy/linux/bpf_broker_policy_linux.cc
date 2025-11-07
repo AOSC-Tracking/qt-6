@@ -87,6 +87,12 @@ ResultExpr BrokerProcessPolicy::EvaluateSyscall(int sysno) const {
         return Allow();
       break;
 #endif
+#if defined(__NR_statx)
+    case __NR_statx:
+      if (allowed_command_set_.test(syscall_broker::COMMAND_STAT))
+        return Allow();
+      break;
+#endif
 #if defined(__NR_lstat)
     case __NR_lstat:
       if (allowed_command_set_.test(syscall_broker::COMMAND_STAT))

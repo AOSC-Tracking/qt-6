@@ -29,6 +29,19 @@ platform(
     ],
 )
 
+constraint_value(
+    name = "loongarch64",
+    constraint_setting = "@platforms//cpu:cpu",
+)
+
+platform(
+    name = "linux_loongarch64",
+    constraint_values = [
+        "@platforms//os:linux",
+        ":loongarch64",
+    ],
+)
+
 # A dummy clang toolchain for building them for any arch.
 
 filegroup(name = "empty")

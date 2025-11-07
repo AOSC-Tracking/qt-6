@@ -80,6 +80,12 @@
 #define XNN_ARCH_WASMRELAXEDSIMD 0
 #endif
 
+#if defined(__loongarch__)
+#define XNN_ARCH_LOONGARCH 1
+#else
+#define XNN_ARCH_LOONGARCH 0
+#endif
+
 // Define platform identification macros
 
 #if defined(__ANDROID__)

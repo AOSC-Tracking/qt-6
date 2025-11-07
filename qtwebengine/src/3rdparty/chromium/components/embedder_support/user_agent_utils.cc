@@ -805,6 +805,8 @@ std::string GetCpuArchitecture() {
               cpu_info.substr(2, 2) == "86") ||
              base::StartsWith(cpu_info, "x86")) {
     return "x86";
+  } else if (base::StartsWith(cpu_info, "loong")) {
+    return "loongarch";
   }
 #elif BUILDFLAG(IS_FUCHSIA)
   std::string cpu_arch = base::SysInfo::ProcessCPUArchitecture();

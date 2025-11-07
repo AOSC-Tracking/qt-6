@@ -1475,6 +1475,18 @@
       "features": [
         "direct_rendering_display_compositor"
       ]
+    },
+    {
+      "id": 186,
+      "description": "Corrupted webpage rendering on Loongson LG100/110 graphics with 2D acceleration enabled",
+      "os": {
+        "type" : "linux"
+      },
+      "vendor_id": "0x0014",
+      "device_id": [ "0x7a36" ],
+      "features": [
+        "accelerated_2d_canvas"
+      ]
     }
   ]
 }

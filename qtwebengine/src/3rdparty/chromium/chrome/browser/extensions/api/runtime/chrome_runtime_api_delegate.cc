@@ -376,6 +376,8 @@ bool ChromeRuntimeAPIDelegate::GetPlatformInfo(PlatformInfo* info) {
     info->arch = extensions::api::runtime::PlatformArch::kMips;
   } else if (strcmp(arch, "mips64el") == 0) {
     info->arch = extensions::api::runtime::PlatformArch::kMips64;
+  } else if (strcmp(arch, "loongarch64") == 0) {
+    info->arch = extensions::api::runtime::PlatformArch::kLoongarch64;
   } else if (strcmp(arch, "riscv64") == 0) {
     info->arch = extensions::api::runtime::PlatformArch::kRiscv64;
   } else {

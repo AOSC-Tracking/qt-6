@@ -581,6 +581,7 @@ bpf_dsl::ResultExpr SandboxLinux::HandleViaBroker(int sysno) const {
   const bpf_dsl::ResultExpr handle_via_broker =
       bpf_dsl::Trap(syscall_broker::BrokerClient::SIGSYS_Handler,
                     broker_process_->GetBrokerClientSignalBased());
+#if !defined(__loongarch__)
   if (sysno == __NR_fstatat_default) {
     // This may be an fstatat(fd, "", stat_buf, AT_EMPTY_PATH), which should be
     // rewritten as fstat(fd, stat_buf). This should be consistent with how the
@@ -591,6 +592,18 @@ bpf_dsl::ResultExpr SandboxLinux::HandleViaBroker(int sysno) const {
     return bpf_dsl::If((flags & AT_EMPTY_PATH) == AT_EMPTY_PATH,
                        RewriteFstatatSIGSYS(BPFBasePolicy::GetFSDeniedErrno()))
         .Else(handle_via_broker);
+#else
+  if (sysno == __NR_statx) {
+    // This may be a statx(fd, "", AT_EMPTY_PATH, mask, statx_buf), and we allow it.
+    // Otherwise, we expect a statx(AT_FDCWD, path, flags, mask, statx_buf).
+    // However, it is possible to pass a non-empty path even when AT_EMPTY_PATH
+    // is set. But there are currently no easy way to validate the argument in
+    // seccomp bpf.
+    const bpf_dsl::Arg<int> flags(2);
+    return bpf_dsl::If((flags & AT_EMPTY_PATH) == AT_EMPTY_PATH,
+                       bpf_dsl::Allow())
+        .Else(handle_via_broker);
+#endif
   } else {
     return handle_via_broker;
   }

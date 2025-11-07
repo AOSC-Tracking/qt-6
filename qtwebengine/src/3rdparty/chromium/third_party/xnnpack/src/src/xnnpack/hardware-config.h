@@ -63,6 +63,9 @@ enum xnn_arch_flags {
   xnn_arch_vsx = 1 << 0,
   xnn_arch_vsx3 = 1 << 1,
   xnn_arch_mma = 1 << 2,
+#elif XNN_ARCH_LOONGARCH
+  xnn_arch_lsx = 1 << 0,
+  xnn_arch_lasx = 1 << 1,
 #elif XNN_ARCH_WASM || XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
   xnn_arch_wasm_is_x86 = 1 << 0,
 #if XNN_ARCH_WASMRELAXEDSIMD
