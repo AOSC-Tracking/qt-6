@@ -434,6 +434,9 @@ template("rust_target") {
       if (_rustc_metadata != "") {
         rustflags += [ "-Cmetadata=${_rustc_metadata}" ]
       }
+      if (current_cpu == "loong64") {
+        rustflags += [ "-Ccode-model=medium" ]
+      }
       rustenv = _rustenv
 
       if (_generate_crate_root) {

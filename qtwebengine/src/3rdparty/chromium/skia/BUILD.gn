@@ -172,7 +172,7 @@ config("skia_config") {
   if (current_cpu == "loong64") {
     cflags = [
       "-mlsx",
-      "-flax-vector-conversions=all",
+      "-flax-vector-conversions",
     ]
   }
 }
@@ -777,7 +777,7 @@ if (current_cpu == "loong64") {
     sources = skia_opts.lasx_sources
     cflags = [
       "-mlasx",
-      "-flax-vector-conversions=all",
+      "-flax-vector-conversions",
     ]
     visibility = [ ":skia_opts" ]
   }

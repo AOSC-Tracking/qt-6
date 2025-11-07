@@ -229,6 +229,7 @@ swiftshader_shared_library("swiftshader_libvulkan") {
   }
 
   deps = [ ":_swiftshader_libvulkan" ]
+  libs = [ "m" ]
 }
 
 swiftshader_static_library("swiftshader_libvulkan_static") {

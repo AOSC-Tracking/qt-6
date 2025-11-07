@@ -112,6 +112,9 @@ Study::CpuArchitecture GetCurrentCpuArchitecture() {
   if (process_arch == "ARM") {
     return Study::ARM32;
   }
+  if (process_arch == "LOONGARCH_64") {
+    return Study::LOONGARCH64;
+  }
   if (process_arch == "x86") {
     return Study::X86_32;
   }
