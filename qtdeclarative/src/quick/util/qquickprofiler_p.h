@@ -122,7 +122,12 @@ private:
         qint64 values[size][s_numSceneGraphTimings + 1];
     };
 
-    static inline thread_local TimingData<NumRenderThreadFrameTypes> renderThreadTimings;
+#ifdef __mips__
+    QThreadStorage<TimingData<NumRenderThreadFrameTypes>>
+#else
+    static inline thread_local TimingData<NumRenderThreadFrameTypes>
+#endif
+    renderThreadTimings;
     TimingData<NumGUIThreadFrameTypes> guiThreadTimings;
 
 public:
@@ -130,7 +135,11 @@ public:
     qint64 *timings()
     {
         if constexpr (type < NumRenderThreadFrameTypes)
-            return renderThreadTimings.values[type];
+            return renderThreadTimings.
+#ifdef __mips__
+              localData().
+#endif
+              values[type];
         else
             return guiThreadTimings.values[type - NumRenderThreadFrameTypes];
     }
